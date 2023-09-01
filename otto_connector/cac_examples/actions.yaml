@@ -1,0 +1,191 @@
+# Example actions for triggering custom behaviour of robots connected trough the InOrbit <> OTTO Connector
+# It is recommended to fill the scope field of the definitions with a tag that groups all robots connected
+# through the Connector
+
+# Execute a maintenance recipe
+# NOTE: for each different recipe that you'd like to run, copy this definition and update the value of the `--recipe_id` as needed.
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+  id: otto-maintenance-recipe-action
+  # REQUIRED, see note at the beginning of the file.
+  scope: <CONFIG_SCOPE>
+spec:
+  label: Maintenance recipe
+  description: Run a recipe in maintenance mode
+  arguments:
+    - name: filename
+      type: string
+      value: run_recipe
+    - name: --recipe_id
+      type: string
+      value: <RECIPE_ID>
+  confirmation:
+    required: false
+  # Sample actions group name (optional), please update it or remove it as needed.
+  group: OTTO
+  type: RunScript
+---
+# Dispatch a Mission (Job) template on the OTTO Fleet Manager.
+# NOTE: for each different mission that you'd like to dispatch, copy this definition and update the `<JOB_TEMPLATE_ID>` as needed.
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+  id: otto-dispatch-mission-template
+  # REQUIRED, see note at the beginning of the file.
+  scope: <CONFIG_SCOPE>
+spec:
+  label: Mission from template
+  description: Dispatch a mission template
+  arguments:
+    - name: filename
+      type: string
+      value: dispatch_template
+    - name: --mission_template_id
+      type: string
+      value: <JOB_TEMPLATE_ID>
+  confirmation:
+    required: false
+  # Sample actions group name (optional), please update it or remove it as needed.
+  group: OTTO
+  type: RunScript
+---
+# Dispatch a move-to-place Mission (Job) on the OTTO Fleet Manager with a single 'move' task.
+# NOTE: for each different place that you'd like to move to, copy this definition and update the `<PLACE_ID>` as needed.
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+  id: otto-move-to-place
+  # REQUIRED, see note at the beginning of the file.
+  scope: <CONFIG_SCOPE>
+spec:
+  label: Move to place
+  description: Dispatch a mission with a move task
+  arguments:
+    - name: filename
+      type: string
+      value: move_to_place
+    - name: --place_id
+      type: string
+      value: <PLACE_ID>
+  confirmation:
+    required: false
+  # Sample actions group name (optional), please update it or remove it as needed.
+  group: OTTO
+  type: RunScript
+---
+# Control robot autonomy
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+  id: otto-pause-autonomy
+  # REQUIRED, see note at the beginning of the file.
+  scope: <CONFIG_SCOPE>
+spec:
+  label: Pause autonomy
+  description: Pause robot autonomy
+  arguments:
+    - name: message
+      type: string
+      value: pause_autonomy
+  confirmation:
+    required: false
+  # Sample actions group name (optional), please update it or remove it as needed.
+  group: OTTO
+  type: PublishToTopic
+---
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+  id: otto-resume-autonomy
+  # REQUIRED, see note at the beginning of the file.
+  scope: <CONFIG_SCOPE>
+spec:
+  label: Resume autonomy
+  description: Resume robot autonomy
+  arguments:
+    - name: message
+      type: string
+      value: resume_autonomy
+  confirmation:
+    required: false
+  # Sample actions group name (optional), please update it or remove it as needed.
+  group: OTTO
+  type: PublishToTopic
+---
+# Control mission status
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+  id: otto-pause-mission
+  # REQUIRED, see note at the beginning of the file.
+  scope: <CONFIG_SCOPE>
+spec:
+  label: Pause mission
+  description: Pause current mission
+  arguments:
+    - name: message
+      type: string
+      value: pause_mission
+  confirmation:
+    required: false
+  # Sample actions group name (optional), please update it or remove it as needed.
+  group: OTTO
+  type: PublishToTopic
+---
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+  id: otto-resume-mission
+  # REQUIRED, see note at the beginning of the file.
+  scope: <CONFIG_SCOPE>
+spec:
+  label: Resume mission
+  description: Resume current mission
+  arguments:
+    - name: message
+      type: string
+      value: resume_mission
+  confirmation:
+    required: false
+  # Sample actions group name (optional), please update it or remove it as needed.
+  group: OTTO
+  type: PublishToTopic
+---
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+  id: otto-retry-mission
+  # REQUIRED, see note at the beginning of the file.
+  scope: <CONFIG_SCOPE>
+spec:
+  label: Retry mission
+  description: Retry current mission
+  arguments:
+    - name: message
+      type: string
+      value: retry_mission
+  confirmation:
+    required: false
+  # Sample actions group name (optional), please update it or remove it as needed.
+  group: OTTO
+  type: PublishToTopic
+---
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+  id: otto-cancel-mission
+  # REQUIRED, see note at the beginning of the file.
+  scope: <CONFIG_SCOPE>
+spec:
+  label: Cancel mission
+  description: Cancel current mission
+  arguments:
+    - name: message
+      type: string
+      value: cancel_mission
+  confirmation:
+    required: false
+  # Sample actions group name (optional), please update it or remove it as needed.
+  group: OTTO
+  type: PublishToTopic

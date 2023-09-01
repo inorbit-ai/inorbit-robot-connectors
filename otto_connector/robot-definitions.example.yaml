@@ -1,0 +1,15 @@
+# List of all the robots that will be connected via the InOrbit <> OTTO Connector
+robot-definitions:
+    # InOrbit robot ID (unique)
+  - inorbit_id: otto-robot-1
+    # OTTO robot ID obtained from the Fleet Manager (see README.md for details)
+    otto_id: e8334dde-349d-486a-a4bf-6dc8b974e2e0
+    # (Optional) URL for OpenCV to connect to a video feed. Example:
+    camera_url: rtsp://user:password@192.168.1.257:554/cam/realmonitor
+
+  - inorbit_id: otto-robot-2
+    otto_id: 13c2dccc-af8d-4829-a520-16c7d5f48e73
+    camera_url: rtsp://user:password@192.168.1.258:554/cam/realmonitor
+  - inorbit_id: otto-robot-3
+    otto_id: a12f47c5-2d4f-455d-9446-9f62df7090e6
+  # - etc. # There should be one definition per robot in the fleet

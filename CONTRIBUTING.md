@@ -50,3 +50,5 @@ Ready to contribute? Here's how to set up `inorbit-robot-connectors` for local d
     ```
 
 7. Submit a pull request through the GitHub website.
+
+Note: Any contribution that you make to this repository will be under the MIT license, as dictated by that [license](https://opensource.org/licenses/MIT).

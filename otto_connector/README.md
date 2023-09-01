@@ -6,13 +6,12 @@ SPDX-License-Identifier: MIT
 
 # OTTO <> InOrbit Connector
 
-![OTTO <> InOrbit Connector](../assets/otto_inorbit_connector_banner.png)
-
 ## Overview
 
-This repository contains the [InOrbit](https://inorbit.ai/) Robot Connector for [OTTO Motors](https://directory.inorbit.ai/connect/OTTO-Motors) AMRs. Making use of OTTO Fleet Manager's WebSocket and REST APIs as well as InOrbit's [Edge SDK](https://developer.inorbit.ai/docs#edge-sdk), the Connector allows the integration of OTTO robots with your fleet on InOrbit, unlocking interoperability.
+This repository contains the [InOrbit](https://inorbit.ai/) [Edge SDK](https://developer.inorbit.ai/docs#edge-sdk)
+Connector for [OTTO Motors](https://directory.inorbit.ai/connect/OTTO-Motors) AMRs. Making use of the OTTO Fleet Manager's WebSocket and REST APIs, it allows integrating OTTO robots with your fleet on InOrbit, unlocking interoperability.
 
-This integration requires each robot to be connected to OTTO's Fleet Manager (FM). Once the connection to the FM is established, the Connector needs to be configured following the instructions below. A single instance of the Connector is capable of controlling multiple robots.
+This integration expects each robot to be connected to the OTTO Fleet Manager (FM). Once the fleet is set up on this end, the connector needs to be configured following the instructions below. A single instance of the Connector is capable of controlling multiple robots.
 
 ## Features
 
@@ -28,7 +27,7 @@ By integrating InOrbit's Python Edge SDK with OTTO's APIs, the Connector unlocks
   - Dispatching simple Move-to-place missions.
   - Dispatching maintenance Recipes.
 
-- Running custom shell scripts on the robot via Custom Actions.
+- Running custom shell scripts on the Robot via Custom Actions.
 - [Mission Tracking](https://developer.inorbit.ai/docs#configuring-mission-tracking) support.
 
 ## Requirements
@@ -42,15 +41,14 @@ By integrating InOrbit's Python Edge SDK with OTTO's APIs, the Connector unlocks
 In the host machine, clone this repository and create a virtual environment:
 
 ```sh
-cd src/
 virtualenv venv/
 . venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Configure the Connector:
+Configure the connector:
 
-- Copy `config/robot-definitions.example.yaml` and add your robots to the list following the instructions in the file.
+- Copy `robot-definitions.example.yaml` and add your robots to the list following the instructions in the file.
 
   - To obtain the `otto_id` value, for each robot:
     1. Open the Fleet Manager dashboard.
@@ -59,22 +57,22 @@ Configure the Connector:
     4. Expand the `Robot Details` section.
     5. Copy the value of the `ID` field.
 
-- Copy `config/example.env` to `config/.env` and set the environment variables following the instructions in the same file.
+- Copy `example.env` to `.env` and set the environment variables following the instructions in the same file.
   You can get the INORBIT_CLI_API_KEY for your account from InOrbit's [Developer Console](https://developer.inorbit.ai/docs#configuring-environment-variables).
 
 ## Deployment
 
 Once all dependencies are installed and the configuration is complete, the Connector can be run as a python script.
-The entry point is `src/otto_connector.py`:
+The entry point is `otto_connector.py`:
 
 ```sh
 # Add the environment variables, activate the virtual environment and run the Connector
-export $(grep -v '^#' config/.env | xargs) && \
+export $(grep -v '^#' .env | xargs) && \
 source ./venv/bin/activate && \
-python src/otto_connector.py'
+python otto_connector.py'
 ```
 
-It is recommended to run the Connector as a service. An example [systemd](https://www.freedesktop.org/software/systemd/man/systemd.service.html) service unit configuration is provided at [`systemd/otto-connector.service`](systemd/otto-connector.service).
+It is recommended to run the connector as a service. An example [systemd](https://www.freedesktop.org/software/systemd/man/systemd.service.html) service unit configuration is provided at [`systemd/otto-connector.service`](systemd/otto-connector.service).
 In a Debian based system the service can usually be installed and enabled at boot the following way:
 
 ```sh
@@ -105,5 +103,3 @@ to apply the configuration needed to unlock the full potential of the OTTO <> In
 ## Contributing
 
 Any contribution that you make to this repository will be under the MIT license, as dictated by that [license](https://opensource.org/licenses/MIT).
-
-![Powered by InOrbit](../assets/inorbit_github_footer.png)

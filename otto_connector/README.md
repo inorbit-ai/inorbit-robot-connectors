@@ -48,7 +48,7 @@ pip install -r requirements.txt
 
 Configure the Connector:
 
-- Copy `robot-definitions.example.yaml` and add your robots to the list following the instructions in the file.
+- Copy `config/robot-definitions.example.yaml` and add your robots to the list following the instructions in the file.
 
   - To obtain the `otto_id` value, for each robot:
     1. Open the Fleet Manager dashboard.
@@ -57,19 +57,19 @@ Configure the Connector:
     4. Expand the `Robot Details` section.
     5. Copy the value of the `ID` field.
 
-- Copy `example.env` to `.env` and set the environment variables following the instructions in the same file.
+- Copy `config/example.env` to `config/.env` and set the environment variables following the instructions in the same file.
   You can get the INORBIT_CLI_API_KEY for your account from InOrbit's [Developer Console](https://developer.inorbit.ai/docs#configuring-environment-variables).
 
 ## Deployment
 
 Once all dependencies are installed and the configuration is complete, the Connector can be run as a python script.
-The entry point is `otto_connector.py`:
+The entry point is `src/otto_connector.py`:
 
 ```sh
 # Add the environment variables, activate the virtual environment and run the Connector
-export $(grep -v '^#' .env | xargs) && \
+export $(grep -v '^#' config/.env | xargs) && \
 source ./venv/bin/activate && \
-python otto_connector.py'
+python src/otto_connector.py'
 ```
 
 It is recommended to run the Connector as a service. An example [systemd](https://www.freedesktop.org/software/systemd/man/systemd.service.html) service unit configuration is provided at [`systemd/otto-connector.service`](systemd/otto-connector.service).

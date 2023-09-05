@@ -18,7 +18,7 @@ Ready to contribute? Here's how to set up `inorbit-robot-connectors` for local d
 3. If adding a new connector (yay!), create a directory for it under the repo root using <vendor_connector> or <vendor_model_connector>. Add your new connector's code to it.
 
     If updating an existing connector (thanks!), change directory to the connector you'd like to update.
-    
+
     It is recommended to work in a virtualenv or anaconda environment:
 
     ```bash

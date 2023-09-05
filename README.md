@@ -1,6 +1,6 @@
 # InOrbit <> robot connectors
 
-This repository hosts a collection of connectors that communicate with `InOrbit` platform on behalf of robots by means of the [InOrbit Python Edge SDK](https://github.com/inorbit-ai/edge-sdk-python). It's goal is to group ready to use connectors for different robot vendors or types, easing the integration between `InOrbit` and any other software robot data. 
+This repository hosts a collection of connectors that communicate with `InOrbit` platform on behalf of robots by means of the [InOrbit Python Edge SDK](https://github.com/inorbit-ai/edge-sdk-python). It's goal is to group ready to use connectors for different robot vendors or types, easing the integration between `InOrbit` and any other software robot data.
 
 ## Connectors
 

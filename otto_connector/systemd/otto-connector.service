@@ -9,7 +9,7 @@ User=inorbit
 # By default, the kill signal is SIGTERM so we override it by SIGINT
 # so the connector handles it the same way as a keyboard interrupt
 KillSignal=SIGINT
-ExecStart=/bin/bash -c 'cd ~/workspace/otto-connector && export $(grep -v '^#' .env | xargs) && source ./venv/bin/activate && python otto_connector.py'
+ExecStart=/bin/bash -c 'cd ~/workspace/otto-connector && export $(grep -v '^#' config/.env | xargs) && source ./src/venv/bin/activate && python src/otto_connector.py'
 
 [Install]
 WantedBy=multi-user.target

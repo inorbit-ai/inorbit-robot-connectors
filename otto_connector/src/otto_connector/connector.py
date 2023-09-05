@@ -52,6 +52,7 @@ class OTTOConnector:
         fleet_manager_address,
         inorbit_api_key,
         location_tz,
+        user_scripts_dir,
         robot_definitions=None,
         loglevel="INFO",
         inorbit_api_use_ssl=True,
@@ -97,8 +98,8 @@ class OTTOConnector:
             params["endpoint"] = inorbit_api_endpoint
 
         # The Connector supports handling a set of robots connected to the OTTO Fleet Manager
+        self.user_scripts_dir = user_scripts_dir
         robot_factory = RobotSessionFactory(**params)
-        robot_factory.register_commands_path("./user_scripts", exec_name_regex=r".sh$")
         robot_factory.register_command_callback(self.command_callback)
         self.robot_pool = RobotSessionPool(robot_factory)
 
@@ -183,7 +184,7 @@ class OTTOConnector:
                 success = self.http_client.dispatch_mission_template(otto_id, template_id)
             elif script_name[-3:] == ".sh":
                 # Run local script
-                self.run_local_script(script_name, list(script_args))
+                self.run_local_script(self.user_scripts_dir + "/" + script_name, list(script_args))
                 success = True  # We actually don't know, but waiting would block execution
             elif script_name == "run_recipe" and script_args[0] == "--recipe_id":
                 # If the --waiting_time argument was provided and the value exists use it,
@@ -267,7 +268,10 @@ class OTTOConnector:
     def run_local_script(self, script_name, script_args):
         """Run a script from ./user_scripts."""
         self.logger.info(f"Running script : {script_name}")
-        subprocess.Popen([f"./user_scripts/{script_name}"] + script_args, shell=False)
+        try:
+            subprocess.Popen([f"{script_name}"] + script_args, shell=False)
+        except Exception as e:
+            self.logger.error(f"Exception when running script {script_name}: {e}")
 
     def start(self):
         """Start the main loop of the Connector."""

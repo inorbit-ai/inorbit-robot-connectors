@@ -8,10 +8,9 @@ SPDX-License-Identifier: MIT
 
 ## Overview
 
-This repository contains the [InOrbit](https://inorbit.ai/) [Edge SDK](https://developer.inorbit.ai/docs#edge-sdk)
-Connector for [OTTO Motors](https://directory.inorbit.ai/connect/OTTO-Motors) AMRs. Making use of the OTTO Fleet Manager's WebSocket and REST APIs, it allows integrating OTTO robots with your fleet on InOrbit, unlocking interoperability.
+This repository contains the [InOrbit](https://inorbit.ai/) Connector for [OTTO Motors](https://directory.inorbit.ai/connect/OTTO-Motors) AMRs. Making use of OTTO Fleet Manager's WebSocket and REST APIs as well as InOrbit's [Edge SDK](https://developer.inorbit.ai/docs#edge-sdk), it allows integrating OTTO robots with your fleet on InOrbit, unlocking interoperability.
 
-This integration expects each robot to be connected to the OTTO Fleet Manager (FM). Once the fleet is set up on this end, the connector needs to be configured following the instructions below. A single instance of the Connector is capable of controlling multiple robots.
+This integration expects each robot to be connected to OTTO's Fleet Manager (FM). Once the fleet is set up on this end, the Connector needs to be configured following the instructions below. A single instance of the Connector is capable of controlling multiple robots.
 
 ## Features
 
@@ -41,12 +40,13 @@ By integrating InOrbit's Python Edge SDK with OTTO's APIs, the Connector unlocks
 In the host machine, clone this repository and create a virtual environment:
 
 ```sh
+cd src/
 virtualenv venv/
 . venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Configure the connector:
+Configure the Connector:
 
 - Copy `robot-definitions.example.yaml` and add your robots to the list following the instructions in the file.
 
@@ -72,7 +72,7 @@ source ./venv/bin/activate && \
 python otto_connector.py'
 ```
 
-It is recommended to run the connector as a service. An example [systemd](https://www.freedesktop.org/software/systemd/man/systemd.service.html) service unit configuration is provided at [`systemd/otto-connector.service`](systemd/otto-connector.service).
+It is recommended to run the Connector as a service. An example [systemd](https://www.freedesktop.org/software/systemd/man/systemd.service.html) service unit configuration is provided at [`systemd/otto-connector.service`](systemd/otto-connector.service).
 In a Debian based system the service can usually be installed and enabled at boot the following way:
 
 ```sh

@@ -1,11 +1,13 @@
 # SPDX-FileCopyrightText: 2023 InOrbit, Inc.
 #
 # SPDX-License-Identifier: MIT
-#
-# OTTO to InOrbit Connector.
-#
-# It connects a fleet of OTTO robots to InOrbit's platform for observability and operation
-# using InOrbit's Python Edge SDK: https://github.com/inorbit-ai/edge-sdk-python
+
+"""
+OTTO to InOrbit Connector.
+
+It connects a fleet of OTTO robots to InOrbit's platform for observability and operation
+using InOrbit's Python Edge SDK: https://github.com/inorbit-ai/edge-sdk-python
+"""
 
 import logging
 import re
@@ -38,17 +40,25 @@ RECIPE_EXECUTION_WAIT_DEFAULT = 5
 
 
 class OTTOConnector:
+    """
+    OTTO connector class.
+
+    Provides the methods to listen to and control an OTTO robot from InOrbit by talking to OTTO's
+    Fleet Manager (FM).
+    """
+
     def __init__(
         self,
         fleet_manager_address,
         inorbit_api_key,
         location_tz,
-        robot_definitions=[],
+        robot_definitions=None,
         loglevel="INFO",
         inorbit_api_use_ssl=True,
         inorbit_api_endpoint=None,
     ):
-        """Holds the main loop of the Connector.
+        """
+        Build the connector: launch a Robot Session on the Edge SDK and connect to the FM.
 
         Args:
             fleet_manager_address (str): IP address of OTTO's Fleet Manager.
@@ -62,7 +72,6 @@ class OTTOConnector:
             inorbit_api_endpoint (str): InOrbit's URL. Points to https://control.inorbit.ai by
             default.
         """
-
         self.logger = logging.getLogger(name=self.__class__.__name__)
         self.logger.setLevel(loglevel)
 
@@ -72,7 +81,7 @@ class OTTOConnector:
         #   "otto_id": str,
         #   "camera_url": (optional) str,
         # }
-        self.robot_definitions = robot_definitions
+        self.robot_definitions = robot_definitions if robot_definitions is not None else []
         self.logger.debug(f"Robot Definitions: {self.robot_definitions}")
 
         # Set local timezone
@@ -150,7 +159,6 @@ class OTTOConnector:
             args(list[str]): Command arguments.
             options (list[str]): Edge SDK command callback options.
         """
-
         self.logger.info(f"Command received for robot {robot_id}: {command_name} {args}")
 
         # Find the robot
@@ -237,7 +245,6 @@ class OTTOConnector:
             waiting_time (str): Time to wait before taking the robot out of maintenance mode,
             once the recipe is sent for execution.
         """
-
         # Put the robot in maintenance mode
         success = self.http_client.set_maintenance_mode(otto_id, maintenance=True)
         if not success:
@@ -259,13 +266,11 @@ class OTTOConnector:
 
     def run_local_script(self, script_name, script_args):
         """Run a script from ./user_scripts."""
-
         self.logger.info(f"Running script : {script_name}")
         subprocess.Popen([f"./user_scripts/{script_name}"] + script_args, shell=False)
 
     def start(self):
-        """Main loop of the Connector."""
-
+        """Start the main loop of the Connector."""
         # Start Websocket client in a separate process, because it needs its own event loop
         self.wamp_client_process = Process(target=self.runner.run, args=[WampClient])
         self.wamp_client_process.start()
@@ -285,7 +290,7 @@ class OTTOConnector:
 
                 # If we have complete pose data, publish it
                 pose = robot.pose
-                if all([isinstance(v, float) for v in pose.values()]):
+                if all(isinstance(v, float) for v in pose.values()):
                     self.logger.debug(f"Publishing pose: {pose}")
                     robot_sess.publish_pose(**pose)
 
@@ -303,8 +308,7 @@ class OTTOConnector:
             sleep(1 / CONNECTOR_UPDATE_FREQ)
 
     def stop(self):
-        """Cleanly exit the Connector."""
-
+        """Exit the Connector cleanly."""
         # TODO(b-Tomas): Look into the errors appearing in the console at shutdown time
         self.robot_pool.tear_down()
         self.wamp_client_process.kill()

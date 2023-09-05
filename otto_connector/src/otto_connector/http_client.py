@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: MIT
 
+"""HTTPClient class. Manages requests to the OTTO Fleet Manager REST API."""
+
 import logging
 import uuid
 
@@ -10,7 +12,7 @@ import urllib3
 
 
 class HTTPClient:
-    """Performs requests to the Fleet Manager REST API."""
+    """Util class to interact with OTTO's Fleet Manager REST API."""
 
     def __init__(
         self,
@@ -20,6 +22,8 @@ class HTTPClient:
         disable_insecure_request_warning=False,
     ):
         """
+        HTTP client constructor.
+
         Args:
             base_url (str): Fleet manager base URL. e.g. "https://192.168.1.256/api/"
             verify_ssl (bool, optional): Use HTTPS. Defaults to True.
@@ -27,7 +31,6 @@ class HTTPClient:
             disable_insecure_request_warning (bool, optional): Disable warnings on invalid TLS
             connections. Defaults to False.
         """
-
         self.api_sess = requests.Session()
         self.logger = logging.getLogger(name=self.__class__.__name__)
         self.logger.setLevel(loglevel)
@@ -47,7 +50,6 @@ class HTTPClient:
         Returns:
             Response object.
         """
-
         self.logger.info(f"POSTing to {url}: json {json}")
         res = self.api_sess.post(
             url,
@@ -70,7 +72,6 @@ class HTTPClient:
         Returns:
             Response object.
         """
-
         self.logger.info(f"GETting {url}: json {json}")
         res = self.api_sess.get(
             url,
@@ -102,7 +103,6 @@ class HTTPClient:
         Returns:
             Whether the procedure was dispatched successfully.
         """
-
         res = self._post(
             self.fleet_url + "/v2/operations",
             {
@@ -147,7 +147,6 @@ class HTTPClient:
         Returns:
             Whether the command was dispatched successfully.
         """
-
         res = self._post(
             self.dispatch_url + "/v2/operations",
             {
@@ -175,7 +174,6 @@ class HTTPClient:
         Returns:
             Whether the command was dispatched successfully.
         """
-
         res = self._post(
             self.fleet_url + "/v2/operations",
             {
@@ -196,7 +194,6 @@ class HTTPClient:
         Returns:
             Whether the command was dispatched successfully.
         """
-
         res = self._post(
             self.fleet_url + "/v2/operations",
             {
@@ -217,7 +214,6 @@ class HTTPClient:
         Returns:
             Whether the command was dispatched successfully.
         """
-
         res = self._post(
             self.fleet_url + "/v2/operations",
             {
@@ -238,7 +234,6 @@ class HTTPClient:
         Returns:
             Whether the command was dispatched successfully.
         """
-
         res = self._post(
             self.fleet_url + "/v2/operations",
             {
@@ -259,7 +254,6 @@ class HTTPClient:
         Returns:
             Whether the command was dispatched successfully.
         """
-
         res = self._post(
             self.fleet_url + "/v2/operations",
             {
@@ -280,7 +274,6 @@ class HTTPClient:
         Returns:
             Whether the command was dispatched successfully.
         """
-
         res = self._post(
             self.fleet_url + "/v2/operations",
             {
@@ -303,7 +296,6 @@ class HTTPClient:
         Returns:
             Whether the command was dispatched successfully.
         """
-
         res = self._post(
             self.fleet_url + "/v2/operations",
             {
@@ -330,7 +322,6 @@ class HTTPClient:
         Returns:
             Whether the command was dispatched successfully.
         """
-
         res = self._post(
             self.fleet_url + "/v2/operations",
             {
@@ -347,19 +338,20 @@ class HTTPClient:
         )
         return self._evaluate_jsonrpc_response(res, "sendRobotRecipe")
 
-    def get_tasks(self, params: dict = {}):
+    def get_tasks(self, params=None):
         """Query a list of tasks with the specified parameters.
-        Documentation can be found at file:///{...}/fleet_manager_offline_docs_v2.26/docs/fleet/public_api/v2.html#/Tasks/Mission_Task_list
+
+        Documentation can be found at file:///{...}/fleet_manager_offline_docs_v2.26/docs/fleet/public_api/v2.html#/Tasks/Mission_Task_list # noqa
         on the FM's offline docs.
 
         Args:
-            params (dict, optional): Query parameters. Defaults to {}. e.g.
-            {"fields": "*", "mission": mission_id}
+            params (dict, optional): Query parameters. Defaults to None.
+            E.g. {"fields": "*", "mission": mission_id}
 
         Returns:
             A list of tasks.
         """
-
+        params = params if params is not None else {}
         url = self.fleet_url + "/v2/tasks/?" + "&".join([f"{k}={v}" for k, v in params.items()])
         res = self._get(url=url, json=None)
         if res.headers.get("Content-Type").startswith("application/json"):
@@ -376,7 +368,6 @@ class HTTPClient:
         Returns:
             True if the response indicates a successful outcome.
         """
-
         try:
             if res.json().get("error"):
                 self.logger.warn(f"<{method}> JsonRPC request failed: {res.json()}")

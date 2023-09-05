@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: MIT
 
+"""WAMP client that enables communication with OTTO's FM via websockets."""
+
 import logging
 import re
 
@@ -20,9 +22,19 @@ from .values import (
 
 
 class WampClient(ApplicationSession):
-    """Listens to events on the provided topics of the Fleet Manager websocket API."""
+    """Listens to events on a list of topics of the Fleet Manager websocket API."""
 
     def __init__(self, *args, **kwargs):
+        """Init the WampClient with the configuration provided.
+
+        Args:
+            *args: Variable length argument list. Including:
+                - robots: list of OTTORobot objects.
+                - topics: list of topic names to subscribe to.
+                - loglevel: logging level (one of  DEBUG, INFO, WARNING, ERROR, CRITICAL).
+                - id_index: dictionary of otto_robot_id->inorbit_robot_id
+            **kwargs: Arbitrary keyword arguments.
+        """
         super().__init__(*args, **kwargs)
         assert all(i in args[0].extra.keys() for i in ["robots", "topics", "loglevel", "id_index"])
 
@@ -40,7 +52,6 @@ class WampClient(ApplicationSession):
 
     def on_event(self, message, *args, **kwargs):
         """Handle events from the subscribed topics."""
-
         details: EventDetails = kwargs["details"]
         topic = details.subscription.topic
 
@@ -73,11 +84,7 @@ class WampClient(ApplicationSession):
             self._handle_missions_event(topic, args, message)
 
     def _handle_batteries_event(self, topic, args, message):
-        """
-        Handle batteries data topic messages. Receives an array with battery data of all
-        robots.
-        """
-
+        """Handle batteries topic messages. Receives an array with battery data of all robots."""
         # TODO(@Tom743): Check the schema of arguments when having multiple robots.
         # It might be tuple<list<dict>> with ([{robot1 data}, {robot2 data}])
         # or ([{robot1 data}], [{robot2 data}]).
@@ -110,7 +117,6 @@ class WampClient(ApplicationSession):
 
     def _handle_pose_event(self, topic, args, message):
         """Update pose data in the robot's data class."""
-
         otto_id = topic.split(".")[3]
         inorbit_id = self.id_index.get(otto_id)
         if not inorbit_id:
@@ -126,7 +132,6 @@ class WampClient(ApplicationSession):
 
     def _handle_path_event(self, topic, args, message):
         """Update path data in the robots data class."""
-
         otto_id = topic.split(".")[3]
         inorbit_id = self.id_index.get(otto_id)
         if not inorbit_id:
@@ -146,7 +151,6 @@ class WampClient(ApplicationSession):
 
     def _handle_states_event(self, topic, args, message):
         """Update robot states."""
-
         states = args[0]
         for state in states:
             otto_id = state["robot"]
@@ -178,7 +182,6 @@ class WampClient(ApplicationSession):
 
     def _handle_places_event(self, topic, args, message):
         """Update robot's current place."""
-
         # TODO(@Tom743): Check schema when having more robots, same situation as in
         # `_handle_batteries_event()`.
 
@@ -203,7 +206,6 @@ class WampClient(ApplicationSession):
 
     def _handle_missions_event(self, topic, args, message):
         """Handle events from topic `v2.missions`."""
-
         # TODO(@Tom743): Check schema when having more robots, same situation as in
         # `_handle_batteries_event()`.
 
@@ -346,12 +348,12 @@ class WampClient(ApplicationSession):
 
     def _subscribe(self, topic):
         """Subscribe to a WAMP topic."""
-
         # Enable `details`, a kwarg sent to the handler on each event
         return self.subscribe(self.on_event, topic, SubscribeOptions(details=True))
 
     @inlineCallbacks  # type: ignore
     def onJoin(self, details: EventDetails):
+        """Subscribe to topics when connected to the session."""
         self.logger.info("Connected to session")
         self.logger.debug(f"Details: {details}")
         for topic in self.topics:
@@ -359,6 +361,7 @@ class WampClient(ApplicationSession):
             self.logger.info(f"Subscribed to {topic}\n  Sub id: {sub.id}")
 
     def onDisconnect(self):
+        """Subscribe to topics when connected to the session."""
         self.logger.info("Disconnected")
         if reactor.running:  # type: ignore
             reactor.stop()  # type: ignore

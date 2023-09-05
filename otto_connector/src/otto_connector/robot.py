@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: MIT
 
+"""OTTO robot class."""
+
 from .values import (
     InOrbitDataKeys,
     InOrbitModeTags,
@@ -9,12 +11,12 @@ from .values import (
 
 
 class OttoRobot:
-    """
-    Holds the data corresponding to a robot, which is updated by the WAMP client.
-    """
+    """Holds the data of a single robot instance, which is updated by the FM's WAMP client."""
 
     def __init__(self, otto_id):
         """
+        Build an OTTO robot instance.
+
         Args:
             otto_id (str): Robot ID assigned by the OTTO Fleet Manager
         """

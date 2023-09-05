@@ -4,7 +4,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-""" InOrbit <> OTTO Connector entry point """
+"""InOrbit <> OTTO Connector entry point."""
 
 import logging
 import os
@@ -39,7 +39,6 @@ def load_robot_definitions(filename):
     Returns:
         List of robot definition objects.
     """
-
     LOGGER.info(f"Loading robot definitions from file '{filename}'")
     with open(filename, "r") as stream:
         try:
@@ -64,7 +63,6 @@ def load_robot_definitions(filename):
 
 def main():
     """Start the connector and run it until stopped."""
-
     assert INORBIT_API_KEY, "'INORBIT_API_KEY' is required"
     assert FLEET_MANAGER_ADDRESS, "'FLEET_MANAGER_ADDRESS' is required"
 

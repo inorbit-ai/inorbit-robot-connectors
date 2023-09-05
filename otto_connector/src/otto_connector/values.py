@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: MIT
 
+"""Values representing robot status on both OTTO and InOrbit language."""
+
 
 class OttoMissionStatus:
     """Possible "mission_status" values published by the FM on "v2.missions" topic."""
@@ -32,6 +34,7 @@ class InOrbitModeTags:
 class InOrbitDataKeys:
     """
     Strings for data source keys.
+
     The keys must be unique per account, but may differ from one account to another depending on
     the configuration defined for each.
     """

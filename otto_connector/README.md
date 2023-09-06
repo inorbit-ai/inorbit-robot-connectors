@@ -8,9 +8,9 @@ SPDX-License-Identifier: MIT
 
 ## Overview
 
-This repository contains the [InOrbit](https://inorbit.ai/) Connector for [OTTO Motors](https://directory.inorbit.ai/connect/OTTO-Motors) AMRs. Making use of OTTO Fleet Manager's WebSocket and REST APIs as well as InOrbit's [Edge SDK](https://developer.inorbit.ai/docs#edge-sdk), it allows integrating OTTO robots with your fleet on InOrbit, unlocking interoperability.
+This repository contains the [InOrbit](https://inorbit.ai/) Edge Connector for [OTTO Motors](https://directory.inorbit.ai/connect/OTTO-Motors) AMRs. Making use of OTTO Fleet Manager's WebSocket and REST APIs as well as InOrbit's [Edge SDK](https://developer.inorbit.ai/docs#edge-sdk), the Connector allows the integration of OTTO robots with your fleet on InOrbit, unlocking interoperability.
 
-This integration expects each robot to be connected to OTTO's Fleet Manager (FM). Once the fleet is set up on this end, the Connector needs to be configured following the instructions below. A single instance of the Connector is capable of controlling multiple robots.
+This integration requires each robot to be connected to OTTO's Fleet Manager (FM). Once the connection to the FM is established, the Connector needs to be configured following the instructions below. A single instance of the Connector is capable of controlling multiple robots.
 
 ## Features
 
@@ -26,7 +26,7 @@ By integrating InOrbit's Python Edge SDK with OTTO's APIs, the Connector unlocks
   - Dispatching simple Move-to-place missions.
   - Dispatching maintenance Recipes.
 
-- Running custom shell scripts on the Robot via Custom Actions.
+- Running custom shell scripts on the robot via Custom Actions.
 - [Mission Tracking](https://developer.inorbit.ai/docs#configuring-mission-tracking) support.
 
 ## Requirements

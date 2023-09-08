@@ -15,8 +15,8 @@ jobs:
     - name: Lint with flake8
       uses: py-actions/flake8@v2
       with:
-        options: "--count --verbose --show-source --statistics"
+        max-line-length: "100"
     - name: Check with black
       uses: psf/black@stable
       with:
-        options: "--diff --check"
+        options: "--diff --check --line-length=100"

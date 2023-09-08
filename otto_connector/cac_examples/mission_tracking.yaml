@@ -1,0 +1,48 @@
+# Mission Tracking example configuration for robots connected trough the InOrbit <> OTTO Connector
+# It is recommended to fill the scope field of the definitions with a tag that groups all robots under the Connector
+
+# Mission Tracking configuration
+kind: MissionTracking
+apiVersion: v0.1
+metadata:
+  # REQUIRED, see note at the beginning of the file.
+  scope: <CONFIG_SCOPE>
+  id: all
+spec:
+  processingType:
+    - api
+  attributes:
+    mission_tracking:
+      - type: missionApi
+  stateDefinitions:
+    executing:
+      defaultStatus: OK
+    succeeded:
+      defaultStatus: OK
+    paused:
+      defaultStatus: OK
+    blocked:
+      defaultStatus: warning
+    starved:
+      defaultStatus: warning
+    failed:
+      defaultStatus: error
+    cancelling:
+      defaultStatus: error
+    cancelled:
+      defaultStatus: error
+---
+# Required Data Source to identify the data uploaded from the Connector
+kind: DataSourceDefinition
+metadata:
+  # REQUIRED, see note at the beginning of the file.
+  scope: <CONFIG_SCOPE>
+  id: mission_tracking
+apiVersion: v0.1
+spec:
+  label: Mission tracking
+  type: json
+  timeline: {}
+  source:
+    keyValue:
+      key: mission tracking

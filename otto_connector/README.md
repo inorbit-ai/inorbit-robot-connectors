@@ -6,6 +6,8 @@ SPDX-License-Identifier: MIT
 
 # OTTO <> InOrbit Connector
 
+![OTTO <> InOrbit Connector](../assets/otto_inorbit_connector_banner.png)
+
 ## Overview
 
 This repository contains the [InOrbit](https://inorbit.ai/) Edge Connector for [OTTO Motors](https://directory.inorbit.ai/connect/OTTO-Motors) AMRs. Making use of OTTO Fleet Manager's WebSocket and REST APIs as well as InOrbit's [Edge SDK](https://developer.inorbit.ai/docs#edge-sdk), the Connector allows the integration of OTTO robots with your fleet on InOrbit, unlocking interoperability.

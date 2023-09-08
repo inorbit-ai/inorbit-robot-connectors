@@ -40,7 +40,6 @@ def load_robot_definitions(filename):
     Returns:
         List of robot definition objects.
     """
-
     LOGGER.info(f"Loading robot definitions from file '{filename}'")
     with open(filename, "r") as stream:
         try:

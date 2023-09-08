@@ -105,3 +105,5 @@ to apply the configuration needed to unlock the full potential of the OTTO <> In
 ## Contributing
 
 Any contribution that you make to this repository will be under the MIT license, as dictated by that [license](https://opensource.org/licenses/MIT).
+
+![Powered by InOrbit](../assets/inorbit_github_footer.png)

@@ -42,3 +42,6 @@ class OttoRobot:
             InOrbitDataKeys.SYSTEM_STATE: None,  # string
             InOrbitDataKeys.SUBSYSTEM_STATE: None,  # string
         }
+
+        # Save the last published key-values to avoid publishing the same values again.
+        self.last_published_key_values = {}

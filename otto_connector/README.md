@@ -70,8 +70,8 @@ The entry point is `src/otto_connector.py`:
 ```sh
 # Add the environment variables, activate the virtual environment and run the Connector
 export $(grep -v '^#' config/.env | xargs) && \
-source ./venv/bin/activate && \
-python src/otto_connector.py'
+source .src/venv/bin/activate && \
+python src/otto_connector.py
 ```
 
 It is recommended to run the Connector as a service. An example [systemd](https://www.freedesktop.org/software/systemd/man/systemd.service.html) service unit configuration is provided at [`systemd/otto-connector.service`](systemd/otto-connector.service).

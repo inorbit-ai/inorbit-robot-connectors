@@ -102,7 +102,7 @@ class WampClient(ApplicationSession):
 
             robot: OttoRobot = self.robots[inorbit_id]
             charging_status = str(battery.get("charging_status"))
-            robot.key_values[InOrbitDataKeys.MISSION_STATUS] = (
+            robot.telemetry_key_values[InOrbitDataKeys.MISSION_STATUS] = (
                 InOrbitModeTags.CHARGING
                 if charging_status.lower() == "charging"
                 else InOrbitModeTags.IDLE
@@ -110,7 +110,7 @@ class WampClient(ApplicationSession):
 
             percentage = battery.get("percentage")
             if percentage:
-                robot.key_values[InOrbitDataKeys.BATTERY_PERCENT] = percentage
+                robot.telemetry_key_values[InOrbitDataKeys.BATTERY_PERCENT] = percentage
 
             # Update the proxy dictionary to notify the manager
             self.robots[inorbit_id] = robot
@@ -171,11 +171,11 @@ class WampClient(ApplicationSession):
             ):
                 return
 
-            robot.key_values[InOrbitDataKeys.SYSTEM_STATE] = state.get("system_state")
-            robot.key_values[InOrbitDataKeys.SUBSYSTEM_STATE] = state.get("sub_system_state")
+            robot.event_key_values[InOrbitDataKeys.SYSTEM_STATE] = state.get("system_state")
+            robot.event_key_values[InOrbitDataKeys.SUBSYSTEM_STATE] = state.get("sub_system_state")
 
             # Send online status on a separate key value
-            robot.key_values[InOrbitDataKeys.ONLINE_STATUS] = state.get("system_state") != "OFFLINE"
+            robot.event_key_values[InOrbitDataKeys.ONLINE_STATUS] = state.get("system_state") != "OFFLINE"
 
             # Update the proxy dictionary to notify the manager
             self.robots[inorbit_id] = robot
@@ -196,7 +196,7 @@ class WampClient(ApplicationSession):
                 )
                 return
             robot: OttoRobot = self.robots[inorbit_id]
-            robot.key_values[InOrbitDataKeys.LAST_PLACE] = {
+            robot.event_key_values[InOrbitDataKeys.LAST_PLACE] = {
                 "name": place.get("name"),
                 "id": place.get("id"),
             }
@@ -309,10 +309,10 @@ class WampClient(ApplicationSession):
                 mission_values["inProgress"] = True
                 # Update mode tag
                 # The `charging` mode is handled by the battery event
-                robot.key_values[InOrbitDataKeys.MISSION_STATUS] = InOrbitModeTags.MISSION
+                robot.telemetry_key_values[InOrbitDataKeys.MISSION_STATUS] = InOrbitModeTags.MISSION
             else:
                 mission_values["inProgress"] = False
-                robot.key_values[InOrbitDataKeys.MISSION_STATUS] = InOrbitModeTags.IDLE
+                robot.telemetry_key_values[InOrbitDataKeys.MISSION_STATUS] = InOrbitModeTags.IDLE
 
             # Query the amount of tasks this mission currently has. This used for computing
             # mission completion.
@@ -342,7 +342,7 @@ class WampClient(ApplicationSession):
             self.logger.debug(f"Mission tracking values: {mission_values}")
 
             # Update the robot's current mission values
-            robot.key_values[InOrbitDataKeys.MISSION_TRACKING] = mission_values
+            robot.event_key_values[InOrbitDataKeys.MISSION_TRACKING] = mission_values
             # Update the proxy dictionary to notify the manager
             self.robots[inorbit_id] = robot
 

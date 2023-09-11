@@ -32,10 +32,13 @@ class OttoRobot:
         self.path = []
 
         # Supported key-values.
-        # `None` values are not uploaded.
-        self.key_values = {
+        # NOTE(@b-Tomas): Separation between telemetry and event key-values is made because the
+        # edge-sdk does not support different sampling modes yet (v1.11.1)
+        self.telemetry_key_values = {
             InOrbitDataKeys.BATTERY_PERCENT: None,  # In range 0..1
             InOrbitDataKeys.MISSION_STATUS: InOrbitModeTags.ERROR,  # Start in ERROR mode
+        }
+        self.event_key_values = {
             InOrbitDataKeys.LAST_PLACE: None,  # {"name": "string", "id": "string"},
             InOrbitDataKeys.MISSION_TRACKING: {},  # Mission Tracking data
             InOrbitDataKeys.ONLINE_STATUS: False,  # Consider offline at startup until FM launches
@@ -43,5 +46,5 @@ class OttoRobot:
             InOrbitDataKeys.SUBSYSTEM_STATE: None,  # string
         }
 
-        # Save the last published key-values to avoid publishing the same values again.
-        self.last_published_key_values = {}
+        # Save the last published event key-values to avoid publishing them every time.
+        self.last_published_event_values = {}

@@ -175,7 +175,9 @@ class WampClient(ApplicationSession):
             robot.event_key_values[InOrbitDataKeys.SUBSYSTEM_STATE] = state.get("sub_system_state")
 
             # Send online status on a separate key value
-            robot.event_key_values[InOrbitDataKeys.ONLINE_STATUS] = state.get("system_state") != "OFFLINE"
+            robot.event_key_values[InOrbitDataKeys.ONLINE_STATUS] = (
+                state.get("system_state") != "OFFLINE"
+            )
 
             # Update the proxy dictionary to notify the manager
             self.robots[inorbit_id] = robot

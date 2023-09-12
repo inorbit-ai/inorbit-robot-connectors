@@ -306,6 +306,8 @@ class OTTOConnector:
 
                 # NOTE(@b-Tomas): Separation between telemetry and event key-values is made because
                 # the edge-sdk does not support different sampling modes yet (v1.11.1)
+                # TODO(@b-Tomas): Handle this on the edge-sdk instead, in order to configure
+                # different QoS for events and telemetry data sent over MQTT.
 
                 # Add telemetry key-values filtering out None values
                 telemetry_key_values = {

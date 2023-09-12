@@ -150,7 +150,12 @@ class WampClient(ApplicationSession):
         self.robots[inorbit_id] = robot
 
     def _handle_states_event(self, topic, args, message):
-        """Update robot states."""
+        """
+        Update robot states.
+        `message` can be either "added", "removed" or "all".
+        When an "added" message is received, the state record is added to the robot's state, and
+        gets removed on "removed".
+        """
         states = args[0]
         for state in states:
             otto_id = state["robot"]
@@ -162,17 +167,26 @@ class WampClient(ApplicationSession):
                 )
                 return
             robot: OttoRobot = self.robots[inorbit_id]
-            self.logger.debug(f"Received state: {state}")
-            # The following states are not valid, ignore them
-            if (
-                not state.get("system_state")
-                or not state.get("sub_system_state")
-                or state.get(InOrbitDataKeys.SUBSYSTEM_STATE) == "NOT_CLEAR_TO_PROCEED"
-            ):
-                return
 
-            robot.event_key_values[InOrbitDataKeys.SYSTEM_STATE] = state.get("system_state")
-            robot.event_key_values[InOrbitDataKeys.SUBSYSTEM_STATE] = state.get("sub_system_state")
+            system_state_full = robot.event_key_values[InOrbitDataKeys.SYSTEM_STATE_FULL].copy()
+            sub_system_state = robot.event_key_values[InOrbitDataKeys.SUBSYSTEM_STATE].copy()
+
+            if message == "added" or message == "all":
+                # Add a state  to the robot's raw state dictionary
+                system_state_full[state["id"]] = state
+                # Add parsed subsystem state to the subsystem state list
+                if state.get("sub_system_state") not in sub_system_state:
+                    sub_system_state.append(state["sub_system_state"])
+
+            elif message == "removed":
+                # Remove subsystem state to the subsystem state set
+                sub_system_state = system_state_full.get(state["id"])
+                sub_system_state.remove(sub_system_state)
+                # Remove state record from the robot's state dictionary
+                system_state_full.pop(state["id"], None)
+
+            robot.event_key_values[InOrbitDataKeys.SYSTEM_STATE_FULL] = system_state_full
+            robot.event_key_values[InOrbitDataKeys.SUBSYSTEM_STATE] = sub_system_state
 
             # Send online status on a separate key value
             robot.event_key_values[InOrbitDataKeys.ONLINE_STATUS] = (

@@ -213,7 +213,7 @@ class OTTOConnector:
                 self.http_client.resume_autonomy(otto_id)
             elif re.search("_mission$", msg):
                 # Get current mission ID from the Mission Tracking data
-                mission_id = robot.key_values.get(InOrbitDataKeys.MISSION_TRACKING, {}).get(
+                mission_id = robot.event_key_values.get(InOrbitDataKeys.MISSION_TRACKING, {}).get(
                     "missionId"
                 )
                 if not mission_id:
@@ -300,12 +300,33 @@ class OTTOConnector:
 
                 # Publish path data
                 path = robot.path
-                self.logger.debug(f"Publishing path: {path}")
+                if path:
+                    self.logger.debug(f"Publishing path: {path}")
                 robot_sess.publish_path(path)
 
-                # Filter out None values
-                key_values = {k: v for k, v in robot.key_values.items() if v is not None}
+                # NOTE(@b-Tomas): Separation between telemetry and event key-values is made because
+                # the edge-sdk does not support different sampling modes yet (v1.11.1)
+                # TODO(@b-Tomas): Handle this on the edge-sdk instead, in order to configure
+                # different QoS for events and telemetry data sent over MQTT.
 
+                # Add telemetry key-values filtering out None values
+                telemetry_key_values = {
+                    k: v for k, v in robot.telemetry_key_values.items() if v is not None
+                }
+
+                # Pick the event key-value pairs that have changed since the last update
+                event_key_values = {
+                    k: v
+                    for k, v in robot.event_key_values.items()
+                    if v != robot.last_published_event_values.get(k)
+                }
+
+                # Save last published event key-values and update the robots proxy dict
+                for k, v in event_key_values.items():
+                    robot.last_published_event_values[k] = v
+                self.robots[robot_id] = robot
+
+                key_values = {**telemetry_key_values, **event_key_values}
                 self.logger.debug(f"Publishing kv: {key_values}")
                 robot_sess.publish_key_values(key_values)
 

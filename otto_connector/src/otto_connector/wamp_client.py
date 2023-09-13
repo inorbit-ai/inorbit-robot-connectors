@@ -182,9 +182,10 @@ class WampClient(ApplicationSession):
                     sub_system_state.append(state["sub_system_state"])
 
             elif message == "removed":
+                # Find the subsystem state that shall be removed
+                r_state = system_state_full.get(state["id"], {}).get("sub_system_state")
                 # Remove subsystem state from the subsystem states set
-                sub_system_state = system_state_full.get(state["id"])
-                sub_system_state.remove(sub_system_state)
+                sub_system_state.remove(r_state)
                 # Remove state record from the robot's state dictionary
                 system_state_full.pop(state["id"], None)
 

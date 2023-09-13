@@ -194,9 +194,10 @@ class WampClient(ApplicationSession):
             robot.event_key_values[InOrbitDataKeys.SUBSYSTEM_STATE] = sub_system_state
 
             # Send online status on a separate key value
-            # The FM explicitly sends NO_HEARTBEAT as subsystem state (and OFFLINE as system state) if the robot is offline, and removes it when it's online
+            # The FM explicitly sends NO_HEARTBEAT as subsystem state (and OFFLINE as system state)
+            # if the robot is offline, and removes it when it is online
             robot.event_key_values[InOrbitDataKeys.ONLINE_STATUS] = (
-                not "NO_HEARTBEAT" in sub_system_state
+                "NO_HEARTBEAT" not in sub_system_state
             )
 
             # Update the proxy dictionary to notify the manager

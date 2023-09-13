@@ -173,18 +173,20 @@ class WampClient(ApplicationSession):
 
             if message == "added" or message == "all":
                 # Add a state  to the robot's raw state dictionary
+                # Use the record ID as key so that it can be removed later
                 system_state_full[state["id"]] = state
-                # Add parsed subsystem state to the subsystem state list
+                # Add parsed subsystem states to the subsystem states list
                 if state.get("sub_system_state") not in sub_system_state:
                     sub_system_state.append(state["sub_system_state"])
 
             elif message == "removed":
-                # Remove subsystem state to the subsystem state set
+                # Remove subsystem state from the subsystem states set
                 sub_system_state = system_state_full.get(state["id"])
                 sub_system_state.remove(sub_system_state)
                 # Remove state record from the robot's state dictionary
                 system_state_full.pop(state["id"], None)
 
+            # Update the robot proxy object
             robot.event_key_values[InOrbitDataKeys.SYSTEM_STATE_FULL] = system_state_full
             robot.event_key_values[InOrbitDataKeys.SUBSYSTEM_STATE] = sub_system_state
 

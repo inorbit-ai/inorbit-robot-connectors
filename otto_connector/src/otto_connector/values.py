@@ -44,5 +44,5 @@ class InOrbitDataKeys:
     LAST_PLACE = "last_place"
     MISSION_TRACKING = "mission_tracking"
     ONLINE_STATUS = "online"
-    SYSTEM_STATE_FULL = "system_state_full"
+    ROBOT_STATE_FULL = "system_state_full"
     SUBSYSTEM_STATE = "sub_system_state"

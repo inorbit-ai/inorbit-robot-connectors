@@ -42,7 +42,7 @@ class OttoRobot:
             InOrbitDataKeys.LAST_PLACE: None,  # {"name": "string", "id": "string"},
             InOrbitDataKeys.MISSION_TRACKING: {},  # Mission Tracking data
             InOrbitDataKeys.ONLINE_STATUS: False,  # Consider offline at startup until FM launches
-            InOrbitDataKeys.SYSTEM_STATE_FULL: {},  # Current state records. Dict of dict records
+            InOrbitDataKeys.ROBOT_STATE_FULL: {},  # Current state records. Dict of dict records
             InOrbitDataKeys.SUBSYSTEM_STATE: [],  # List of unrepeated strings
         }
 

@@ -170,7 +170,7 @@ class WampClient(ApplicationSession):
 
             # Shallow copy dictionaries and lists to be able to add and remove elements
             # TODO(@b-Tomas): Find a better way to handle shared data
-            system_state_full = robot.event_key_values[InOrbitDataKeys.SYSTEM_STATE_FULL].copy()
+            system_state_full = robot.event_key_values[InOrbitDataKeys.ROBOT_STATE_FULL].copy()
             sub_system_state = robot.event_key_values[InOrbitDataKeys.SUBSYSTEM_STATE].copy()
 
             if message == "added" or message == "all":
@@ -190,7 +190,7 @@ class WampClient(ApplicationSession):
                 system_state_full.pop(state["id"], None)
 
             # Update the robot proxy object's reference to the states
-            robot.event_key_values[InOrbitDataKeys.SYSTEM_STATE_FULL] = system_state_full
+            robot.event_key_values[InOrbitDataKeys.ROBOT_STATE_FULL] = system_state_full
             robot.event_key_values[InOrbitDataKeys.SUBSYSTEM_STATE] = sub_system_state
 
             # Send online status on a separate key value

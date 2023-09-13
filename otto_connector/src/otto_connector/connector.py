@@ -131,12 +131,12 @@ class OTTOConnector:
         url = f"wss://{fleet_manager_address}/api/fleet/wamp/"
         cert_options = ssl.CertificateOptions(verify=False)
         self.topics = (
-            # *[f"v2.stream.robots.{robot.otto_id}.pose" for robot in self.robots.values()],
-            # *[f"v2.stream.robots.{robot.otto_id}.plan" for robot in self.robots.values()],
-            # "v2.robots.batteries",
-            # "v2.robots.places",
+            *[f"v2.stream.robots.{robot.otto_id}.pose" for robot in self.robots.values()],
+            *[f"v2.stream.robots.{robot.otto_id}.plan" for robot in self.robots.values()],
+            "v2.robots.batteries",
+            "v2.robots.places",
             "v2.robots.states",
-            # "v2.missions",
+            "v2.missions",
         )
         self.runner = ApplicationRunner(
             url,

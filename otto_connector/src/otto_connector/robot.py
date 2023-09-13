@@ -42,8 +42,8 @@ class OttoRobot:
             InOrbitDataKeys.LAST_PLACE: None,  # {"name": "string", "id": "string"},
             InOrbitDataKeys.MISSION_TRACKING: {},  # Mission Tracking data
             InOrbitDataKeys.ONLINE_STATUS: False,  # Consider offline at startup until FM launches
-            InOrbitDataKeys.ROBOT_STATE_FULL: {},  # Current state records. Dict of dict records
-            InOrbitDataKeys.SUBSYSTEM_STATE: [],  # List of unrepeated strings
+            InOrbitDataKeys.ROBOT_STATE_FULL: {},  # Current state records. Dict of dict full state records
+            InOrbitDataKeys.SUBSYSTEM_STATE: [],  # List of current `sub_system_state` values (unrepeated)
         }
 
         # Save the last published event key-values to avoid publishing them every time.

@@ -177,14 +177,14 @@ class WampClient(ApplicationSession):
                 # Add a state to the robot's raw state dictionary
                 # Use the record ID as key so that it can be removed later
                 system_state_full[state["id"]] = state
-                # Add parsed subsystem states to the subsystem states list
+                # Add sub-system state to the sub-system states list
                 if state.get("sub_system_state") not in sub_system_state:
                     sub_system_state.append(state["sub_system_state"])
 
             elif message == "removed":
                 # Find the subsystem state that shall be removed
                 r_state = system_state_full.get(state["id"], {}).get("sub_system_state")
-                # Remove subsystem state from the subsystem states set
+                # Remove subsystem state from the subsystem states list
                 sub_system_state.remove(r_state)
                 # Remove state record from the robot's state dictionary
                 system_state_full.pop(state["id"], None)

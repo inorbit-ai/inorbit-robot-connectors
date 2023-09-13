@@ -174,7 +174,7 @@ class WampClient(ApplicationSession):
             sub_system_state = robot.event_key_values[InOrbitDataKeys.SUBSYSTEM_STATE].copy()
 
             if message == "added" or message == "all":
-                # Add a state  to the robot's raw state dictionary
+                # Add a state to the robot's raw state dictionary
                 # Use the record ID as key so that it can be removed later
                 system_state_full[state["id"]] = state
                 # Add parsed subsystem states to the subsystem states list

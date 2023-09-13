@@ -168,6 +168,8 @@ class WampClient(ApplicationSession):
                 return
             robot: OttoRobot = self.robots[inorbit_id]
 
+            # Shallow copy dictionaries and lists to be able to add and remove elements
+            # TODO(@b-Tomas): Find a better way to handle shared data
             system_state_full = robot.event_key_values[InOrbitDataKeys.SYSTEM_STATE_FULL].copy()
             sub_system_state = robot.event_key_values[InOrbitDataKeys.SUBSYSTEM_STATE].copy()
 
@@ -186,7 +188,7 @@ class WampClient(ApplicationSession):
                 # Remove state record from the robot's state dictionary
                 system_state_full.pop(state["id"], None)
 
-            # Update the robot proxy object
+            # Update the robot proxy object's reference to the states
             robot.event_key_values[InOrbitDataKeys.SYSTEM_STATE_FULL] = system_state_full
             robot.event_key_values[InOrbitDataKeys.SUBSYSTEM_STATE] = sub_system_state
 

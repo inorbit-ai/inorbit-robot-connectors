@@ -53,6 +53,6 @@ class OttoRobot:
 
         # Save the last published event key-values to avoid publishing them every time.
         self.last_published_event_values = {}
-        
+
         # Currently active state records. Dictionary of full state record dictionaries
         self.current_robot_status_raw = {}

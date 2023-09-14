@@ -156,6 +156,14 @@ class WampClient(ApplicationSession):
         When an "added" message is received, the state record is added to the robot's state, and
         gets removed on "removed".
         """
+
+        def create_state_pair(record):
+            """Create a system_state: sub_system_state pair from a state record."""
+            return {
+                "system_state": record.get("system_state"),
+                "sub_system_state": record.get("sub_system_state"),
+            }
+
         states = args[0]
         for state in states:
             otto_id = state["robot"]
@@ -170,26 +178,37 @@ class WampClient(ApplicationSession):
 
             # Shallow copy dictionaries and lists to be able to add and remove elements
             # TODO(@b-Tomas): Find a better way to handle shared data
+            robot_state_raw = robot.current_robot_status_raw.copy()
             system_state_full = robot.event_key_values[InOrbitDataKeys.ROBOT_STATE_FULL].copy()
             sub_system_state = robot.event_key_values[InOrbitDataKeys.SUBSYSTEM_STATE].copy()
 
             if message == "added" or message == "all":
                 # Add a state to the robot's raw state dictionary
                 # Use the record ID as key so that it can be removed later
-                system_state_full[state["id"]] = state
+                robot_state_raw[state["id"]] = state
                 # Add sub-system state to the sub-system states list
-                if state.get("sub_system_state") not in sub_system_state:
+                sub_state = state.get("sub_system_state")
+                if sub_state not in sub_system_state:
                     sub_system_state.append(state["sub_system_state"])
+                # Add system_state: sub_system_state pairs to their list
+                state_pair = create_state_pair(state)
+                if state_pair not in system_state_full:
+                    system_state_full.append(state_pair)
 
             elif message == "removed":
-                # Find the subsystem state that shall be removed
-                r_state = system_state_full.get(state["id"], {}).get("sub_system_state")
+                # Find the state that should be removed
+                _state = robot_state_raw.get(state["id"], {})
+                sub_state = _state.get("sub_system_state")
+                state_pair = create_state_pair(_state)
                 # Remove subsystem state from the subsystem states list
-                sub_system_state.remove(r_state)
+                sub_system_state.remove(sub_state)
+                # Remove system_state: sub_system_state pair from the system state list
+                system_state_full.remove(state_pair)
                 # Remove state record from the robot's state dictionary
-                system_state_full.pop(state["id"], None)
+                robot_state_raw.pop(state["id"], None)
 
             # Update the robot proxy object's reference to the states
+            robot.current_robot_status_raw = robot_state_raw
             robot.event_key_values[InOrbitDataKeys.ROBOT_STATE_FULL] = system_state_full
             robot.event_key_values[InOrbitDataKeys.SUBSYSTEM_STATE] = sub_system_state
 

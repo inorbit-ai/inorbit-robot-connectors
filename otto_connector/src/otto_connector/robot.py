@@ -45,11 +45,14 @@ class OttoRobot:
             InOrbitDataKeys.MISSION_TRACKING: {},
             # Consider offline at startup until FM launches
             InOrbitDataKeys.ONLINE_STATUS: False,
-            # Currently active state records. Dictionary of full state record dictionaries
-            InOrbitDataKeys.ROBOT_STATE_FULL: {},
+            # List of { system_state: subsystem_state } values
+            InOrbitDataKeys.ROBOT_STATE_FULL: [],
             # List of current `sub_system_state` values (unrepeated)
             InOrbitDataKeys.SUBSYSTEM_STATE: [],
         }
 
         # Save the last published event key-values to avoid publishing them every time.
         self.last_published_event_values = {}
+        
+        # Currently active state records. Dictionary of full state record dictionaries
+        self.current_robot_status_raw = {}

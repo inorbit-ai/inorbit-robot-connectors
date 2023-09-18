@@ -310,6 +310,26 @@ class HTTPClient:
         )
         return self._evaluate_jsonrpc_response(res, "setRobotMaintenanceMode")
 
+    def clear_payload(self, otto_id):
+        """Clear the robot's payload if any.
+
+        Args:
+            mission_id (str): ID of the mission to be paused.
+
+        Returns:
+            Whether the command was dispatched successfully.
+        """
+        res = self._post(
+            self.fleet_url + "/v2/operations",
+            {
+                "id": uuid.uuid4().int,
+                "jsonrpc": "2.0",
+                "method": "setRobotPayload",
+                "params": {"id": otto_id, "payload_id": None},
+            },
+        )
+        return self._evaluate_jsonrpc_response(res, "setRobotPayload")
+
     def send_recipe(self, otto_id, recipe_id):
         """Request a robot to dispatch a recipe.
 
@@ -337,6 +357,27 @@ class HTTPClient:
             },
         )
         return self._evaluate_jsonrpc_response(res, "sendRobotRecipe")
+
+    def set_availability(self, otto_id, is_available):
+        """Set the robot as available / unavailable.
+
+        Args:
+            mission_id (str): ID of the mission to be paused.
+            is_available (bool): Whether the robot is available or not.
+
+        Returns:
+            Whether the command was dispatched successfully.
+        """
+        res = self._post(
+            self.fleet_url + "/v2/operations",
+            {
+                "id": uuid.uuid4().int,
+                "jsonrpc": "2.0",
+                "method": "setRobotAvailability",
+                "params": {"id": otto_id, "available": is_available},
+            },
+        )
+        return self._evaluate_jsonrpc_response(res, "setRobotAvailability")
 
     def get_tasks(self, params=None):
         """Query a list of tasks with the specified parameters.

@@ -49,6 +49,7 @@ class OttoRobot:
             InOrbitDataKeys.ROBOT_STATES: [],
             # List of current `sub_system_state` values (unrepeated)
             InOrbitDataKeys.SUBSYSTEM_STATES: [],
+            InOrbitDataKeys.PAYLOAD_ID: None,  # string,
         }
 
         # Save the last published event key-values to avoid publishing them every time.

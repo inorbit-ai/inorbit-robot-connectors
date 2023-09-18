@@ -79,6 +79,10 @@ class WampClient(ApplicationSession):
         elif topic == "v2.robots.states":
             self._handle_states_event(topic, args, message)
 
+        # Batteries data topic
+        elif topic == "v2.robots.payloads":
+            self._handle_payloads_event(topic, args, message)
+
         # Mission creation and updates
         elif topic == "v2.missions":
             self._handle_missions_event(topic, args, message)
@@ -152,15 +156,14 @@ class WampClient(ApplicationSession):
     def _handle_states_event(self, topic, args, message):
         """
         Update robot states.
+
         `message` can be either "added", "removed" or "all".
         When an "added" message is received, the state record is added to the robot's state, and
         gets removed on "removed".
         """
 
         def create_state_pair(record):
-            """
-            Create a dictionary with system_state and sub_system_state keys from a state record.
-            """
+            """Create a dict with system_state and sub_system_state keys from a state record."""
             return {
                 "system_state": record.get("system_state"),
                 "sub_system_state": record.get("sub_system_state"),
@@ -244,6 +247,27 @@ class WampClient(ApplicationSession):
                 "name": place.get("name"),
                 "id": place.get("id"),
             }
+
+            # Update the proxy dictionary to notify the manager
+            self.robots[inorbit_id] = robot
+
+    def _handle_payloads_event(self, topic, args, message):
+        """Update robot's current place."""
+        # TODO(@Tom743): Check schema when having more robots, same situation as in
+        # `_handle_batteries_event()`.
+
+        payloads = args[0]
+        for payload in payloads:
+            otto_id = payload["robot"]
+            inorbit_id = self.id_index.get(otto_id)
+            if not inorbit_id:
+                self.logger.warning(
+                    f"Received payload data for robot {otto_id} "
+                    "which is not registered in the connector"
+                )
+                return
+            robot: OttoRobot = self.robots[inorbit_id]
+            robot.key_values[InOrbitDataKeys.PAYLOAD_ID] = payload.get("name", "")
 
             # Update the proxy dictionary to notify the manager
             self.robots[inorbit_id] = robot

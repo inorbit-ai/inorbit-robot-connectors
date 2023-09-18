@@ -158,7 +158,9 @@ class WampClient(ApplicationSession):
         """
 
         def create_state_pair(record):
-            """Create a dictionary with system_state and sub_system_state keys from a state record."""
+            """
+            Create a dictionary with system_state and sub_system_state keys from a state record.
+            """
             return {
                 "system_state": record.get("system_state"),
                 "sub_system_state": record.get("sub_system_state"),
@@ -179,8 +181,8 @@ class WampClient(ApplicationSession):
             # Shallow copy dictionaries and lists to be able to add and remove elements
             # TODO(@b-Tomas): Find a better way to handle shared data
             robot_state_raw = robot.current_robot_status_raw.copy()
-            system_state_full = robot.event_key_values[InOrbitDataKeys.ROBOT_STATE_FULL].copy()
-            sub_system_state = robot.event_key_values[InOrbitDataKeys.SUBSYSTEM_STATE].copy()
+            last_robot_states = robot.event_key_values[InOrbitDataKeys.ROBOT_STATES].copy()
+            last_sub_system_states = robot.event_key_values[InOrbitDataKeys.SUBSYSTEM_STATES].copy()
 
             if message == "added" or message == "all":
                 # Add a state to the robot's raw state dictionary
@@ -188,12 +190,12 @@ class WampClient(ApplicationSession):
                 robot_state_raw[state["id"]] = state
                 # Add sub-system state to the sub-system states list
                 sub_state = state.get("sub_system_state")
-                if sub_state not in sub_system_state:
-                    sub_system_state.append(state["sub_system_state"])
+                if sub_state not in last_sub_system_states:
+                    last_sub_system_states.append(state["sub_system_state"])
                 # Add a new dictionary with system_state and sub_system_state to the list
                 state_pair = create_state_pair(state)
-                if state_pair not in system_state_full:
-                    system_state_full.append(state_pair)
+                if state_pair not in last_robot_states:
+                    last_robot_states.append(state_pair)
 
             elif message == "removed":
                 # Find the state that should be removed
@@ -201,22 +203,22 @@ class WampClient(ApplicationSession):
                 sub_state = _state.get("sub_system_state")
                 state_pair = create_state_pair(_state)
                 # Remove subsystem state from the subsystem states list
-                sub_system_state.remove(sub_state)
+                last_sub_system_states.remove(sub_state)
                 # Remove system_state: sub_system_state pair from the system state list
-                system_state_full.remove(state_pair)
+                last_robot_states.remove(state_pair)
                 # Remove state record from the robot's state dictionary
                 robot_state_raw.pop(state["id"], None)
 
             # Update the robot proxy object's reference to the states
             robot.current_robot_status_raw = robot_state_raw
-            robot.event_key_values[InOrbitDataKeys.ROBOT_STATE_FULL] = system_state_full
-            robot.event_key_values[InOrbitDataKeys.SUBSYSTEM_STATE] = sub_system_state
+            robot.event_key_values[InOrbitDataKeys.ROBOT_STATES] = last_robot_states
+            robot.event_key_values[InOrbitDataKeys.SUBSYSTEM_STATES] = last_sub_system_states
 
             # Send online status on a separate key value
             # The FM explicitly sends NO_HEARTBEAT as subsystem state (and OFFLINE as system state)
             # if the robot is offline, and removes it when it is online
             robot.event_key_values[InOrbitDataKeys.ONLINE_STATUS] = (
-                "NO_HEARTBEAT" not in sub_system_state
+                "NO_HEARTBEAT" not in last_sub_system_states
             )
 
             # Update the proxy dictionary to notify the manager

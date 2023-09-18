@@ -150,7 +150,22 @@ class WampClient(ApplicationSession):
         self.robots[inorbit_id] = robot
 
     def _handle_states_event(self, topic, args, message):
-        """Update robot states."""
+        """
+        Update robot states.
+        `message` can be either "added", "removed" or "all".
+        When an "added" message is received, the state record is added to the robot's state, and
+        gets removed on "removed".
+        """
+
+        def create_state_pair(record):
+            """
+            Create a dictionary with system_state and sub_system_state keys from a state record.
+            """
+            return {
+                "system_state": record.get("system_state"),
+                "sub_system_state": record.get("sub_system_state"),
+            }
+
         states = args[0]
         for state in states:
             otto_id = state["robot"]
@@ -162,21 +177,48 @@ class WampClient(ApplicationSession):
                 )
                 return
             robot: OttoRobot = self.robots[inorbit_id]
-            self.logger.debug(f"Received state: {state}")
-            # The following states are not valid, ignore them
-            if (
-                not state.get("system_state")
-                or not state.get("sub_system_state")
-                or state.get(InOrbitDataKeys.SUBSYSTEM_STATE) == "NOT_CLEAR_TO_PROCEED"
-            ):
-                return
 
-            robot.event_key_values[InOrbitDataKeys.SYSTEM_STATE] = state.get("system_state")
-            robot.event_key_values[InOrbitDataKeys.SUBSYSTEM_STATE] = state.get("sub_system_state")
+            # Shallow copy dictionaries and lists to be able to add and remove elements
+            # TODO(@b-Tomas): Find a better way to handle shared data
+            robot_state_raw = robot.current_robot_status_raw.copy()
+            last_robot_states = robot.event_key_values[InOrbitDataKeys.ROBOT_STATES].copy()
+            last_sub_system_states = robot.event_key_values[InOrbitDataKeys.SUBSYSTEM_STATES].copy()
+
+            if message == "added" or message == "all":
+                # Add a state to the robot's raw state dictionary
+                # Use the record ID as key so that it can be removed later
+                robot_state_raw[state["id"]] = state
+                # Add sub-system state to the sub-system states list
+                sub_state = state.get("sub_system_state")
+                if sub_state not in last_sub_system_states:
+                    last_sub_system_states.append(state["sub_system_state"])
+                # Add a new dictionary with system_state and sub_system_state to the list
+                state_pair = create_state_pair(state)
+                if state_pair not in last_robot_states:
+                    last_robot_states.append(state_pair)
+
+            elif message == "removed":
+                # Find the state that should be removed
+                _state = robot_state_raw.get(state["id"], {})
+                sub_state = _state.get("sub_system_state")
+                state_pair = create_state_pair(_state)
+                # Remove subsystem state from the subsystem states list
+                last_sub_system_states.remove(sub_state)
+                # Remove system_state: sub_system_state pair from the system state list
+                last_robot_states.remove(state_pair)
+                # Remove state record from the robot's state dictionary
+                robot_state_raw.pop(state["id"], None)
+
+            # Update the robot proxy object's reference to the states
+            robot.current_robot_status_raw = robot_state_raw
+            robot.event_key_values[InOrbitDataKeys.ROBOT_STATES] = last_robot_states
+            robot.event_key_values[InOrbitDataKeys.SUBSYSTEM_STATES] = last_sub_system_states
 
             # Send online status on a separate key value
+            # The FM explicitly sends NO_HEARTBEAT as subsystem state (and OFFLINE as system state)
+            # if the robot is offline, and removes it when it is online
             robot.event_key_values[InOrbitDataKeys.ONLINE_STATUS] = (
-                state.get("system_state") != "OFFLINE"
+                "NO_HEARTBEAT" not in last_sub_system_states
             )
 
             # Update the proxy dictionary to notify the manager

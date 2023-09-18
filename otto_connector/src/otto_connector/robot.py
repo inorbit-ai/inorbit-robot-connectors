@@ -39,12 +39,21 @@ class OttoRobot:
             InOrbitDataKeys.MISSION_STATUS: InOrbitModeTags.ERROR,  # Start in ERROR mode
         }
         self.event_key_values = {
-            InOrbitDataKeys.LAST_PLACE: None,  # {"name": "string", "id": "string"},
-            InOrbitDataKeys.MISSION_TRACKING: {},  # Mission Tracking data
-            InOrbitDataKeys.ONLINE_STATUS: False,  # Consider offline at startup until FM launches
-            InOrbitDataKeys.SYSTEM_STATE: None,  # string
-            InOrbitDataKeys.SUBSYSTEM_STATE: None,  # string
+            # {"name": "string", "id": "string"},
+            InOrbitDataKeys.LAST_PLACE: None,
+            # Mission Tracking data
+            InOrbitDataKeys.MISSION_TRACKING: {},
+            # Consider offline at startup until FM launches
+            InOrbitDataKeys.ONLINE_STATUS: False,
+            # List of { system_state: <state>, subsystem_state: <sub_state> } values
+            InOrbitDataKeys.ROBOT_STATES: [],
+            # List of current `sub_system_state` values (unrepeated)
+            InOrbitDataKeys.SUBSYSTEM_STATES: [],
         }
 
         # Save the last published event key-values to avoid publishing them every time.
         self.last_published_event_values = {}
+
+        # Dictionary of currently active state records of a robot as published by the FM, indexed by
+        # record id.
+        self.current_robot_status_raw = {}

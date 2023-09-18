@@ -158,7 +158,7 @@ class WampClient(ApplicationSession):
         """
 
         def create_state_pair(record):
-            """Create a system_state: sub_system_state pair from a state record."""
+            """Create a dictionary with system_state and sub_system_state keys from a state record."""
             return {
                 "system_state": record.get("system_state"),
                 "sub_system_state": record.get("sub_system_state"),
@@ -190,7 +190,7 @@ class WampClient(ApplicationSession):
                 sub_state = state.get("sub_system_state")
                 if sub_state not in sub_system_state:
                     sub_system_state.append(state["sub_system_state"])
-                # Add system_state: sub_system_state pairs to their list
+                # Add a new dictionary with system_state and sub_system_state to the list
                 state_pair = create_state_pair(state)
                 if state_pair not in system_state_full:
                     system_state_full.append(state_pair)

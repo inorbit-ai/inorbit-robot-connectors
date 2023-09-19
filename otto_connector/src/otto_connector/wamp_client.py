@@ -79,7 +79,7 @@ class WampClient(ApplicationSession):
         elif topic == "v2.robots.states":
             self._handle_states_event(topic, args, message)
 
-        # Batteries data topic
+        # Payloads data topic
         elif topic == "v2.robots.payloads":
             self._handle_payloads_event(topic, args, message)
 
@@ -227,6 +227,40 @@ class WampClient(ApplicationSession):
             # Update the proxy dictionary to notify the manager
             self.robots[inorbit_id] = robot
 
+    def _handle_payloads_event(self, topic, args, message):
+        """
+        Update robot payloads.
+
+        `message` can be either "added", "removed" or "all".
+        When an "added" message is received, the payload id is added to the robot's payloads, and
+        gets removed on "removed".
+        """
+        payloads = args[0]
+        for payload in payloads:
+            otto_id = payload["robot"]
+            inorbit_id = self.id_index.get(otto_id)
+            if not inorbit_id:
+                self.logger.warning(
+                    f"Received payload data for robot {otto_id} "
+                    "which is not registered in the connector"
+                )
+                return
+            robot: OttoRobot = self.robots[inorbit_id]
+
+            payload_id = payload.get("id")
+
+            if message == "added" or message == "all":
+                robot.current_robot_payloads.add(payload_id)
+
+            elif message == "removed":
+                robot.current_robot_payloads.remove(payload_id)
+
+            # Update the robot proxy object's reference to the payload IDs
+            robot.event_key_values[InOrbitDataKeys.PAYLOAD_IDS] = list(robot.current_robot_payloads)
+
+            # Update the proxy dictionary to notify the manager
+            self.robots[inorbit_id] = robot
+
     def _handle_places_event(self, topic, args, message):
         """Update robot's current place."""
         # TODO(@Tom743): Check schema when having more robots, same situation as in
@@ -247,27 +281,6 @@ class WampClient(ApplicationSession):
                 "name": place.get("name"),
                 "id": place.get("id"),
             }
-
-            # Update the proxy dictionary to notify the manager
-            self.robots[inorbit_id] = robot
-
-    def _handle_payloads_event(self, topic, args, message):
-        """Update robot's current place."""
-        # TODO(@Tom743): Check schema when having more robots, same situation as in
-        # `_handle_batteries_event()`.
-
-        payloads = args[0]
-        for payload in payloads:
-            otto_id = payload["robot"]
-            inorbit_id = self.id_index.get(otto_id)
-            if not inorbit_id:
-                self.logger.warning(
-                    f"Received payload data for robot {otto_id} "
-                    "which is not registered in the connector"
-                )
-                return
-            robot: OttoRobot = self.robots[inorbit_id]
-            robot.key_values[InOrbitDataKeys.PAYLOAD_ID] = payload.get("name", "")
 
             # Update the proxy dictionary to notify the manager
             self.robots[inorbit_id] = robot

@@ -314,7 +314,7 @@ class HTTPClient:
         """Clear the robot's payload if any.
 
         Args:
-            mission_id (str): ID of the mission to be paused.
+            otto_id (str): ID of the robot to clear the payload for via the FM.
 
         Returns:
             Whether the command was dispatched successfully.
@@ -362,7 +362,7 @@ class HTTPClient:
         """Set the robot as available / unavailable.
 
         Args:
-            mission_id (str): ID of the mission to be paused.
+            otto_id (str): ID of the robot to set as available/unavailable.
             is_available (bool): Whether the robot is available or not.
 
         Returns:

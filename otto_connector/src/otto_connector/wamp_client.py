@@ -250,13 +250,12 @@ class WampClient(ApplicationSession):
             payload_id = payload.get("id")
 
             if message == "added" or message == "all":
-                robot.current_robot_payloads.add(payload_id)
-
+                robot.current_payloads.add(payload_id)
             elif message == "removed":
-                robot.current_robot_payloads.remove(payload_id)
+                robot.current_payloads.remove(payload_id)
 
             # Update the robot proxy object's reference to the payload IDs
-            robot.event_key_values[InOrbitDataKeys.PAYLOAD_IDS] = list(robot.current_robot_payloads)
+            robot.event_key_values[InOrbitDataKeys.PAYLOAD_IDS] = list(robot.current_payloads)
 
             # Update the proxy dictionary to notify the manager
             self.robots[inorbit_id] = robot

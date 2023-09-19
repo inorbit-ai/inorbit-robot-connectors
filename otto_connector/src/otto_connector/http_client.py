@@ -311,10 +311,10 @@ class HTTPClient:
         return self._evaluate_jsonrpc_response(res, "setRobotMaintenanceMode")
 
     def clear_payload(self, otto_id):
-        """Clear the robot's payload if any.
+        """Clear the robot's payloads if any.
 
         Args:
-            otto_id (str): ID of the robot to clear the payload for via the FM.
+            otto_id (str): ID of the robot to clear the payloads for via the FM.
 
         Returns:
             Whether the command was dispatched successfully.

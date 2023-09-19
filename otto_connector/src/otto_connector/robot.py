@@ -49,7 +49,8 @@ class OttoRobot:
             InOrbitDataKeys.ROBOT_STATES: [],
             # List of current `sub_system_state` values (unrepeated)
             InOrbitDataKeys.SUBSYSTEM_STATES: [],
-            InOrbitDataKeys.PAYLOAD_IDS: None,  # string,
+            # List of current payload ids for the robot
+            InOrbitDataKeys.PAYLOAD_IDS: [],
         }
 
         # Save the last published event key-values to avoid publishing them every time.
@@ -60,4 +61,4 @@ class OttoRobot:
         self.current_robot_status_raw = {}
 
         # Set of current payload ids for a robot as published by the FM.
-        self.current_robot_payloads = set()
+        self.current_payloads = set()

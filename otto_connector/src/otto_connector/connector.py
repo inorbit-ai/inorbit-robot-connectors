@@ -241,9 +241,6 @@ class OTTOConnector:
         else:
             self.logger.info(f"Unknown command received: {command_name}")
 
-        # Notify the proxy manager of the changes
-        self.robots[robot_id] = robot
-
     def run_recipe(self, otto_id, recipe_id, waiting_time):
         """Run a maintenance recipe on the robot.
 

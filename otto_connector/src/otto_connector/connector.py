@@ -136,6 +136,7 @@ class OTTOConnector:
             "v2.robots.batteries",
             "v2.robots.places",
             "v2.robots.states",
+            "v2.robots.payloads",
             "v2.missions",
         )
         self.runner = ApplicationRunner(
@@ -211,6 +212,12 @@ class OTTOConnector:
                 self.http_client.pause_autonomy(otto_id)
             elif msg == "resume_autonomy":
                 self.http_client.resume_autonomy(otto_id)
+            elif msg == "clear_payload":
+                self.http_client.clear_payload(otto_id)
+            elif msg == "available":
+                self.http_client.set_availability(otto_id, True)
+            elif msg == "unavailable":
+                self.http_client.set_availability(otto_id, False)
             elif re.search("_mission$", msg):
                 # Get current mission ID from the Mission Tracking data
                 mission_id = robot.event_key_values.get(InOrbitDataKeys.MISSION_TRACKING, {}).get(
@@ -233,9 +240,6 @@ class OTTOConnector:
                     self.logger.warn(f"{msg} is not a valid message")
         else:
             self.logger.info(f"Unknown command received: {command_name}")
-
-        # Notify the proxy manager of the changes
-        self.robots[robot_id] = robot
 
     def run_recipe(self, otto_id, recipe_id, waiting_time):
         """Run a maintenance recipe on the robot.

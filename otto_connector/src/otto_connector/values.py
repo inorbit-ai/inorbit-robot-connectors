@@ -46,3 +46,4 @@ class InOrbitDataKeys:
     ONLINE_STATUS = "online"
     ROBOT_STATES = "robot_states"
     SUBSYSTEM_STATES = "sub_system_states"
+    PAYLOAD_IDS = "payload_ids"

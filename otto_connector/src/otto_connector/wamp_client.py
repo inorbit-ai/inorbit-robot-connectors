@@ -79,6 +79,10 @@ class WampClient(ApplicationSession):
         elif topic == "v2.robots.states":
             self._handle_states_event(topic, args, message)
 
+        # Payloads data topic
+        elif topic == "v2.robots.payloads":
+            self._handle_payloads_event(topic, args, message)
+
         # Mission creation and updates
         elif topic == "v2.missions":
             self._handle_missions_event(topic, args, message)
@@ -152,15 +156,14 @@ class WampClient(ApplicationSession):
     def _handle_states_event(self, topic, args, message):
         """
         Update robot states.
+
         `message` can be either "added", "removed" or "all".
         When an "added" message is received, the state record is added to the robot's state, and
         gets removed on "removed".
         """
 
         def create_state_pair(record):
-            """
-            Create a dictionary with system_state and sub_system_state keys from a state record.
-            """
+            """Create a dict with system_state and sub_system_state keys from a state record."""
             return {
                 "system_state": record.get("system_state"),
                 "sub_system_state": record.get("sub_system_state"),
@@ -214,12 +217,52 @@ class WampClient(ApplicationSession):
             robot.event_key_values[InOrbitDataKeys.ROBOT_STATES] = last_robot_states
             robot.event_key_values[InOrbitDataKeys.SUBSYSTEM_STATES] = last_sub_system_states
 
+            if any(
+                state in last_sub_system_states for state in ["ESTOP", "UNAVAILABLE", "BLOCKED"]
+            ):
+                robot.telemetry_key_values[InOrbitDataKeys.MISSION_STATUS] = InOrbitModeTags.ERROR
+            elif "MANUAL" in last_robot_states:
+                robot.telemetry_key_values[InOrbitDataKeys.MISSION_STATUS] = InOrbitModeTags.MANUAL
+
             # Send online status on a separate key value
             # The FM explicitly sends NO_HEARTBEAT as subsystem state (and OFFLINE as system state)
             # if the robot is offline, and removes it when it is online
             robot.event_key_values[InOrbitDataKeys.ONLINE_STATUS] = (
                 "NO_HEARTBEAT" not in last_sub_system_states
             )
+
+            # Update the proxy dictionary to notify the manager
+            self.robots[inorbit_id] = robot
+
+    def _handle_payloads_event(self, topic, args, message):
+        """
+        Update robot payloads.
+
+        `message` can be either "added", "removed" or "all".
+        When an "added" message is received, the payload id is added to the robot's payloads, and
+        gets removed on "removed".
+        """
+        payloads = args[0]
+        for payload in payloads:
+            otto_id = payload["robot"]
+            inorbit_id = self.id_index.get(otto_id)
+            if not inorbit_id:
+                self.logger.warning(
+                    f"Received payload data for robot {otto_id} "
+                    "which is not registered in the connector"
+                )
+                return
+            robot: OttoRobot = self.robots[inorbit_id]
+
+            payload_id = payload.get("id")
+
+            if message == "added" or message == "all":
+                robot.current_payloads.add(payload_id)
+            elif message == "removed":
+                robot.current_payloads.remove(payload_id)
+
+            # Update the robot proxy object's reference to the payload IDs
+            robot.event_key_values[InOrbitDataKeys.PAYLOAD_IDS] = list(robot.current_payloads)
 
             # Update the proxy dictionary to notify the manager
             self.robots[inorbit_id] = robot

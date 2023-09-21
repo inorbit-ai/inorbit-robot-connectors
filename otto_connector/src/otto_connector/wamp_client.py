@@ -217,6 +217,13 @@ class WampClient(ApplicationSession):
             robot.event_key_values[InOrbitDataKeys.ROBOT_STATES] = last_robot_states
             robot.event_key_values[InOrbitDataKeys.SUBSYSTEM_STATES] = last_sub_system_states
 
+            if any(
+                state in last_sub_system_states for state in ["ESTOP", "UNAVAILABLE", "BLOCKED"]
+            ):
+                robot.telemetry_key_values[InOrbitDataKeys.MISSION_STATUS] = InOrbitModeTags.ERROR
+            elif "MANUAL" in last_robot_states:
+                robot.telemetry_key_values[InOrbitDataKeys.MISSION_STATUS] = InOrbitModeTags.MANUAL
+
             # Send online status on a separate key value
             # The FM explicitly sends NO_HEARTBEAT as subsystem state (and OFFLINE as system state)
             # if the robot is offline, and removes it when it is online

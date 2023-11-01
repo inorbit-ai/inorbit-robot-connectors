@@ -238,6 +238,10 @@ class OTTOConnector:
                     self.http_client.cancel_mission(mission_id)
                 else:
                     self.logger.warn(f"{msg} is not a valid message")
+            elif msg == "cancel_all_missions":
+                Thread(
+                    target=self.http_client.cancel_all_missions
+                ).start()  # This one may take some time to complete
         else:
             self.logger.info(f"Unknown command received: {command_name}")
 
@@ -299,13 +303,13 @@ class OTTOConnector:
                 # If we have complete pose data, publish it
                 pose = robot.pose
                 if all(isinstance(v, float) for v in pose.values()):
-                    self.logger.debug(f"Publishing pose: {pose}")
+                    # self.logger.debug(f"Publishing pose: {pose}")
                     robot_sess.publish_pose(**pose)
 
                 # Publish path data
                 path = robot.path
-                if path:
-                    self.logger.debug(f"Publishing path: {path}")
+                # if path:
+                # self.logger.debug(f"Publishing path: {path}")
                 robot_sess.publish_path(path)
 
                 # NOTE(@b-Tomas): Separation between telemetry and event key-values is made because
@@ -331,7 +335,7 @@ class OTTOConnector:
                 self.robots[robot_id] = robot
 
                 key_values = {**telemetry_key_values, **event_key_values}
-                self.logger.debug(f"Publishing kv: {key_values}")
+                # self.logger.debug(f"Publishing kv: {key_values}")
                 robot_sess.publish_key_values(key_values)
 
             sleep(1 / CONNECTOR_UPDATE_FREQ)

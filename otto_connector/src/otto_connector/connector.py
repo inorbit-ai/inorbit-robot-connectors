@@ -308,8 +308,8 @@ class OTTOConnector:
 
                 # Publish path data
                 path = robot.path
-                # if path:
-                # self.logger.debug(f"Publishing path: {path}")
+                if path:
+                    self.logger.debug(f"Publishing path: {path}")
                 robot_sess.publish_path(path)
 
                 # NOTE(@b-Tomas): Separation between telemetry and event key-values is made because
@@ -335,7 +335,7 @@ class OTTOConnector:
                 self.robots[robot_id] = robot
 
                 key_values = {**telemetry_key_values, **event_key_values}
-                # self.logger.debug(f"Publishing kv: {key_values}")
+                self.logger.debug(f"Publishing kv: {key_values}")
                 robot_sess.publish_key_values(key_values)
 
             sleep(1 / CONNECTOR_UPDATE_FREQ)

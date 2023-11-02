@@ -303,7 +303,7 @@ class OTTOConnector:
                 # If we have complete pose data, publish it
                 pose = robot.pose
                 if all(isinstance(v, float) for v in pose.values()):
-                    # self.logger.debug(f"Publishing pose: {pose}")
+                    self.logger.debug(f"Publishing pose: {pose}")
                     robot_sess.publish_pose(**pose)
 
                 # Publish path data

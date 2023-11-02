@@ -282,6 +282,10 @@ class HTTPClient:
             if self.cancel_mission(mission.get("id", "")):
                 cancelled_count += 1
 
+        self.logger.info(
+            f"Cancelled {cancelled_count} missions successfully out of {len(missions)} missions queried"
+        )
+
         return (len(missions), cancelled_count)
 
     def pause_autonomy(self, otto_id):

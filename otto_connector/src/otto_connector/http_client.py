@@ -249,10 +249,11 @@ class HTTPClient:
         """Query all missions and cancel them.
 
         Returns:
-            Tuple(int, int): (Number of queried missions, number of missions successfully cancelled).
+            (int, int): (Number of queried missions, number of missions successfully cancelled).
         """
-        # NOTE(b-Tomas): If there are more than 100 missions to be returned in a query, the response includes a "next" field with the URL to the next page.
-        # It was not implemented here because it is not expected to be needed.
+        # NOTE(b-Tomas): If there are more than 100 missions to be returned in a query, the
+        # response will include a "next" field with the URL to the next page.
+        # Handling this paging was not implemented here because it is not expected to be needed.
 
         missions = []
         # For state in all states but CANCELLED, CANCELLING and SUCCEDED
@@ -270,7 +271,8 @@ class HTTPClient:
         ):
             res = self._get(
                 self.fleet_url
-                + f"/v2/missions/?fields=id,created,mission_status,name&ordering=-created&mission_status={state}",
+                + f"/v2/missions/?fields=id,created,mission_status,name"
+                + f"&ordering=-created&mission_status={state}",
                 json=None,
             )
             success = self._evaluate_jsonrpc_response(res, "cancelMission")
@@ -283,7 +285,8 @@ class HTTPClient:
                 cancelled_count += 1
 
         self.logger.info(
-            f"Cancelled {cancelled_count} missions successfully out of {len(missions)} missions queried"
+            f"Cancelled {cancelled_count} missions successfully out of "
+            + f"{len(missions)} missions queried"
         )
 
         return (len(missions), cancelled_count)

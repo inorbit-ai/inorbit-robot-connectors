@@ -271,7 +271,7 @@ class HTTPClient:
         ):
             res = self._get(
                 self.fleet_url
-                + f"/v2/missions/?fields=id,created,mission_status,name"
+                + "/v2/missions/?fields=id,created,mission_status,name"
                 + f"&ordering=-created&mission_status={state}",
                 json=None,
             )

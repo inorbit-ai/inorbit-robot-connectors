@@ -238,6 +238,10 @@ class OTTOConnector:
                     self.http_client.cancel_mission(mission_id)
                 else:
                     self.logger.warn(f"{msg} is not a valid message")
+            elif msg == "cancel_all_missions":
+                Thread(
+                    target=self.http_client.cancel_all_missions
+                ).start()  # This one may take some time to complete
         else:
             self.logger.info(f"Unknown command received: {command_name}")
 

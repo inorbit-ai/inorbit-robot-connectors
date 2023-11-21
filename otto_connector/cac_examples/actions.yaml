@@ -189,3 +189,22 @@ spec:
   # Sample actions group name (optional), please update it or remove it as needed.
   group: OTTO
   type: PublishToTopic
+---
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+  id: otto-cancel-all-missions
+  # REQUIRED, see note at the beginning of the file.
+  scope: <CONFIG_SCOPE>
+spec:
+  label: Cancel all
+  description: Cancel all missions
+  arguments:
+    - name: message
+      type: string
+      value: cancel_all_missions
+  confirmation:
+    required: false
+  # Sample actions group name (optional), please update it or remove it as needed.
+  group: OTTO
+  type: PublishToTopic

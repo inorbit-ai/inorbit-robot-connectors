@@ -70,7 +70,7 @@ The entry point is `src/otto_connector.py`:
 ```sh
 # Add the environment variables, activate the virtual environment and run the Connector
 export $(grep -v '^#' config/.env | xargs) && \
-source .src/venv/bin/activate && \
+source src/venv/bin/activate && \
 python src/otto_connector.py
 ```
 

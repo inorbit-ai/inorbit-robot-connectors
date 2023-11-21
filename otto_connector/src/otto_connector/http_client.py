@@ -245,6 +245,52 @@ class HTTPClient:
         )
         return self._evaluate_jsonrpc_response(res, "cancelMission")
 
+    def cancel_all_missions(self):
+        """Query all missions and cancel them.
+
+        Returns:
+            (int, int): (Number of queried missions, number of missions successfully cancelled).
+        """
+        # NOTE(b-Tomas): If there are more than 100 missions to be returned in a query, the
+        # response will include a "next" field with the URL to the next page.
+        # Handling this paging was not implemented here because it is not expected to be needed.
+
+        missions = []
+        # For state in all states but CANCELLED, CANCELLING and SUCCEDED
+        for state in (
+            "ASSIGNED",
+            "BLOCKED",
+            "EXECUTING",
+            "FAILED",
+            "PAUSED",
+            "QUEUED",
+            "REASSIGNED",
+            "RESTARTING",
+            "REVOKED",
+            "STARVED",
+        ):
+            res = self._get(
+                self.fleet_url
+                + "/v2/missions/?fields=id,created,mission_status,name"
+                + f"&ordering=-created&mission_status={state}",
+                json=None,
+            )
+            success = self._evaluate_jsonrpc_response(res, "cancelMission")
+            if success:
+                [missions.append(entry) for entry in res.json().get("results", [])]
+
+        cancelled_count = 0
+        for mission in missions:
+            if self.cancel_mission(mission.get("id", "")):
+                cancelled_count += 1
+
+        self.logger.info(
+            f"Cancelled {cancelled_count} missions successfully out of "
+            + f"{len(missions)} missions queried"
+        )
+
+        return (len(missions), cancelled_count)
+
     def pause_autonomy(self, otto_id):
         """Trigger a pauseAutonomy RPC.
 

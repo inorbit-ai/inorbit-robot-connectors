@@ -1,0 +1,105 @@
+# Data Source example for robots connected via the MiR <> InOrbit Connector.
+# It is recommended to fill the `scope` field with a tag that groups all robots using the connector (e.g. `tag/<ACCOUNT_ID>/<TAG_ID>`).
+
+# The Connector publishes mission status updates on the `mission_status` key.
+# This data can be used to display the current robot mode such as missioning, idle, charging, error, etc.
+
+kind: DataSourceDefinition
+metadata:
+  # REQUIRED, see note at the beginning of the file.
+  scope: <CONFIG_SCOPE>
+  id: battery_percent
+apiVersion: v0.1
+spec:
+  label: Battery
+  timeline: {}
+  source:
+    keyValue:
+      key: battery percent
+  unit: '%'
+  scale: 0.01
+---
+kind: DataSourceDefinition
+metadata:
+  # REQUIRED, see note at the beginning of the file.
+  scope: <CONFIG_SCOPE>
+  id: mission_text
+apiVersion: v0.1
+spec:
+  label: Mission Text
+  timeline: {}
+  source:
+    keyValue:
+      key: mission_text
+---
+kind: DataSourceDefinition
+metadata:
+  # REQUIRED, see note at the beginning of the file.
+  scope: <CONFIG_SCOPE>
+  id: mode_text
+apiVersion: v0.1
+spec:
+  label: Mode Text
+  timeline: {}
+  source:
+    keyValue:
+      key: mode_text
+---
+kind: DataSourceDefinition
+metadata:
+  # REQUIRED, see note at the beginning of the file.
+  scope: <CONFIG_SCOPE>
+  id: state_text
+apiVersion: v0.1
+spec:
+  label: State Text
+  timeline: {}
+  source:
+    keyValue:
+      key: state_text
+---
+kind: DataSourceDefinition
+metadata:
+  # REQUIRED, see note at the beginning of the file.
+  scope: <CONFIG_SCOPE>
+  id: mission_tracking
+apiVersion: v0.1
+spec:
+  label: Mission tracking
+  type: json
+  timeline: {}
+  source:
+    keyValue:
+      key: mission_tracking
+---
+kind: DataSourceDefinition
+metadata:
+  # REQUIRED, see note at the beginning of the file.
+  scope: <CONFIG_SCOPE>
+  id: mission_status
+apiVersion: v0.1
+spec:
+  label: Mission status
+  timeline: {}
+  source:
+    derived: 
+      transform: |
+        mission_text = getValue("mission_text");
+        state_text = getValue("state_text");        
+        state_text == "Executing" ? (match("Charging", mission_text) ? "Charging" : "Mission") :
+        ((state_text == "EmergencyStop" or state_text == "Error") ? "Error" : "Idle")
+---
+apiVersion: v0.1
+kind: DataSourceDefinition
+metadata:
+  # REQUIRED, see note at the beginning of the file.
+  scope: <CONFIG_SCOPE>
+  id: emergency-stopped
+spec:
+  label: E-Stopped
+  timeline: {}
+  source:
+    derived: 
+      transform: |
+        status = getValue('status_text');
+        getValue('status') == 'EmergencyStop'

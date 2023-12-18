@@ -1,0 +1,90 @@
+name: MiR Connector Workflow
+
+on:
+  push:
+    branches: [$default-branch]
+    paths:
+      - mir_connector
+  pull_request:
+    branches: [$default-branch]
+    paths:
+      - mir_connector
+
+jobs:
+  lint:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [3.11]
+        os: [ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v3
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Lint with flake8
+        uses: py-actions/flake8@v2
+        with:
+          path: mir_connector
+          max-line-length: 100
+      - name: Check with black
+        uses: psf/black@stable
+        with:
+          version: "~= 23.0"
+          src: mir_connector
+          options: "--diff --check --line-length=100"
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [3.9, 3.10, 3.11]
+        os: [ubuntu-latest, windows-latest, macOS-latest]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v3
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          cd mir_connector
+          python -m pip install --upgrade pip
+          python -m pip install -e .["test"]
+      - name: Test with pytest
+        run: |
+          cd  mir_connector
+          pytest
+
+  publish:
+    if: contains(github.event.head_commit.message, 'Bump version')
+    needs: [test, lint]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: 3.11
+      - name: Install Dependencies
+        run: |
+          cd mir_connector
+          python -m pip install --upgrade pip
+          python -m pip install .[dev]
+      - name: Build Package
+        run: |
+          cd mir_connector
+          python -m build --sdist
+          twine check dist/*
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          user: __token__
+          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+          repository-url: https://test.pypi.org/legacy/
+          verbose: true
+          packages-dir: mir_connector/dist/

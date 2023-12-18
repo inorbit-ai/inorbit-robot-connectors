@@ -1,0 +1,16 @@
+[tool.bumpversion]
+current_version = "0.1.0"
+commit = true
+message = "Bump version: {current_version} → {new_version}"
+tag = true
+sign_tags = true
+
+[[tool.bumpversion.files]]
+filename = "setup.py"
+search = "version=\"{current_version}\""
+replace = "version=\"{new_version}\""
+
+[[tool.bumpversion.files]]
+filename = "inorbit_mir_connector/__init__.py"
+search = "__version__ = \"{current_version}\""
+replace = "__version__ = \"{new_version}\""

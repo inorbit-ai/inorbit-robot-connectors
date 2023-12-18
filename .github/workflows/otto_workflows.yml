@@ -1,0 +1,36 @@
+name: Otto Connector Workflow
+
+on:
+  push:
+    branches: [$default-branch]
+    paths:
+      - otto_connector
+  pull_request:
+    branches: [$default-branch]
+    paths:
+      - otto_connector
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [3.9]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v3
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Lint with flake8
+        uses: py-actions/flake8@v2
+        with:
+          path: otto_connector
+          max-line-length: 100
+      - name: Check with black
+        uses: psf/black@stable
+        with:
+          version: "~= 23.0"
+          src: otto_connector
+          options: "--diff --check --line-length=100"

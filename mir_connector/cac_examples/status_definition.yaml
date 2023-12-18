@@ -1,0 +1,22 @@
+# Status Definition example for robots connected via the MiR <> InOrbit Connector.
+# It is recommended to fill the `scope` field with a tag that groups all robots using the connector (e.g. `tag/<ACCOUNT_ID>/<TAG_ID>`).
+
+# After applying the StatusDefinition objects, go to Settings, Robot Data tab and toggle the display in Fleet Status option for
+# relevant Status. Note that if there are no Status configured to do so, the Fleet Status widget won't show any robot.
+
+apiVersion: v0.1
+kind: StatusDefinition
+metadata:
+  # REQUIRED, see note at the beginning of the file.
+  scope: <CONFIG_SCOPE>
+  id: battery_percent
+spec:
+  rules:
+  - function: BELOW
+    params:
+    - 0.1
+    status: ERROR
+  - function: BELOW
+    params:
+    - 0.2
+    status: WARNING

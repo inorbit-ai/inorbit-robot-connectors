@@ -76,5 +76,5 @@ setup(
     python_requires=">=3.7",
     # Do not edit this string manually, always use bump-my-version
     # Details in TODO(b-Tomas): add reference to the final documentation file
-    version="0.1.2",
+    version="0.1.0",
 )

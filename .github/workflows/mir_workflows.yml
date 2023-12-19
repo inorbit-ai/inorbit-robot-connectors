@@ -2,13 +2,15 @@ name: MiR Connector Workflow
 
 on:
   push:
-    branches: [$default-branch]
+    branches: 
+      - $default-branch
     paths:
-      - mir_connector
+      - mir_connector/**
   pull_request:
-    branches: [$default-branch]
+    branches: 
+      - $default-branch
     paths:
-      - mir_connector
+      - mir_connector/**
 
 jobs:
   lint:
@@ -16,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [3.11]
+        python-version: ["3.11"]
         os: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v3
@@ -40,7 +42,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [3.9, 3.10, 3.11]
+        python-version: ["3.9", "3.10", "3.11"]
         os: [ubuntu-latest, windows-latest, macOS-latest]
     steps:
       - uses: actions/checkout@v3
@@ -64,12 +66,15 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: true
+    environment: release
+    permissions:
+        id-token: write
     steps:
       - uses: actions/checkout@v3
       - name: Set up Python
         uses: actions/setup-python@v3
         with:
-          python-version: 3.11
+          python-version: "3.11"
       - name: Install Dependencies
         run: |
           cd mir_connector
@@ -83,8 +88,5 @@ jobs:
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          user: __token__
-          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
           repository-url: https://test.pypi.org/legacy/
-          verbose: true
           packages-dir: mir_connector/dist/

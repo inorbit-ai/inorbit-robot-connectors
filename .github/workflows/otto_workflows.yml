@@ -1,14 +1,16 @@
-name: Otto Connector Workflow
+name: OTTO Connector Workflow
 
 on:
   push:
-    branches: [$default-branch]
+    branches: 
+      - $default-branch
     paths:
-      - otto_connector
+      - otto_connector/**
   pull_request:
-    branches: [$default-branch]
+    branches: 
+      - $default-branch
     paths:
-      - otto_connector
+      - otto_connector/**
 
 jobs:
   lint:
@@ -16,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [3.9]
+        python-version: ["3.9"]
     steps:
       - uses: actions/checkout@v3
       - name: Set up Python ${{ matrix.python-version }}

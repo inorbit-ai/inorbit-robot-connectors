@@ -47,15 +47,18 @@ def start():
     args = parser.parse_args()
     robot_id, config_filename = args.robot_id, args.config
 
-    # TODO(b-Tomas): Make use of all the config values e.g. validate package version, api version, etc.
+    # TODO(b-Tomas): Make use of all the config values e.g. validate package version, api version,
+    # etc.
     try:
         mir_config = load_and_validate(config_filename, robot_id)
     except FileNotFoundError:
-        LOGGER.info(f"Missing configuration file")
+        LOGGER.info("Missing configuration file")
         exit(1)
     except IndexError:
-        LOGGER.info(f"Missing configuration section for robot_id '{robot_id}'. Creating "
-                    "a skeleton configuration for it.")
+        LOGGER.info(
+            f"Missing configuration section for robot_id '{robot_id}'. Creating "
+            "a skeleton configuration for it."
+        )
         config_dict = read_yaml(config_filename)
         config_dict[robot_id] = default_mir100_config
         write_yaml(config_filename, config_dict)

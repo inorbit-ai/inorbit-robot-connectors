@@ -20,9 +20,9 @@ default_mir100_config = {
         "mir_username": "",
         "mir_password": "",
         "enable_mission_tracking": True,
-        "mir_api_version": "v2.0"
+        "mir_api_version": "v2.0",
     },
-    "user_scripts": {}
+    "user_scripts": {},
 }
 
 # Expected values

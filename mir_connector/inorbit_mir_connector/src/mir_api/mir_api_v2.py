@@ -262,7 +262,6 @@ class MirWebSocketV2:
             }
         )
 
-        # Remove spaces
         self.logger.debug(f"Sending message: {msg}")
         self.ws.send(msg)
 

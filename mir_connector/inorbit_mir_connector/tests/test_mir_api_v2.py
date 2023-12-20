@@ -17,7 +17,6 @@ def mir_api(requests_mock, monkeypatch):
     mir_host_address = "example.com"
     mir_host_port = 8080
     requests_mock.post("http://example.com:8080/?mode=log-in", text="I'm letting you in")
-    # monkeypatch.setattr(MirWebSocketV2, "connect", MagicMock())
     monkeypatch.setattr(websocket, "WebSocketApp", MagicMock())
     api = MirApiV2(
         mir_host_address=mir_host_address,

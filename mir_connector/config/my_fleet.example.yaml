@@ -1,0 +1,39 @@
+# There can be multiple robot configurations in a single file
+# The InOrbit Robot ID is the key for each robot configuration
+'mir100-1':
+  # Robot key for InOrbit Connect robots, see https://api.inorbit.ai/docs/index.html#operation/generateRobotKey
+  # Delete it if not used
+  inorbit_robot_key: <key>
+  # This is the timezone of the robot location. It must be a valid pytz timezone: https://pythonhosted.org/pytz/#helpers
+  location_tz: America/Los_Angeles
+  # Connector log level. Valid values are DEBUG, INFO, WARNING, ERROR, CRITICAL
+  log_level: INFO
+  # Camera configuration. Multiple cameras can be configured
+  cameras:
+    - video_url: rtsp://username:password@192.168.1.256:554/cam/realmonitor?channel=1&subtype=0
+      rate: 2 # Frames per second (optional)
+      scaling: 0.3 # Percentage of the original image size (optional)
+      quality: 60 # JPEG quality (0-100) (optional)
+  # Configuration specific for the connector that will connect this robot
+  connector_type: mir100
+  connector_config:
+    mir_host_address: localhost
+    mir_host_port: 80
+    mir_ws_port: 9090
+    mir_use_ssl: False
+    mir_username: username
+    mir_password: password
+    mir_api_version: v2.0
+    # Toggle InOrbit Mission Tracking features. https://developer.inorbit.ai/tutorials#mission-tracking-tutorial
+    # Mission Tracking features are not available on every InOrbit edition.
+    enable_mission_tracking: false
+  # Configuration for running user scripts
+  user_scripts:
+    # Folder where the user scripts are. If not set, "~/.inorbit_connectors/connector-<robot_id>/local/" will be used
+    path: /home/inorbit/mir100_connector/user_scripts_mir100-1
+    # Environment variables that will be available to the user scripts (Optional)
+    env_vars:
+      INORBIT_API_KEY: foo
+      MIR_API_ENDPOINT: 10.0.0.1:80
+      MIR_USERNAME: username
+      MIR_PASSWORD: password

@@ -7,6 +7,10 @@ import hashlib
 from prometheus_client import parser
 import json
 import math
+import websocket
+import logging
+import threading
+from time import sleep
 from .mir_api_base import MirApiBaseClass
 from inorbit_edge.missions import MISSION_STATE_EXECUTING
 
@@ -20,10 +24,20 @@ STATUS_ENDPOINT_V2 = "status"
 
 
 class MirApiV2(MirApiBaseClass):
-    def __init__(self, mir_base_url, mir_username, mir_password, loglevel="INFO"):
+    def __init__(
+        self,
+        mir_host_address,
+        mir_username,
+        mir_password,
+        mir_host_port=80,
+        mir_use_ssl=False,
+        loglevel="INFO",
+    ):
         super().__init__(loglevel=loglevel)
-        self.mir_base_url = mir_base_url
-        self.mir_api_url = f"{mir_base_url}{API_V2_CONTEXT_URL}"
+        self.mir_base_url = (
+            f"{'https' if mir_use_ssl else 'http'}://{mir_host_address}:{mir_host_port}"
+        )
+        self.mir_api_base_url = f"{self.mir_base_url}{API_V2_CONTEXT_URL}"
         self.mir_username = mir_username
         self.mir_password = mir_password
         self.api_session = self._create_api_session()
@@ -58,7 +72,7 @@ class MirApiV2(MirApiBaseClass):
 
     def get_metrics(self):
         """Get robot metrics"""
-        metrics_api_url = f"{self.mir_api_url}/{METRICS_ENDPOINT_V2}"
+        metrics_api_url = f"{self.mir_api_base_url}/{METRICS_ENDPOINT_V2}"
         metrics = self._get(metrics_api_url, self.api_session).text
         samples = {}
         for family in parser.text_string_to_metric_families(metrics):
@@ -68,7 +82,7 @@ class MirApiV2(MirApiBaseClass):
 
     def get_mission(self, mission_queue_id):
         """Queries a mission using the mission_queue/{mission_id} endpoint"""
-        mission_api_url = f"{self.mir_api_url}/{MISSION_QUEUE_ENDPOINT_V2}/{mission_queue_id}"
+        mission_api_url = f"{self.mir_api_base_url}/{MISSION_QUEUE_ENDPOINT_V2}/{mission_queue_id}"
         mission = self._get(mission_api_url, self.api_session).json()
         actions = self._get(f"{mission_api_url}/actions", self.api_session).json()
 
@@ -84,7 +98,7 @@ class MirApiV2(MirApiBaseClass):
 
     def get_mission_definition(self, mission_id):
         """Queries a mission definition using the missions/{mission_id} endpoint"""
-        mission_api_url = f"{self.mir_api_url}/{MISSIONS_ENDPOINT_V2}/{mission_id}"
+        mission_api_url = f"{self.mir_api_base_url}/{MISSIONS_ENDPOINT_V2}/{mission_id}"
         response = self._get(mission_api_url, self.api_session)
         mission = response.json()
         return mission
@@ -92,7 +106,7 @@ class MirApiV2(MirApiBaseClass):
     def get_mission_actions(self, mission_id):
         """Queries a list of actions a mission executes using
         the missions/{mission_id}/actions endpoint"""
-        actions_api_url = f"{self.mir_api_url}/{MISSIONS_ENDPOINT_V2}/{mission_id}/actions"
+        actions_api_url = f"{self.mir_api_base_url}/{MISSIONS_ENDPOINT_V2}/{mission_id}/actions"
         response = self._get(actions_api_url, self.api_session)
         actions = response.json()
         return actions
@@ -101,7 +115,7 @@ class MirApiV2(MirApiBaseClass):
         """Returns the id of the mission being currently executed by the robot"""
         # Note(mike) This could be optimized fetching only some elements, but the API is pretty
         # limited
-        missions_api_url = f"{self.mir_api_url}/{MISSION_QUEUE_ENDPOINT_V2}"
+        missions_api_url = f"{self.mir_api_base_url}/{MISSION_QUEUE_ENDPOINT_V2}"
         response = self._get(missions_api_url, self.api_session)
         missions = response.json()
         executing = [m for m in missions if m["state"] == MISSION_STATE_EXECUTING]
@@ -109,7 +123,7 @@ class MirApiV2(MirApiBaseClass):
 
     def queue_mission(self, mission_id):
         """Receives a mission ID and sends a request to append it to the robot's mission queue"""
-        queue_mission_url = f"{self.mir_api_url}/{MISSION_QUEUE_ENDPOINT_V2}"
+        queue_mission_url = f"{self.mir_api_base_url}/{MISSION_QUEUE_ENDPOINT_V2}"
         mission_queues = {
             "mission_id": mission_id,
         }
@@ -124,7 +138,7 @@ class MirApiV2(MirApiBaseClass):
 
     def abort_all_missions(self):
         """Aborts all missions"""
-        queue_mission_url = f"{self.mir_api_url}/{MISSION_QUEUE_ENDPOINT_V2}"
+        queue_mission_url = f"{self.mir_api_base_url}/{MISSION_QUEUE_ENDPOINT_V2}"
         response = self._delete(
             queue_mission_url,
             self.api_session,
@@ -147,7 +161,7 @@ class MirApiV2(MirApiBaseClass):
 
         This method wraps PUT /status API
         """
-        status_api_url = f"{self.mir_api_url}/{STATUS_ENDPOINT_V2}"
+        status_api_url = f"{self.mir_api_base_url}/{STATUS_ENDPOINT_V2}"
         response = self._put(
             status_api_url,
             self.api_session,
@@ -178,6 +192,94 @@ class MirApiV2(MirApiBaseClass):
         self.logger.info(response.text)
 
     def get_status(self):
-        status_api_url = f"{self.mir_api_url}/{STATUS_ENDPOINT_V2}"
+        status_api_url = f"{self.mir_api_base_url}/{STATUS_ENDPOINT_V2}"
         response = self._get(status_api_url, self.api_session)
         return response.json()
+
+
+class MirWebSocketV2:
+    def __init__(self, mir_host_address, mir_ws_port=9090, mir_use_ssl=False, loglevel="INFO"):
+        self.logger = logging.getLogger(name=self.__class__.__name__)
+        self.logger.setLevel(loglevel)
+
+        self.mir_ws_url = f"{'wss' if mir_use_ssl else 'ws'}://{mir_host_address}:{mir_ws_port}/"
+        # Store the last diagnostics_agg message (raw)
+        self.last_diagnostics_agg_msg = {}
+
+        # Create WebSocket object
+        self.ws = websocket.WebSocketApp(
+            url=self.mir_ws_url, on_message=self.on_message, on_close=self.on_close
+        )
+
+        self.connect()
+
+        self.subscribe_diagnostics_agg()
+
+    def on_close(self, ws, close_status_code, close_msg):
+        self.logger.info(f"Disconnected from server")
+
+    def on_message(self, ws, message):
+        try:
+            json_msg = json.loads(message)
+        except ValueError:
+            self.logger.debug(f"Ignored malformed message: {message}")
+        else:
+            topic = json_msg.get("topic")
+            if topic == "/diagnostics_agg":
+                self.handle_diagnostics_agg_msg(json_msg)
+
+    def connect(self):
+        # Start listening to web socket on a daemon thread.
+        self.ws_thread = threading.Thread(target=self.ws.run_forever, daemon=True)
+        self.ws_thread.start()
+
+        conn_retries = 5
+        while not self.ws.sock or not self.ws.sock.connected:
+            conn_retries -= 1
+            self.logger.info(f"Waiting for ws connection: '{self.mir_ws_url}")
+            sleep(1)
+            if not conn_retries:
+                raise RuntimeError(f"Failed to connect to ws: '{self.mir_ws_url}")
+
+    def disconnect(self):
+        self.logger.info("Closing ws connection")
+        self.ws.close()
+        self.logger.info("Waiting for ws thread to finish")
+        self.ws_thread.join()
+
+    def subscribe_diagnostics_agg(self):
+        self.logger.info("Subscribing to 'diagnostics_agg' topic")
+        # This is the same command the MiR web UI sends
+        self.ws.send(
+            '{"op":"subscribe","id":"subscribe:/diagnostics_agg:1","type":"diagnostic_msgs/DiagnosticArray","topic":"/diagnostics_agg","compression":"none","throttle_rate":0,"queue_length":0}'
+        )
+
+    def handle_diagnostics_agg_msg(self, message):
+        self.logger.debug(f"Got diagnostics_agg message: {message}")
+        self.last_diagnostics_agg_msg = message
+
+    def get_cpu_usage(self):
+        # NOTE: the logic for getting first a certain status object by name and
+        # then extracting certain key/value from it will probably be used on
+        # other methods for looking up relevant information. Please consider
+        # refactoring to reuse the logic below:
+        # e.g. get_diagnostics_agg_value(status_name, key_name)
+
+        # Get status list from message
+        status_list = self.last_diagnostics_agg_msg.get("msg", {}).get("status", [])
+        # CPU load is sent on status message with name "/Computer/PC/CPU Load"
+        cpu_load_status = next(
+            (status for status in status_list if status["name"] == "/Computer/PC/CPU Load"), None
+        )
+
+        # Caller should handle 'None' return values and ignore them
+        if not cpu_load_status:
+            return None
+
+        # Now iterate over values
+        values = cpu_load_status.get("values", [])
+
+        # Finally, look for the key/value dictionary having key "Average CPU load"
+        cpu_load_kv = next((value for value in values if value["key"] == "Average CPU load"))
+
+        return cpu_load_kv.get("value")

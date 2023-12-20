@@ -17,6 +17,7 @@ requirements = [
     "ruamel.yaml>=0.18,<0.19",
     "pydantic==2.5",
     "psutil==5.9",
+    "websocket-client==1.7.0",
 ]
 
 test_requirements = [

@@ -19,7 +19,7 @@ This integration requires the Connector to be configured following the instructi
 
 By integrating InOrbit's Python Edge SDK with MiR's APIs, the Connector unlocks the following key features on InOrbit's platform:
 
-- Visualizing: robot pose, system and sub-system status, and battery charge.
+- Visualizing: robot pose, system and sub-system status, battery charge and system stats.
 - Camera feed integration.
 - Using [Actions](https://developer.inorbit.ai/docs#configuring-action-definitions) to interact with MiR's API by:
 
@@ -121,7 +121,7 @@ flake8 --max-line-length=100 --exclude venv
 ```bash
 # Create the virtualenv if not active already
 virtualenv venv/
-pip install -e '.[test]'
+pip install -e '.[dev]'
 . venv/bin/activate
 pytest -v
 ```

@@ -14,6 +14,7 @@ from inorbit_edge.robot import COMMAND_NAV_GOAL
 from inorbit_edge.robot import RobotSession
 from inorbit_edge.video import OpenCVCamera
 from .mir_api import MirApiV2
+from .mir_api import MirWebSocketV2
 from .mission import MirInorbitMissionTracking
 from ..config.mir100_model import MiR100Config
 
@@ -45,9 +46,19 @@ class Mir100Connector:
 
         # Configure the connection to the robot
         self.mir_api = MirApiV2(
-            mir_base_url=config.connector_config.mir_base_url,
+            mir_host_address=config.connector_config.mir_host_address,
             mir_username=config.connector_config.mir_username,
             mir_password=config.connector_config.mir_password,
+            mir_host_port=config.connector_config.mir_host_port,
+            mir_use_ssl=config.connector_config.mir_use_ssl,
+            loglevel=log_level,
+        )
+
+        # Configure the ws connection to the robot
+        self.mir_ws = MirWebSocketV2(
+            mir_host_address=config.connector_config.mir_host_address,
+            mir_ws_port=config.connector_config.mir_ws_port,
+            mir_use_ssl=config.connector_config.mir_use_ssl,
             loglevel=log_level,
         )
 
@@ -257,6 +268,12 @@ class Mir100Connector:
             self.logger.debug(f"Publishing key values: {key_values}")
             self.inorbit_sess.publish_key_values(key_values)
 
+            # TODO: Implement after releasing edge-sdk with support for reporting vitals
+            # vitals = {
+            #   'cpu': self.mir_ws.get_cpu_usage()
+            # }
+            # self.inorbit_sess.publish_vitals()
+
             # publish mission data
             try:
                 self.mission_tracking.report_mission(self.status, self.metrics)
@@ -266,4 +283,5 @@ class Mir100Connector:
     def stop(self):
         """Exit the Connector cleanly."""
         self._should_run = False
+        self.mir_ws.disconnect()
         self.inorbit_sess.disconnect()

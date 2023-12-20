@@ -7,6 +7,7 @@ import math
 import time
 import pytest
 import threading
+import websocket
 from inorbit_mir_connector.src.connector import Mir100Connector
 from unittest.mock import MagicMock, Mock, call
 from inorbit_mir_connector.src.mir_api import MirApiV2
@@ -21,6 +22,7 @@ def connector(monkeypatch):
     monkeypatch.setenv("INORBIT_KEY", "abc123")
     monkeypatch.setattr(MirApiV2, "_create_api_session", MagicMock())
     monkeypatch.setattr(MirApiV2, "_create_web_session", MagicMock())
+    monkeypatch.setattr(websocket, "WebSocketApp", MagicMock())
     monkeypatch.setattr(RobotSession, "connect", MagicMock())
     monkeypatch.setattr(inorbit_mir_connector.src.connector.os, "makedirs", Mock())
 
@@ -33,9 +35,12 @@ def connector(monkeypatch):
             connector_type="mir100",
             connector_version="0.1.0",
             connector_config={
+                "mir_host_address": "example.com",
+                "mir_host_port": 80,
+                "mir_ws_port": 9090,
+                "mir_use_ssl": False,
                 "mir_username": "user",
                 "mir_password": "pass",
-                "mir_base_url": "http://example.com",
                 "mir_api_version": "v2.0",
                 "enable_mission_tracking": False,
             },
@@ -122,6 +127,7 @@ def test_registers_user_scripts_config(monkeypatch):
         monkeypatch.setenv("INORBIT_KEY", "abc123")
         monkeypatch.setattr(MirApiV2, "_create_api_session", MagicMock())
         monkeypatch.setattr(MirApiV2, "_create_web_session", MagicMock())
+        monkeypatch.setattr(websocket, "WebSocketApp", MagicMock())
         monkeypatch.setattr(RobotSession, "connect", MagicMock())
         monkeypatch.setattr(RobotSession, "register_commands_path", MagicMock())
         monkeypatch.setattr(time, "sleep", Mock())
@@ -138,7 +144,10 @@ def test_registers_user_scripts_config(monkeypatch):
                 connector_config={
                     "mir_username": "user",
                     "mir_password": "pass",
-                    "mir_base_url": "http://example.com",
+                    "mir_host_address": "example.com",
+                    "mir_host_port": 80,
+                    "mir_ws_port": 9090,
+                    "mir_use_ssl": False,
                     "mir_api_version": "v2.0",
                     "enable_mission_tracking": False,
                 },

@@ -24,7 +24,10 @@ def example_configuration_dict():
 def example_mir100_configuration_dict(example_configuration_dict):
     return example_configuration_dict | {
         "connector_config": {
-            "mir_base_url": "https://mir100.local",
+            "mir_host_address": "localhost",
+            "mir_host_port": 80,
+            "mir_ws_port": 9090,
+            "mir_use_ssl": False,
             "mir_username": "admin",
             "mir_password": "admin",
             "mir_api_version": "v2.0",
@@ -70,7 +73,7 @@ def test_mir100_validator(example_mir100_configuration_dict, example_configurati
         )
     # Should allow leaving out the user_scripts field. The connector should set it to its default
     broken_config = deepcopy(example_mir100_configuration_dict)
-    broken_config["connector_config"]["mir_base_url"] = 123
+    broken_config["connector_config"]["mir_host_address"] = 123
     with pytest.raises(ValidationError):
         MiR100Config(**broken_config)
     default_user_scripts = deepcopy(example_mir100_configuration_dict)

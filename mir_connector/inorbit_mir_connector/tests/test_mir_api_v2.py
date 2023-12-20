@@ -33,7 +33,6 @@ def mir_api(requests_mock, monkeypatch):
 def mir_websocket(monkeypatch):
     mir_host_address = "example.com"
     mir_ws_port = 9999
-    # monkeypatch.setattr(MirWebSocketV2, "connect", MagicMock())
     monkeypatch.setattr(websocket, "WebSocketApp", MagicMock())
     ws = MirWebSocketV2(
         mir_host_address=mir_host_address,

@@ -248,17 +248,17 @@ def sample_mir_diagnostics_agg_data():
                     "values": [
                         {"value": "", "key": "/Computer/Network/Gateways"},
                         {
-                            "value": '{"message": "Active with Slave Interface %(index)d", "args": {"index":2}}',
+                            "value": '{"message": "Active with Slave Interface %(index)d", "args": {"index":2}}',  # noqa: E501
                             "key": "/Computer/Network/Master Interface",
                         },
                         {"value": "Link is up", "key": "/Computer/Network/Wifi"},
                         {
                             "value": "Link is down",
-                            "key": '/Computer/Network/{"message": "Slave Interface %(index)s", "args": {"index":1}}',
+                            "key": '/Computer/Network/{"message": "Slave Interface %(index)s", "args": {"index":1}}',  # noqa: E501
                         },
                         {
                             "value": "Link is up",
-                            "key": '/Computer/Network/{"message": "Slave Interface %(index)s", "args": {"index":2}}',
+                            "key": '/Computer/Network/{"message": "Slave Interface %(index)s", "args": {"index":2}}',  # noqa: E501
                         },
                     ],
                     "name": "/Computer/Network",
@@ -270,14 +270,14 @@ def sample_mir_diagnostics_agg_data():
                     "values": [
                         {
                             "value": "600",
-                            "key": '{"message": "Priority %(gateway)s", "args": {"gateway":"192.168.1.1"}}',
+                            "key": '{"message": "Priority %(gateway)s", "args": {"gateway":"192.168.1.1"}}',  # noqa: E501
                         }
                     ],
                     "name": "/Computer/Network/Gateways",
                     "level": 0,
                 },
                 {
-                    "message": '{"message": "Active with Slave Interface %(index)d", "args": {"index":2}}',
+                    "message": '{"message": "Active with Slave Interface %(index)d", "args": {"index":2}}',  # noqa: E501
                     "hardware_id": "enp_br0",
                     "values": [
                         {"value": "enp_br0", "key": "Interface name"},
@@ -292,11 +292,11 @@ def sample_mir_diagnostics_agg_data():
                         {"value": "0", "key": "Collisions"},
                         {
                             "value": "338.81",
-                            "key": '{"message": "Transmitted bytes %(unit)s", "args": {"unit":"[MB]"}}',
+                            "key": '{"message": "Transmitted bytes %(unit)s", "args": {"unit":"[MB]"}}',  # noqa: E501
                         },
                         {
                             "value": "163.7",
-                            "key": '{"message": "Received bytes %(unit)s", "args": {"unit":"[MB]"}}',
+                            "key": '{"message": "Received bytes %(unit)s", "args": {"unit":"[MB]"}}',  # noqa: E501
                         },
                     ],
                     "name": "/Computer/Network/Master Interface",
@@ -318,11 +318,11 @@ def sample_mir_diagnostics_agg_data():
                         {"value": "0", "key": "Collisions"},
                         {
                             "value": "3.81",
-                            "key": '{"message": "Transmitted bytes %(unit)s", "args": {"unit":"[GB]"}}',
+                            "key": '{"message": "Transmitted bytes %(unit)s", "args": {"unit":"[GB]"}}',  # noqa: E501
                         },
                         {
                             "value": "1.77",
-                            "key": '{"message": "Received bytes %(unit)s", "args": {"unit":"[GB]"}}',
+                            "key": '{"message": "Received bytes %(unit)s", "args": {"unit":"[GB]"}}',  # noqa: E501
                         },
                         {"value": "InOrbit", "key": "SSID"},
                         {"value": "a0:40:a0:8c:da:01", "key": "Access point MAC"},
@@ -346,7 +346,7 @@ def sample_mir_diagnostics_agg_data():
                         {"value": "0", "key": "Collisions"},
                         {
                             "value": "0",
-                            "key": '{"message": "Transmitted bytes %(unit)s", "args": {"unit":"[B]"}}',
+                            "key": '{"message": "Transmitted bytes %(unit)s", "args": {"unit":"[B]"}}',  # noqa: E501
                         },
                         {
                             "value": "0",
@@ -362,7 +362,7 @@ def sample_mir_diagnostics_agg_data():
                         },
                         {"value": "", "key": "Ethernet link partner advertised modes"},
                     ],
-                    "name": '/Computer/Network/{"message": "Slave Interface %(index)s", "args": {"index":1}}',
+                    "name": '/Computer/Network/{"message": "Slave Interface %(index)s", "args": {"index":1}}',  # noqa: E501
                     "level": 0,
                 },
                 {
@@ -379,11 +379,11 @@ def sample_mir_diagnostics_agg_data():
                         {"value": "0", "key": "Collisions"},
                         {
                             "value": "338.81",
-                            "key": '{"message": "Transmitted bytes %(unit)s", "args": {"unit":"[MB]"}}',
+                            "key": '{"message": "Transmitted bytes %(unit)s", "args": {"unit":"[MB]"}}',  # noqa: E501
                         },
                         {
                             "value": "204.28",
-                            "key": '{"message": "Received bytes %(unit)s", "args": {"unit":"[MB]"}}',
+                            "key": '{"message": "Received bytes %(unit)s", "args": {"unit":"[MB]"}}',  # noqa: E501
                         },
                         {"value": "Yes", "key": "Ethernet link detected"},
                         {"value": "100", "key": "Ethernet link speed [MBit/s]"},
@@ -395,7 +395,7 @@ def sample_mir_diagnostics_agg_data():
                         },
                         {"value": "", "key": "Ethernet link partner advertised modes"},
                     ],
-                    "name": '/Computer/Network/{"message": "Slave Interface %(index)s", "args": {"index":2}}',
+                    "name": '/Computer/Network/{"message": "Slave Interface %(index)s", "args": {"index":2}}',  # noqa: E501
                     "level": 0,
                 },
                 {
@@ -680,7 +680,7 @@ def sample_mir_diagnostics_agg_data():
                         {"value": "920312071818", "key": "Device Serial Number"},
                         {"value": "05.11.06.250", "key": "Device Firmware Version"},
                         {
-                            "value": "/sys/devices/pci0000:00/0000:00:14.0/usb2/2-1/2-1:1.0/video4linux/video0",
+                            "value": "/sys/devices/pci0000:00/0000:00:14.0/usb2/2-1/2-1:1.0/video4linux/video0",  # noqa: E501
                             "key": "Device Physical Port",
                         },
                         {"value": "3.2", "key": "Device USB version"},
@@ -707,7 +707,7 @@ def sample_mir_diagnostics_agg_data():
                         {"value": "920312071416", "key": "Device Serial Number"},
                         {"value": "05.11.06.250", "key": "Device Firmware Version"},
                         {
-                            "value": "/sys/devices/pci0000:00/0000:00:14.0/usb2/2-2/2-2:1.0/video4linux/video3",
+                            "value": "/sys/devices/pci0000:00/0000:00:14.0/usb2/2-2/2-2:1.0/video4linux/video3",  # noqa: E501
                             "key": "Device Physical Port",
                         },
                         {"value": "3.2", "key": "Device USB version"},

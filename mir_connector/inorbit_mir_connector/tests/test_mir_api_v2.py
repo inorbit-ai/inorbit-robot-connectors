@@ -16,7 +16,7 @@ from unittest.mock import MagicMock
 def mir_api(requests_mock, monkeypatch):
     mir_host_address = "example.com"
     mir_host_port = 8080
-    requests_mock.post(f"http://example.com:8080/?mode=log-in", text="I'm letting you in")
+    requests_mock.post("http://example.com:8080/?mode=log-in", text="I'm letting you in")
     # monkeypatch.setattr(MirWebSocketV2, "connect", MagicMock())
     monkeypatch.setattr(websocket, "WebSocketApp", MagicMock())
     api = MirApiV2(
@@ -144,7 +144,11 @@ def test_websocket_connection(mir_websocket):
 
     # Check subscriptionn to diagnostics_agg
     mir_websocket.ws.send.assert_called_once_with(
-        '{"op":"subscribe","id":"subscribe:/diagnostics_agg:1","type":"diagnostic_msgs/DiagnosticArray","topic":"/diagnostics_agg","compression":"none","throttle_rate":0,"queue_length":0}'
+        (
+            '{"op": "subscribe", "id": "subscribe:/diagnostics_agg:1", '
+            '"type": "diagnostic_msgs/DiagnosticArray", "topic": "/diagnostics_agg", '
+            '"compression": "none", "throttle_rate": 0, "queue_length": 0}'
+        )
     )
 
     # Check disconnect closes ws
@@ -171,4 +175,4 @@ def test_websocket_diagnostics_agg_msg(mir_websocket, sample_mir_diagnostics_agg
     # Process message with missing data
     mir_websocket.on_message(mir_websocket.ws, json.dumps({"topic": "/diagnostics_agg"}))
     assert DeepDiff({"topic": "/diagnostics_agg"}, mir_websocket.last_diagnostics_agg_msg) == {}
-    assert mir_websocket.get_cpu_usage() == None
+    assert mir_websocket.get_cpu_usage() is None

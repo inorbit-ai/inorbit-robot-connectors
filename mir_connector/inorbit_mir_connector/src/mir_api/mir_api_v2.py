@@ -216,7 +216,7 @@ class MirWebSocketV2:
         self.subscribe_diagnostics_agg()
 
     def on_close(self, ws, close_status_code, close_msg):
-        self.logger.info(f"Disconnected from server")
+        self.logger.info("Disconnected from server")
 
     def on_message(self, ws, message):
         try:
@@ -250,9 +250,21 @@ class MirWebSocketV2:
     def subscribe_diagnostics_agg(self):
         self.logger.info("Subscribing to 'diagnostics_agg' topic")
         # This is the same command the MiR web UI sends
-        self.ws.send(
-            '{"op":"subscribe","id":"subscribe:/diagnostics_agg:1","type":"diagnostic_msgs/DiagnosticArray","topic":"/diagnostics_agg","compression":"none","throttle_rate":0,"queue_length":0}'
+        msg = json.dumps(
+            {
+                "op": "subscribe",
+                "id": "subscribe:/diagnostics_agg:1",
+                "type": "diagnostic_msgs/DiagnosticArray",
+                "topic": "/diagnostics_agg",
+                "compression": "none",
+                "throttle_rate": 0,
+                "queue_length": 0,
+            }
         )
+
+        # Remove spaces
+        self.logger.debug(f"Sending message: {msg}")
+        self.ws.send(msg)
 
     def handle_diagnostics_agg_msg(self, message):
         self.logger.debug(f"Got diagnostics_agg message: {message}")

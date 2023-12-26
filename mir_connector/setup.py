@@ -40,32 +40,27 @@ extra_requirements = {
 
 setup(
     name="inorbit_mir_connector",
-    description="InOrbit Edge-SDK connector for MiR robots. It pools data from MiR API and sends "
+    description="InOrbit Edge-SDK connector for MiR robots. It polls data from MiR API and sends "
     + "it to InOrbit cloud through the edge-sdk.",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     project_urls={
-        # TODO(b-Tomas): Check it is the correct one when it is public
-        "repository": "https://github.com/inorbit-ai/inorbit-robot-connectors/mir_connector",
-        # TODO(b-Tomas): Check it is the correct one when it is public
-        "pypi": "https://pypi.org/project/inorbit_mir_connector/",
+        "repository": "https://github.com/inorbit-ai/inorbit-robot-connectors/tree/main/mir_connector",  # noqa: E501
+        "pypi": "https://pypi.org/project/inorbit-mir-connector",
         "issues": "https://github.com/inorbit-ai/inorbit-robot-connectors/issues",
     },
-    author="InOrbit",
+    author="InOrbit Inc.",
     author_email="support@inorbit.ai",
-    maintainer="Leandro Pineda, Tomás Badenes, Elvio Aruta",
-    maintainer_email="leandro@inorbit.ai, tomas@inorbit.ai, elvio@inorbit.ai",
     license="MIT",
     packages=["inorbit_mir_connector"],
     install_requires=requirements,
     tests_require=test_requirements,
     extras_require=extra_requirements,
-    # TODO(Elvio): Add better classifiers
     classifiers=[
-        "Intended Audience :: Developers",
-        "Programming Language :: Python :: 3.7",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
+        "Intended Audience :: Other Audience",
+        "License :: OSI Approved :: MIT License",
+        "Programming Language :: Python :: 3",
+        "Natural Language :: English",
     ],
     keywords=["connector", "edge-sdk", "inorbit", "robops", "mir"],
     entry_points={
@@ -74,7 +69,7 @@ setup(
         ]
     },
     python_requires=">=3.7",
-    # Do not edit this string manually, always use bump-my-version
-    # Details in TODO(b-Tomas): add reference to the final documentation file
+    # Do not edit this string manually, always use bump-my-version. See
+    # https://github.com/inorbit-ai/inorbit-robot-connectors/tree/main/mir_connector#version-bump
     version="0.1.0",
 )

@@ -19,21 +19,21 @@ This integration requires the Connector to be configured following the instructi
 
 By integrating InOrbit's Python Edge SDK with MiR's APIs, the Connector unlocks the following key features on InOrbit's platform:
 
-- Visualizing: robot pose, system and sub-system status, and battery charge.
-- Camera feed integration.
-- Using [Actions](https://developer.inorbit.ai/docs#configuring-action-definitions) to interact with MiR's API by:
+-   Visualizing: robot pose, system and sub-system status, and battery charge.
+-   Camera feed integration.
+-   Using [Actions](https://developer.inorbit.ai/docs#configuring-action-definitions) to interact with MiR's API by:
 
-  - Dispatching Mission.
-  - Controlling Mission status (pause, cancel, retry, etc.).
-  - Dispatching simple Send robot to target missions.
+    -   Dispatching Mission.
+    -   Controlling Mission status (pause, cancel, retry, etc.).
+    -   Dispatching simple Send robot to target missions.
 
-- Running custom shell scripts on the connector via Custom Actions.
-- [Mission Tracking](https://developer.inorbit.ai/docs#configuring-mission-tracking) support.
+-   Running custom shell scripts on the connector via Custom Actions.
+-   [Mission Tracking](https://developer.inorbit.ai/docs#configuring-mission-tracking) support.
 
 ## Requirements
 
-- Python 3.7 or later.
-- InOrbit account [(it's free to sign up!)](https://control.inorbit.ai/ "InOrbit").
+-   Python 3.7 or later.
+-   InOrbit account [(it's free to sign up!)](https://control.inorbit.ai/ "InOrbit").
 
 ## Setup
 
@@ -55,12 +55,12 @@ There are two alternatives for installing the connector Python package.
 
 Configure the Connector:
 
-- Copy `config/my_fleet.example.yaml` and modify the `robot_id` (e.g. `mir100-1`) with the one generated on the previous step. Note that the configuration file supports adding multiple robots, so it's advised copying it to a directory outside of the `mir-connector-${MY_INORBIT_ID}` folder. If you plan to deploy multiple robots on a production environment, please contact [support@inorbit.ai](support@inorbit.ai) for allocating a pool of robot IDs for your fleet.
+-   Copy `config/my_fleet.example.yaml` and modify the `robot_id` (e.g. `mir100-1`) with the one generated on the previous step. Note that the configuration file supports adding multiple robots, so it's advised copying it to a directory outside of the `mir-connector-${MY_INORBIT_ID}` folder. If you plan to deploy multiple robots on a production environment, please contact [support@inorbit.ai](support@inorbit.ai) for allocating a pool of robot IDs for your fleet.
 
-- Copy `config/example.env` to `config/.env` and set the environment variables following the instructions in the same file.
-  You can get the `INORBIT_KEY` for your account from InOrbit's [Developer Console](https://developer.inorbit.ai/docs#configuring-environment-variables).
+-   Copy `config/example.env` to `config/.env` and set the environment variables following the instructions in the same file.
+    You can get the `INORBIT_KEY` for your account from InOrbit's [Developer Console](https://developer.inorbit.ai/docs#configuring-environment-variables).
 
-- Also apply the Configuration as Code manifests under the `cac_examples` folder, through the [InOrbit CLI](https://developer.inorbit.ai/docs#using-the-inorbit-cli).
+-   Also apply the Configuration as Code manifests under the `cac_examples` folder, through the [InOrbit CLI](https://developer.inorbit.ai/docs#using-the-inorbit-cli).
 
 ## Deployment
 
@@ -128,13 +128,13 @@ pytest -v
 
 ## Version Bump
 
-Having installed the `dev` set of requirements, run
+Having installed the `dev` set of requirements, to update the version number, commit the changes and create a tag run the following:
 
 ```bash
 bump-my-version bump minor # Options: major, minor, patch
 ```
 
-To update the version number, commit the changes and create a tag. To prevent changes from being applied, use
+To prevent changes from being applied, use
 
 ```bash
 bump-my-version bump minor --dry-run --verbose
@@ -142,7 +142,9 @@ bump-my-version bump minor --dry-run --verbose
 
 ### Build and publish the package
 
-New releases are built and published to pypi automatically by github actions when a new version bump commit is pushed.
+New releases are built and published to PyPi automatically by GitHub Actions when a new version bump commit is pushed.
+
+> _Note:_ The message of the last commit must contain "Bump version" for the publish job to run. e.g. "Bumb version: 0.0.0 -> 0.0.1"
 
 To manually build and publish the package to https://test.pypi.org/, run:
 
@@ -150,21 +152,7 @@ To manually build and publish the package to https://test.pypi.org/, run:
 pip install .[dev] # Install dependencies
 python -m build --sdist # Build the package
 twine check dist/* # Run checks
-twine upload --repository testpypi dist/* # Upload to test PyPI. $HOME/.pypirc should exist and contain the api tokens https://pypi.org/help/#apitoken
-```
-
-To use [act](https://github.com/nektos/act) and the github actions workflow, create a `secrets.env` containing the API token:
-
-```env
-TEST_PYPI_API_TOKEN="pypi-asdf..."
-```
-
-Run the workflow.
-
-_Note:_ The last commit message must contain "Bump version" for the publish job to run
-
-```bash
-act -j publish -W .github/workflows/mir_workflows.yml --secret-file secrets.env
+twine upload --repository testpypi dist/* # Upload to test PyPI. $HOME/.pypirc should exist and contain the api tokens. See https://pypi.org/help/#apitoken
 ```
 
 <!-- ![Powered by InOrbit](../assets/inorbit_github_footer.png) -->

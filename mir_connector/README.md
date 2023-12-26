@@ -53,7 +53,7 @@ mkdir config/
 There are two alternatives for installing the connector Python package.
 
 1. From PyPi: `pip install inorbit-mir-connector`.
-2. From source: clone the repository and run `pip install -e <mir_connector folder path>`.
+2. From source: clone the repository and run `pip install -e mir_connector/`.
 
 Configure the Connector:
 
@@ -146,7 +146,7 @@ bump-my-version bump minor --dry-run --verbose
 
 New releases are built and published to PyPi automatically by GitHub Actions when a new version bump commit is pushed.
 
-> _Note:_ The message of the last commit must contain "Bump version" for the publish job to run. e.g. "Bumb version: 0.0.0 -> 0.0.1"
+> _Note:_ The message of the last commit must contain "Bump version" for the publish job to run. e.g. "Bump version: 1.0.0 -> 1.0.1"
 
 To manually build and publish the package to https://test.pypi.org/, run:
 

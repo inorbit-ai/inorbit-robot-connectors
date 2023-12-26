@@ -5,7 +5,7 @@
 __author__ = "InOrbit"
 __email__ = "support@inorbit.ai"
 # Do not edit this string manually, always use bump-my-version
-# Details in https://github.com/inorbit-ai/inorbit-robot-connectors/tree/main/mir_connector#version-bump
+# See https://github.com/inorbit-ai/inorbit-robot-connectors/tree/main/mir_connector#version-bump
 __version__ = "0.1.0"
 
 

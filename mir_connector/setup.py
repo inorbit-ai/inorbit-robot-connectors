@@ -45,7 +45,7 @@ setup(
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     project_urls={
-        "repository": "https://github.com/inorbit-ai/inorbit-robot-connectors/tree/main/mir_connector",
+        "repository": "https://github.com/inorbit-ai/inorbit-robot-connectors/tree/main/mir_connector",  # noqa: E501
         "pypi": "https://pypi.org/project/inorbit-mir-connector",
         "issues": "https://github.com/inorbit-ai/inorbit-robot-connectors/issues",
     },
@@ -69,7 +69,7 @@ setup(
         ]
     },
     python_requires=">=3.7",
-    # Do not edit this string manually, always use bump-my-version
-    # Details in https://github.com/inorbit-ai/inorbit-robot-connectors/tree/main/mir_connector#version-bump
+    # Do not edit this string manually, always use bump-my-version. See
+    # https://github.com/inorbit-ai/inorbit-robot-connectors/tree/main/mir_connector#version-bump
     version="0.1.0",
 )

@@ -9,6 +9,8 @@ SPDX-License-Identifier: MIT
 <!-- TODO: add missing asset -->
 <!-- ![MIR <> InOrbit Connector](../assets/mir_inorbit_connector_banner.png) -->
 
+[![Workflow Status](https://github.com/inorbit-ai/inorbit-robot-connectors/actions/workflows/mir_workflows.yml/badge.svg)](https://github.com/inorbit-ai/inorbit-robot-connectors/actions)
+
 ## Overview
 
 This repository contains the [InOrbit](https://inorbit.ai/) Robot Connector for [MiR Motors](https://directory.inorbit.ai/connect/Mobile-Industrial-Robots-A/S) AMRs. Making use of MiR REST APIs as well as InOrbit's [Edge SDK](https://developer.inorbit.ai/docs#edge-sdk), the Connector allows the integration of MiR robots with your fleet on InOrbit, unlocking interoperability.

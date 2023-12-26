@@ -47,8 +47,6 @@ def start():
     args = parser.parse_args()
     robot_id, config_filename = args.robot_id, args.config
 
-    # TODO(b-Tomas): Make use of all the config values e.g. validate package version, api version,
-    # etc.
     try:
         mir_config = load_and_validate(config_filename, robot_id)
     except FileNotFoundError:

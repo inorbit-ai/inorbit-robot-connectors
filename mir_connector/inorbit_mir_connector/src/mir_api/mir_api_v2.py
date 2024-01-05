@@ -82,9 +82,7 @@ class MirApiV2(MirApiBaseClass):
 
     def get_mission(self, mission_queue_id):
         """Queries a mission using the mission_queue/{mission_id} endpoint"""
-        mission_api_url = (
-            f"{self.mir_api_base_url}/{MISSION_QUEUE_ENDPOINT_V2}/{mission_queue_id}"
-        )
+        mission_api_url = f"{self.mir_api_base_url}/{MISSION_QUEUE_ENDPOINT_V2}/{mission_queue_id}"
         mission = self._get(mission_api_url, self.api_session).json()
         actions = self._get(f"{mission_api_url}/actions", self.api_session).json()
 
@@ -108,9 +106,7 @@ class MirApiV2(MirApiBaseClass):
     def get_mission_actions(self, mission_id):
         """Queries a list of actions a mission executes using
         the missions/{mission_id}/actions endpoint"""
-        actions_api_url = (
-            f"{self.mir_api_base_url}/{MISSIONS_ENDPOINT_V2}/{mission_id}/actions"
-        )
+        actions_api_url = f"{self.mir_api_base_url}/{MISSIONS_ENDPOINT_V2}/{mission_id}/actions"
         response = self._get(actions_api_url, self.api_session)
         actions = response.json()
         return actions
@@ -202,15 +198,11 @@ class MirApiV2(MirApiBaseClass):
 
 
 class MirWebSocketV2:
-    def __init__(
-        self, mir_host_address, mir_ws_port=9090, mir_use_ssl=False, loglevel="INFO"
-    ):
+    def __init__(self, mir_host_address, mir_ws_port=9090, mir_use_ssl=False, loglevel="INFO"):
         self.logger = logging.getLogger(name=self.__class__.__name__)
         self.logger.setLevel(loglevel)
 
-        self.mir_ws_url = (
-            f"{'wss' if mir_use_ssl else 'ws'}://{mir_host_address}:{mir_ws_port}/"
-        )
+        self.mir_ws_url = f"{'wss' if mir_use_ssl else 'ws'}://{mir_host_address}:{mir_ws_port}/"
         # Store the last diagnostics_agg message (raw)
         self.last_diagnostics_agg_msg = {}
 
@@ -279,9 +271,7 @@ class MirWebSocketV2:
 
     def get_diagnostics_agg_value(self, status_name, key_name):
         status_list = self.last_diagnostics_agg_msg.get("msg", {}).get("status", [])
-        status = next(
-            (status for status in status_list if status["name"] == status_name), None
-        )
+        status = next((status for status in status_list if status["name"] == status_name), None)
         # Caller should handle 'None' return values and ignore them
         if not status:
             return None
@@ -305,9 +295,7 @@ class MirWebSocketV2:
 
     def get_disk_usage(self):
         hdd_status_name = "/Computer/PC/Harddrive"
-        hdd_total_size_key_name = (
-            '{"message": "Total size %(unit)s", "args": {"unit":"[GB]"}}'
-        )
+        hdd_total_size_key_name = '{"message": "Total size %(unit)s", "args": {"unit":"[GB]"}}'
         hdd_used_size_key_name = '{"message": "Used %(unit)s", "args": {"unit":"[GB]"}}'
         hdd_total_size = self.get_diagnostics_agg_value(
             status_name=hdd_status_name, key_name=hdd_total_size_key_name
@@ -318,9 +306,7 @@ class MirWebSocketV2:
         if not hdd_total_size or not hdd_used_size:
             return None
         try:
-            hdd_used_percentage = (
-                (float(hdd_used_size) * 100) / float(hdd_total_size)
-            ) / 100
+            hdd_used_percentage = ((float(hdd_used_size) * 100) / float(hdd_total_size)) / 100
             return hdd_used_percentage
         except ZeroDivisionError:
             # Adding extra validation in case for some reason the hdd_total_size equals 0
@@ -328,12 +314,8 @@ class MirWebSocketV2:
 
     def get_memory_usage(self):
         memory_status_name = "/Computer/PC/Memory"
-        memory_total_size_key_name = (
-            '{"message": "Total size %(unit)s", "args": {"unit":"[GB]"}}'
-        )
-        memory_used_size_key_name = (
-            '{"message": "Used %(unit)s", "args": {"unit":"[GB]"}}'
-        )
+        memory_total_size_key_name = '{"message": "Total size %(unit)s", "args": {"unit":"[GB]"}}'
+        memory_used_size_key_name = '{"message": "Used %(unit)s", "args": {"unit":"[GB]"}}'
         memory_total_size = self.get_diagnostics_agg_value(
             status_name=memory_status_name, key_name=memory_total_size_key_name
         )

@@ -87,9 +87,7 @@ class Mir100Connector:
 
         # Set up environment variables
         user_scripts_config = config.user_scripts.model_dump()
-        for env_var_name, env_var_value in user_scripts_config.get(
-            "env_vars", {}
-        ).items():
+        for env_var_name, env_var_value in user_scripts_config.get("env_vars", {}).items():
             self.logger.info(f"Setting environment variable '{env_var_name}'")
             os.environ[env_var_name] = env_var_value
 
@@ -108,17 +106,13 @@ class Mir100Connector:
         # extension).
         # More script types can be supported, but right now is only limited to bash scripts
         self.logger.info(f"Registering user_scripts path: {user_scripts_path}")
-        self.inorbit_sess.register_commands_path(
-            user_scripts_path, exec_name_regex=r".*\.sh"
-        )
+        self.inorbit_sess.register_commands_path(user_scripts_path, exec_name_regex=r".*\.sh")
 
         self.inorbit_sess.register_command_callback(self.command_callback)
 
         # Set up camera feeds
         for idx, camera_config in enumerate(config.cameras):
-            self.inorbit_sess.register_camera(
-                str(idx), OpenCVCamera(**camera_config.model_dump())
-            )
+            self.inorbit_sess.register_camera(str(idx), OpenCVCamera(**camera_config.model_dump()))
 
         # Set up InOrbit Mission Tracking
         self.mission_tracking = MirInorbitMissionTracking(

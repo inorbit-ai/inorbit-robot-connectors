@@ -82,7 +82,9 @@ class MirApiV2(MirApiBaseClass):
 
     def get_mission(self, mission_queue_id):
         """Queries a mission using the mission_queue/{mission_id} endpoint"""
-        mission_api_url = f"{self.mir_api_base_url}/{MISSION_QUEUE_ENDPOINT_V2}/{mission_queue_id}"
+        mission_api_url = (
+            f"{self.mir_api_base_url}/{MISSION_QUEUE_ENDPOINT_V2}/{mission_queue_id}"
+        )
         mission = self._get(mission_api_url, self.api_session).json()
         actions = self._get(f"{mission_api_url}/actions", self.api_session).json()
 
@@ -106,7 +108,9 @@ class MirApiV2(MirApiBaseClass):
     def get_mission_actions(self, mission_id):
         """Queries a list of actions a mission executes using
         the missions/{mission_id}/actions endpoint"""
-        actions_api_url = f"{self.mir_api_base_url}/{MISSIONS_ENDPOINT_V2}/{mission_id}/actions"
+        actions_api_url = (
+            f"{self.mir_api_base_url}/{MISSIONS_ENDPOINT_V2}/{mission_id}/actions"
+        )
         response = self._get(actions_api_url, self.api_session)
         actions = response.json()
         return actions
@@ -198,11 +202,15 @@ class MirApiV2(MirApiBaseClass):
 
 
 class MirWebSocketV2:
-    def __init__(self, mir_host_address, mir_ws_port=9090, mir_use_ssl=False, loglevel="INFO"):
+    def __init__(
+        self, mir_host_address, mir_ws_port=9090, mir_use_ssl=False, loglevel="INFO"
+    ):
         self.logger = logging.getLogger(name=self.__class__.__name__)
         self.logger.setLevel(loglevel)
 
-        self.mir_ws_url = f"{'wss' if mir_use_ssl else 'ws'}://{mir_host_address}:{mir_ws_port}/"
+        self.mir_ws_url = (
+            f"{'wss' if mir_use_ssl else 'ws'}://{mir_host_address}:{mir_ws_port}/"
+        )
         # Store the last diagnostics_agg message (raw)
         self.last_diagnostics_agg_msg = {}
 
@@ -269,28 +277,76 @@ class MirWebSocketV2:
         self.logger.debug(f"Got diagnostics_agg message: {message}")
         self.last_diagnostics_agg_msg = message
 
-    def get_cpu_usage(self):
-        # NOTE: the logic for getting first a certain status object by name and
-        # then extracting certain key/value from it will probably be used on
-        # other methods for looking up relevant information. Please consider
-        # refactoring to reuse the logic below:
-        # e.g. get_diagnostics_agg_value(status_name, key_name)
-
-        # Get status list from message
+    def get_diagnostics_agg_value(self, status_name, key_name):
         status_list = self.last_diagnostics_agg_msg.get("msg", {}).get("status", [])
-        # CPU load is sent on status message with name "/Computer/PC/CPU Load"
-        cpu_load_status = next(
-            (status for status in status_list if status["name"] == "/Computer/PC/CPU Load"), None
+        status = next(
+            (status for status in status_list if status["name"] == status_name), None
         )
-
         # Caller should handle 'None' return values and ignore them
-        if not cpu_load_status:
+        if not status:
+            return None
+        values = status.get("values", [])
+        # Finally, look for the key/value dictionary having key = key_name (fn param)
+        status_kv = next((value for value in values if value["key"] == key_name), None)
+        if not status_kv:
+            return None
+        return status_kv.get("value")
+
+    def get_cpu_usage(self):
+        cpu_status_name = "/Computer/PC/CPU Load"
+        average_cpu_load_key_name = "Average CPU load"
+        average_cpu_load = self.get_diagnostics_agg_value(
+            status_name=cpu_status_name, key_name=average_cpu_load_key_name
+        )
+        if average_cpu_load:
+            return float(average_cpu_load) / 100
+        else:
             return None
 
-        # Now iterate over values
-        values = cpu_load_status.get("values", [])
+    def get_disk_usage(self):
+        hdd_status_name = "/Computer/PC/Harddrive"
+        hdd_total_size_key_name = '{\"message\": \"Total size %(unit)s\", \"args\": {\"unit\":\"[GB]\"}}'
+        hdd_used_size_key_name = '{"message": "Used %(unit)s", "args": {"unit":"[GB]"}}'
+        hdd_total_size = float(self.get_diagnostics_agg_value(
+            status_name=hdd_status_name, key_name=hdd_total_size_key_name
+        ))
+        hdd_used_size = float(self.get_diagnostics_agg_value(
+            status_name=hdd_status_name, key_name=hdd_used_size_key_name
+        ))
+        if not hdd_total_size or not hdd_used_size:
+            return None
+        try:
+            hdd_used_percentage = ((hdd_used_size * 100) / hdd_total_size) / 100
+            return hdd_used_percentage
+        except ZeroDivisionError:
+            # Adding extra validation in case for some reason the hdd_total_size equals 0
+            return None
 
-        # Finally, look for the key/value dictionary having key "Average CPU load"
-        cpu_load_kv = next((value for value in values if value["key"] == "Average CPU load"))
-
-        return cpu_load_kv.get("value")
+    def get_memory_usage(self):
+        memory_status_name = "/Computer/PC/Memory"
+        memory_total_size_key_name = (
+            '{"message": "Total size %(unit)s", "args": {"unit":"[GB]"}}'
+        )
+        memory_used_size_key_name = (
+            '{"message": "Used %(unit)s", "args": {"unit":"[GB]"}}'
+        )
+        memory_total_size = float(
+            self.get_diagnostics_agg_value(
+                status_name=memory_status_name, key_name=memory_total_size_key_name
+            )
+        )
+        memory_used_size = float(
+            self.get_diagnostics_agg_value(
+                status_name=memory_status_name, key_name=memory_used_size_key_name
+            )
+        )
+        if not memory_used_size or not memory_total_size:
+            return None
+        try:
+            memory_used_percentage = (
+                (memory_used_size * 100) / memory_total_size
+            ) / 100
+            return memory_used_percentage
+        except ZeroDivisionError:
+            # Adding extra validation in case for some reason the memory_total_size equals 0
+            return None

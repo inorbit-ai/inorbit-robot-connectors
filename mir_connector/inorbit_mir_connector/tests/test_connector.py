@@ -81,7 +81,9 @@ def test_command_callback_missions(connector, callback_kwargs):
         connector.mir_api.reset_mock()
 
     # Simulate an executor timeout, which should disable robot mission tracking
-    connector.inorbit_sess.missions_module.executor.wait_until_idle = Mock(return_value=False)
+    connector.inorbit_sess.missions_module.executor.wait_until_idle = Mock(
+        return_value=False
+    )
     assert connector.mission_tracking.mir_mission_tracking_enabled is False
     callback_kwargs["command_name"] = "customCommand"
     callback_kwargs["args"] = ["queue_mission", ["--mission_id", "1"]]
@@ -92,7 +94,9 @@ def test_command_callback_missions(connector, callback_kwargs):
     reset_mock()
 
     # Queue mission
-    connector.inorbit_sess.missions_module.executor.wait_until_idle = Mock(return_value=True)
+    connector.inorbit_sess.missions_module.executor.wait_until_idle = Mock(
+        return_value=True
+    )
     callback_kwargs["command_name"] = "customCommand"
     callback_kwargs["args"] = ["queue_mission", ["--mission_id", "2"]]
     connector.command_callback(**callback_kwargs)
@@ -114,7 +118,10 @@ def test_command_callback_missions(connector, callback_kwargs):
     callback_kwargs["command_name"] = "customCommand"
     callback_kwargs["args"] = ["abort_missions", []]
     connector.command_callback(**callback_kwargs)
-    assert connector.inorbit_sess.missions_module.executor.cancel_mission.call_args == call("*")
+    assert (
+        connector.inorbit_sess.missions_module.executor.cancel_mission.call_args
+        == call("*")
+    )
     assert connector.mir_api.abort_all_missions.call_args == call()
     callback_kwargs["options"]["result_function"].assert_called_with("0")
     reset_mock()
@@ -229,18 +236,6 @@ def test_connector_loop(connector, monkeypatch):
 
     def run_loop_once():
         monkeypatch.setattr(inorbit_mir_connector.src.connector, "sleep", Mock())
-        monkeypatch.setattr(
-            inorbit_mir_connector.src.connector.psutil,
-            "cpu_percent",
-            Mock(return_value=12.5),
-        )
-        virtual_memory = Mock()
-        virtual_memory.percent = 33.3
-        monkeypatch.setattr(
-            inorbit_mir_connector.src.connector.psutil,
-            "virtual_memory",
-            Mock(return_value=virtual_memory),
-        )
         connector_thread = threading.Thread(target=connector.start)
         connector_thread.start()
         while not inorbit_mir_connector.src.connector.sleep.called:
@@ -322,8 +317,6 @@ def test_connector_loop(connector, monkeypatch):
             "mode_text": "Mission",
             "robot_model": "MiR100",
             "waiting_for": "",
-            "cpu": 12.5,
-            "memory_usage": 33.3,
         }
     )
 

@@ -88,7 +88,9 @@ class Mir100Connector:
 
         # Set up environment variables
         user_scripts_config = config.user_scripts.model_dump()
-        for env_var_name, env_var_value in user_scripts_config.get("env_vars", {}).items():
+        for env_var_name, env_var_value in user_scripts_config.get(
+            "env_vars", {}
+        ).items():
             self.logger.info(f"Setting environment variable '{env_var_name}'")
             os.environ[env_var_name] = env_var_value
 
@@ -107,13 +109,17 @@ class Mir100Connector:
         # extension).
         # More script types can be supported, but right now is only limited to bash scripts
         self.logger.info(f"Registering user_scripts path: {user_scripts_path}")
-        self.inorbit_sess.register_commands_path(user_scripts_path, exec_name_regex=r".*\.sh")
+        self.inorbit_sess.register_commands_path(
+            user_scripts_path, exec_name_regex=r".*\.sh"
+        )
 
         self.inorbit_sess.register_command_callback(self.command_callback)
 
         # Set up camera feeds
         for idx, camera_config in enumerate(config.cameras):
-            self.inorbit_sess.register_camera(str(idx), OpenCVCamera(**camera_config.model_dump()))
+            self.inorbit_sess.register_camera(
+                str(idx), OpenCVCamera(**camera_config.model_dump())
+            )
 
         # Set up InOrbit Mission Tracking
         self.mission_tracking = MirInorbitMissionTracking(
@@ -258,21 +264,21 @@ class Mir100Connector:
                 "mode_text": mode_text,
                 "robot_model": self.status["robot_model"],
                 "waiting_for": self.mission_tracking.waiting_for_text,
-                # NOTE: System stats come from the system where the connector is running,
-                # likely a server and not the robot itself
-                # TODO(b-Tomas): Report more system stats
-                # TODO(b-Tomas): Include this in the edge-sdk
-                "cpu": psutil.cpu_percent(),  # System-wide load average since last call (0-100)
-                "memory_usage": psutil.virtual_memory().percent,  # Memory usage percentage (0-100)
             }
             self.logger.debug(f"Publishing key values: {key_values}")
             self.inorbit_sess.publish_key_values(key_values)
 
-            # TODO: Implement after releasing edge-sdk with support for reporting vitals
-            # vitals = {
-            #   'cpu': self.mir_ws.get_cpu_usage()
-            # }
-            # self.inorbit_sess.publish_vitals()
+            # Reporting system stats
+            # TODO(b-Tomas): Report more system stats
+
+            cpu_usage = self.mir_ws.get_cpu_usage()
+            disk_usage = self.mir_ws.get_disk_usage()
+            memory_usage = self.mir_ws.get_memory_usage()
+            self.inorbit_sess.publish_system_stats(
+                cpu_load_percentage=cpu_usage,
+                hdd_usage_percentage=disk_usage,
+                ram_usage_percentage=memory_usage,
+            )
 
             # publish mission data
             try:

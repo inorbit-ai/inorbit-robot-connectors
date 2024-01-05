@@ -123,7 +123,7 @@ flake8 --max-line-length=100 --exclude venv
 ```bash
 # Create the virtualenv if not active already
 virtualenv venv/
-pip install -e '.[test]'
+pip install -e '.[dev]'
 . venv/bin/activate
 pytest -v
 ```

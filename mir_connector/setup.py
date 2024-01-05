@@ -7,7 +7,7 @@ from setuptools import setup
 
 requirements = [
     "requests==2.26.0",
-    "inorbit-edge[video]>=1.10.1",
+    "inorbit-edge[video]>=1.12.1",
     "prometheus-client>=0.14.1",
     "pytz>=2022.7",
     # NOTE: both pyyaml and ruamel.yaml packages are included here. Otherwise, the
@@ -17,6 +17,7 @@ requirements = [
     "ruamel.yaml>=0.18,<0.19",
     "pydantic==2.5",
     "psutil==5.9",
+    "websocket-client==1.7.0",
 ]
 
 test_requirements = [

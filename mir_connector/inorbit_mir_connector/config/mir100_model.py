@@ -16,7 +16,10 @@ default_mir100_config = {
     "cameras": [],
     "connector_type": "mir100",
     "connector_config": {
-        "mir_base_url": "http://localhost:80",
+        "mir_host_address": "localhost",
+        "mir_host_port": 80,
+        "mir_ws_port": 9090,
+        "mir_use_ssl": False,
         "mir_username": "",
         "mir_password": "",
         "enable_mission_tracking": True,
@@ -35,7 +38,10 @@ class MiR100ConfigModel(BaseModel):
     Specific configuration for MiR100 connector.
     """
 
-    mir_base_url: str
+    mir_host_address: str
+    mir_host_port: int
+    mir_ws_port: int
+    mir_use_ssl: bool
     mir_username: str
     mir_password: str
     mir_api_version: str

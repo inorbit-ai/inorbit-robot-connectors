@@ -7,13 +7,13 @@ import pytz
 from time import sleep
 import math
 import os
-import psutil
 from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND
 from inorbit_edge.robot import COMMAND_MESSAGE
 from inorbit_edge.robot import COMMAND_NAV_GOAL
 from inorbit_edge.robot import RobotSession
 from inorbit_edge.video import OpenCVCamera
 from .mir_api import MirApiV2
+from .mir_api import MirWebSocketV2
 from .mission import MirInorbitMissionTracking
 from ..config.mir100_model import MiR100Config
 
@@ -45,9 +45,19 @@ class Mir100Connector:
 
         # Configure the connection to the robot
         self.mir_api = MirApiV2(
-            mir_base_url=config.connector_config.mir_base_url,
+            mir_host_address=config.connector_config.mir_host_address,
             mir_username=config.connector_config.mir_username,
             mir_password=config.connector_config.mir_password,
+            mir_host_port=config.connector_config.mir_host_port,
+            mir_use_ssl=config.connector_config.mir_use_ssl,
+            loglevel=log_level,
+        )
+
+        # Configure the ws connection to the robot
+        self.mir_ws = MirWebSocketV2(
+            mir_host_address=config.connector_config.mir_host_address,
+            mir_ws_port=config.connector_config.mir_ws_port,
+            mir_use_ssl=config.connector_config.mir_use_ssl,
             loglevel=log_level,
         )
 
@@ -247,15 +257,21 @@ class Mir100Connector:
                 "mode_text": mode_text,
                 "robot_model": self.status["robot_model"],
                 "waiting_for": self.mission_tracking.waiting_for_text,
-                # NOTE: System stats come from the system where the connector is running,
-                # likely a server and not the robot itself
-                # TODO(b-Tomas): Report more system stats
-                # TODO(b-Tomas): Include this in the edge-sdk
-                "cpu": psutil.cpu_percent(),  # System-wide load average since last call (0-100)
-                "memory_usage": psutil.virtual_memory().percent,  # Memory usage percentage (0-100)
             }
             self.logger.debug(f"Publishing key values: {key_values}")
             self.inorbit_sess.publish_key_values(key_values)
+
+            # Reporting system stats
+            # TODO(b-Tomas): Report more system stats
+
+            cpu_usage = self.mir_ws.get_cpu_usage()
+            disk_usage = self.mir_ws.get_disk_usage()
+            memory_usage = self.mir_ws.get_memory_usage()
+            self.inorbit_sess.publish_system_stats(
+                cpu_load_percentage=cpu_usage,
+                hdd_usage_percentage=disk_usage,
+                ram_usage_percentage=memory_usage,
+            )
 
             # publish mission data
             try:
@@ -266,4 +282,5 @@ class Mir100Connector:
     def stop(self):
         """Exit the Connector cleanly."""
         self._should_run = False
+        self.mir_ws.disconnect()
         self.inorbit_sess.disconnect()

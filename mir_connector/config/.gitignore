@@ -2,3 +2,4 @@
 !.gitignore
 !.example.*
 !example.env
+!my_fleet.example.yaml

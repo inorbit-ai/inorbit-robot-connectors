@@ -7,7 +7,6 @@ import pytz
 from time import sleep
 import math
 import os
-import psutil
 from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND
 from inorbit_edge.robot import COMMAND_MESSAGE
 from inorbit_edge.robot import COMMAND_NAV_GOAL

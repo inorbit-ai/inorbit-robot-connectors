@@ -17,9 +17,7 @@ import math
 def mir_api(requests_mock, monkeypatch):
     mir_host_address = "example.com"
     mir_host_port = 8080
-    requests_mock.post(
-        "http://example.com:8080/?mode=log-in", text="I'm letting you in"
-    )
+    requests_mock.post("http://example.com:8080/?mode=log-in", text="I'm letting you in")
     monkeypatch.setattr(websocket, "WebSocketApp", MagicMock())
     api = MirApiV2(
         mir_host_address=mir_host_address,
@@ -163,35 +161,18 @@ def test_websocket_diagnostics_agg_msg(mir_websocket, sample_mir_diagnostics_agg
     assert not mir_websocket.last_diagnostics_agg_msg
 
     # Process expected message
-    mir_websocket.on_message(
-        mir_websocket.ws, json.dumps(sample_mir_diagnostics_agg_data)
-    )
-    assert (
-        DeepDiff(
-            sample_mir_diagnostics_agg_data, mir_websocket.last_diagnostics_agg_msg
-        )
-        == {}
-    )
+    mir_websocket.on_message(mir_websocket.ws, json.dumps(sample_mir_diagnostics_agg_data))
+    assert DeepDiff(sample_mir_diagnostics_agg_data, mir_websocket.last_diagnostics_agg_msg) == {}
 
     # Make sure invalid message won't override last_diagnostics_agg_msg
     mir_websocket.on_message(mir_websocket.ws, "fail json parse")
-    assert (
-        DeepDiff(
-            sample_mir_diagnostics_agg_data, mir_websocket.last_diagnostics_agg_msg
-        )
-        == {}
-    )
+    assert DeepDiff(sample_mir_diagnostics_agg_data, mir_websocket.last_diagnostics_agg_msg) == {}
 
     # Test methods for getting relevant values
     cpu_usage = float(mir_websocket.get_cpu_usage())
     assert math.isclose(cpu_usage, 0.492, abs_tol=0.0001)
 
     # Process message with missing data
-    mir_websocket.on_message(
-        mir_websocket.ws, json.dumps({"topic": "/diagnostics_agg"})
-    )
-    assert (
-        DeepDiff({"topic": "/diagnostics_agg"}, mir_websocket.last_diagnostics_agg_msg)
-        == {}
-    )
+    mir_websocket.on_message(mir_websocket.ws, json.dumps({"topic": "/diagnostics_agg"}))
+    assert DeepDiff({"topic": "/diagnostics_agg"}, mir_websocket.last_diagnostics_agg_msg) == {}
     assert mir_websocket.get_cpu_usage() is None

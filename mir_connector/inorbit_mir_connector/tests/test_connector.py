@@ -81,9 +81,7 @@ def test_command_callback_missions(connector, callback_kwargs):
         connector.mir_api.reset_mock()
 
     # Simulate an executor timeout, which should disable robot mission tracking
-    connector.inorbit_sess.missions_module.executor.wait_until_idle = Mock(
-        return_value=False
-    )
+    connector.inorbit_sess.missions_module.executor.wait_until_idle = Mock(return_value=False)
     assert connector.mission_tracking.mir_mission_tracking_enabled is False
     callback_kwargs["command_name"] = "customCommand"
     callback_kwargs["args"] = ["queue_mission", ["--mission_id", "1"]]
@@ -94,9 +92,7 @@ def test_command_callback_missions(connector, callback_kwargs):
     reset_mock()
 
     # Queue mission
-    connector.inorbit_sess.missions_module.executor.wait_until_idle = Mock(
-        return_value=True
-    )
+    connector.inorbit_sess.missions_module.executor.wait_until_idle = Mock(return_value=True)
     callback_kwargs["command_name"] = "customCommand"
     callback_kwargs["args"] = ["queue_mission", ["--mission_id", "2"]]
     connector.command_callback(**callback_kwargs)
@@ -118,10 +114,7 @@ def test_command_callback_missions(connector, callback_kwargs):
     callback_kwargs["command_name"] = "customCommand"
     callback_kwargs["args"] = ["abort_missions", []]
     connector.command_callback(**callback_kwargs)
-    assert (
-        connector.inorbit_sess.missions_module.executor.cancel_mission.call_args
-        == call("*")
-    )
+    assert connector.inorbit_sess.missions_module.executor.cancel_mission.call_args == call("*")
     assert connector.mir_api.abort_all_missions.call_args == call()
     callback_kwargs["options"]["result_function"].assert_called_with("0")
     reset_mock()

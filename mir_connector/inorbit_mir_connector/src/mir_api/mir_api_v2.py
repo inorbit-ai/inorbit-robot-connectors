@@ -305,18 +305,22 @@ class MirWebSocketV2:
 
     def get_disk_usage(self):
         hdd_status_name = "/Computer/PC/Harddrive"
-        hdd_total_size_key_name = '{\"message\": \"Total size %(unit)s\", \"args\": {\"unit\":\"[GB]\"}}'
+        hdd_total_size_key_name = (
+            '{"message": "Total size %(unit)s", "args": {"unit":"[GB]"}}'
+        )
         hdd_used_size_key_name = '{"message": "Used %(unit)s", "args": {"unit":"[GB]"}}'
-        hdd_total_size = float(self.get_diagnostics_agg_value(
+        hdd_total_size = self.get_diagnostics_agg_value(
             status_name=hdd_status_name, key_name=hdd_total_size_key_name
-        ))
-        hdd_used_size = float(self.get_diagnostics_agg_value(
+        )
+        hdd_used_size = self.get_diagnostics_agg_value(
             status_name=hdd_status_name, key_name=hdd_used_size_key_name
-        ))
+        )
         if not hdd_total_size or not hdd_used_size:
             return None
         try:
-            hdd_used_percentage = ((hdd_used_size * 100) / hdd_total_size) / 100
+            hdd_used_percentage = (
+                (float(hdd_used_size) * 100) / float(hdd_total_size)
+            ) / 100
             return hdd_used_percentage
         except ZeroDivisionError:
             # Adding extra validation in case for some reason the hdd_total_size equals 0
@@ -330,21 +334,18 @@ class MirWebSocketV2:
         memory_used_size_key_name = (
             '{"message": "Used %(unit)s", "args": {"unit":"[GB]"}}'
         )
-        memory_total_size = float(
-            self.get_diagnostics_agg_value(
-                status_name=memory_status_name, key_name=memory_total_size_key_name
-            )
+        memory_total_size = self.get_diagnostics_agg_value(
+            status_name=memory_status_name, key_name=memory_total_size_key_name
         )
-        memory_used_size = float(
-            self.get_diagnostics_agg_value(
-                status_name=memory_status_name, key_name=memory_used_size_key_name
-            )
+        memory_used_size = self.get_diagnostics_agg_value(
+            status_name=memory_status_name, key_name=memory_used_size_key_name
         )
+
         if not memory_used_size or not memory_total_size:
             return None
         try:
             memory_used_percentage = (
-                (memory_used_size * 100) / memory_total_size
+                (float(memory_used_size) * 100) / float(memory_total_size)
             ) / 100
             return memory_used_percentage
         except ZeroDivisionError:

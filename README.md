@@ -16,6 +16,14 @@ A single instance of the Connector is capable of controlling multiple robots.
 
 Check the [README](otto_connector/README.md) for more details on requirements and how to set it up.
 
+### Mobile Industrial Robots (MiR)
+
+The [InOrbit](https://inorbit.ai/) Robot Connector for [Mobile Industrial Robots](https://directory.inorbit.ai/connect/Mobile-Industrial-Robots-A/S) AMRs.
+
+It is a single robot connector, meaning one instance of it per robot in the fleet must be deployed, allowing for grater resiliency and robustness of the fleet integration. The connector makes use of the MiR REST and WebSocket APIs on each robot to make possible the integration and enable interoperability.
+
+Take a look at its [README](mir_connector/README.md) for more details.
+
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for information related to developing the code.

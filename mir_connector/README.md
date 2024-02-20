@@ -6,8 +6,7 @@ SPDX-License-Identifier: MIT
 
 # MIR <> InOrbit Connector
 
-<!-- TODO: add missing asset -->
-<!-- ![MIR <> InOrbit Connector](../assets/mir_inorbit_connector_banner.png) -->
+![MIR <> InOrbit Connector](../assets/mir_inorbit_connector_banner.png)
 
 [![Workflow Status](https://github.com/inorbit-ai/inorbit-robot-connectors/actions/workflows/mir_workflows.yml/badge.svg)](https://github.com/inorbit-ai/inorbit-robot-connectors/actions)
 
@@ -157,4 +156,4 @@ twine check dist/* # Run checks
 twine upload --repository testpypi dist/* # Upload to test PyPI. $HOME/.pypirc should exist and contain the api tokens. See https://pypi.org/help/#apitoken
 ```
 
-<!-- ![Powered by InOrbit](../assets/inorbit_github_footer.png) -->
+![Powered by InOrbit](../assets/inorbit_github_footer.png)

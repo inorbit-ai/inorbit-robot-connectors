@@ -29,6 +29,7 @@ class InstockConfigModel(BaseModel):
     instock_base_url: str
     instock_api_version: str
     pose: dict = default_instock_config["pose"]
+    wms_translation_table: dict = {}
 
     # TODO(tomi): instock_base_url validator
 

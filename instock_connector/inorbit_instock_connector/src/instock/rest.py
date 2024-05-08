@@ -21,18 +21,6 @@ LOCAL_ORDER_CACHE_FILE = ".cache/order_cache.pkl"
 
 TERMINAL_ORDER_STATUSES = ["done", "canceled"]
 
-# TODO(adamantivm): Load translation table from a config file
-INSTOCK_JELLO = "043000200261"
-WMS_CHEESE = "R8S1B1-KraftParmesan"
-INSTOCK_CHEESE = "R8S1B1"
-WMS_PASTA = "R7S1B1-BarillaPasta"
-INSTOCK_PASTA = "R7S1B1"
-
-WMS_TO_INSTOCK_ID_MAP = {
-    WMS_CHEESE: INSTOCK_CHEESE,
-    WMS_PASTA: INSTOCK_PASTA
-}
-
 
 class InStockAPIBase(ABC):
     def __init__(self, loglevel: LogLevels = logging.INFO):
@@ -221,15 +209,6 @@ class InStockAPIv1(InStockAPIBase):
         }
 
         for line in lines:
-            # Translate any items for which the WMS goods code differs from the
-            # article_id stored in InStock
-            if line["article_id"] in WMS_TO_INSTOCK_ID_MAP:
-                self.logger.info(
-                    f'Replacing {line["article_id"]} with '
-                    f'{WMS_TO_INSTOCK_ID_MAP[line["article_id"]]}'
-                )
-                line["article_id"] = WMS_TO_INSTOCK_ID_MAP[line["article_id"]]
-
             data["lines"].append({
                 "line_id": f"inorbit-{uuid.uuid4()}",
                 "article_id": line["article_id"],

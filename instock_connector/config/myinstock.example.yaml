@@ -13,3 +13,6 @@ instock-asrs-1:
     instock_site_id: x.y.z-A
     # Position of the ASRS in map space
     pose: { "x": 0, "y": 0, "yaw": 0 }
+    wms_translation_table:
+      - R8S1B1-KraftParmesan: R8S1B1  # WMS_CHEESE: INSTOCK_CHEESE
+      - R7S1B1-BarillaPasta: R7S1B1  # WMS_PASTA: INSTOCK_PASTA

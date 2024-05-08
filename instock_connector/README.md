@@ -30,7 +30,7 @@ There are two ways for installing the connector Python package.
 
 1. From PyPi: `pip install inorbit-instock-connector`
 
-2. From source: clone the repository and run `pip install -e instock_connector/`
+2. From source: clone the repository and run `pip install -r instock_connector/requirements.txt`
 
 Configure the Connector:
 

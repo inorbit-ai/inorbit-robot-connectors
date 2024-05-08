@@ -1,0 +1,15 @@
+[tool.black]
+exclude = '''
+(
+    (^|/)\.
+)
+'''
+
+[tool.coverage.run]
+source = ["inorbit_instock_connector"]
+
+[tool.flake8]
+exclude = [".*/", "build/"]
+max-line-length = 88
+show-source = true
+statistics = true

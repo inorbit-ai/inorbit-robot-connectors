@@ -1,0 +1,29 @@
+# Fill the `scope` field with a tag that groups all robots using the connector (e.g. `tag/<ACCOUNT_ID>/<TAG_ID>`)
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+  id: instock-create-orders
+  scope: <CONFIG_SCOPE>
+spec:
+  arguments:
+    - input:
+      name: message
+      type: string
+      value: '{ "lines": {{lines}}, "order_id": "{{order_id}}" }'
+    - input:
+        control: text
+      name: lines
+      type: string
+      value: '[]'
+    - input:
+        control: text
+      name: order_id
+      type: string
+      value: ''
+  confirmation:
+    required: false
+  description: 'Create an order with lines as JSON and optional order ID.'
+  group: API
+  label: Create Orders
+  lock: false
+  type: PublishToTopic

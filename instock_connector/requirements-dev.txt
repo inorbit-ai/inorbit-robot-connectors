@@ -1,0 +1,9 @@
+black~=24.3
+coverage~=7.4
+flake8~=7.0
+flake8-pyproject~=1.2
+pip~=24.0
+pytest~=8.1
+requests-mock~=1.11.0
+setuptools~=68.2
+tox~=4.14

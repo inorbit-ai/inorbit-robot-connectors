@@ -1,0 +1,15 @@
+instock-asrs-1:
+  # This is the timezone of the robot location. It must be a valid pytz timezone: https://pythonhosted.org/pytz/#helpers
+  location_tz: America/Los_Angeles
+  # Connector log level. Valid values are DEBUG, INFO, WARNING, ERROR, CRITICAL
+  log_level: INFO
+  connector_type: instock
+  connector_update_freq: 5.0
+
+  connector_config:
+    instock_base_url: https://ca.instock.com/incus/v1
+    instock_api_version: v1
+    instock_org_id: myorg
+    instock_site_id: x.y.z-A
+    # Position of the ASRS in map space
+    pose: { "x": 0, "y": 0, "yaw": 0 }

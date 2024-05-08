@@ -1,0 +1,26 @@
+# Fill the `scope` field with a tag that groups all robots using the connector (e.g. `tag/<ACCOUNT_ID>/<TAG_ID>`)
+apiVersion: v0.1
+kind: DataSourceDefinition
+metadata:
+  id: instock_orders
+  scope: <CONFIG_SCOPE>
+spec:
+  label: orders
+  source:
+    keyValue:
+      key: orders
+  timeline: {}
+  type: json
+---
+apiVersion: v0.1
+kind: DataSourceDefinition
+metadata:
+  id: instock_current_order
+  scope: <CONFIG_SCOPE>
+spec:
+  label: Current Order
+  source:
+    keyValue:
+      key: current_order
+  timeline: {}
+  type: json

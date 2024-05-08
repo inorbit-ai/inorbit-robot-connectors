@@ -24,6 +24,16 @@ It is a single robot connector, meaning one instance of it per robot in the flee
 
 Take a look at its [README](mir_connector/README.md) for more details.
 
+### Instock ASRS
+
+The [InOrbit](https://inorbit.ai/) Connector for the [Instock](https://instock.com/) ASRS. Making use of Instock REST
+API and InOrbit's Edge SDK, the Connector allows the integration of Instock ASRS with your fleet on InOrbit, unlocking
+interoperability.
+
+A single instance of the Connector is capable of controlling an entire Instock ASRS.
+
+Take a look at its [README](instock_connector/README.md) for more details.
+
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for information related to developing the code.

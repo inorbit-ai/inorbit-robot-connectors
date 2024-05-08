@@ -44,6 +44,7 @@ class InstockConfigModel(BaseModel):
     instock_site_id: str
     instock_org_id: str
     pose: dict = {"x": 0, "y": 0, "yaw": 0}
+    wms_translation_table: dict = {}
 
     # noinspection PyMethodParameters
     @field_validator("pose")

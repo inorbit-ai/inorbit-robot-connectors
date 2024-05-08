@@ -33,20 +33,6 @@ from inorbit_instock_connector.src.instock.rest import (
 )
 
 
-# TODO(adamantivm): Load translation table from a config file
-INSTOCK_JELLO = "043000200261"
-WMS_CHEESE = "R8S1B1-KraftParmesan"
-INSTOCK_CHEESE = "R8S1B1"
-WMS_PASTA = "R7S1B1-BarillaPasta"
-INSTOCK_PASTA = "R7S1B1"
-
-WMS_TO_INSTOCK_ID_MAP = {
-    WMS_CHEESE: INSTOCK_CHEESE,
-    WMS_PASTA: INSTOCK_PASTA
-}
-
-
-
 # TODO(russell): This could be abstracted at the SDK level.
 class RobotSessionModel(BaseModel):
     """Configuration for an InOrbit robot session."""
@@ -390,15 +376,16 @@ class InstockConnector(Connector):
                 self._logger.error('The value for "qty" must be an integer.')
                 options["result_function"](2)
                 return
-            
+
             # Translate any items for which the WMS goods code differs from the
             # article_id stored in InStock
-            if line["article_id"] in WMS_TO_INSTOCK_ID_MAP:
+            _table = self.config.connector_config.wms_translation_table
+            if line["article_id"] in _table:
                 self._logger.info(
                     f'Replacing {line["article_id"]} with '
-                    f'{WMS_TO_INSTOCK_ID_MAP[line["article_id"]]}'
+                    f'{_table[line["article_id"]]}'
                 )
-                line["article_id"] = WMS_TO_INSTOCK_ID_MAP[line["article_id"]]
+                line["article_id"] = _table[line["article_id"]]
 
         if "order_id" in data and not isinstance(order_id, str):
             self._logger.error('"order_id" must be a string if provided.')

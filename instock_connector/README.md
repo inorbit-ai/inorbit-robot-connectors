@@ -34,7 +34,7 @@ There are two ways for installing the connector Python package.
 
 Configure the Connector:
 
-- Copy `[config/myinstock.example.yaml](config%2Fmyinstock.example.yaml)` and modify the settings to match your setup.
+- Copy [config/myinstock.example.yaml](config/myinstock.example.yaml) and modify the settings to match your setup.
 
 - Copy `config/example.env` to `config/.env` and set the environment variables following the instructions in the same
   file. You can get the `INORBIT_KEY` for your account from InOrbit's

@@ -1,12 +1,17 @@
 version: "1.0"
 profile:
     name: qodana.recommended
-bootstrap: pip install -r requirements.txt
+bootstrap: pip install -r requirements.txt -r requirements-dev.txt
 raiseLicenseProblems: true
 dependencyIgnores:
-  - name: "inorbit-edge"
-licenseRules:
-  - keys:
-      - "certifi"
-    allowed:
-      - "MPL-2.0"
+    # TODO(russell): remove this once inorbit-edge is released MIT
+    -   name: "inorbit-edge"
+    # certifi is "copy-left" under MPL-2.0 - we don't modify it, so we are safe (e.g., requests does the same)
+    -   name: "certifi"
+dependencyOverrides:
+    -   name: "annotated-types"
+        version: "0.6.0"
+        url: "https://github.com/annotated-types/annotated-types"
+        licenses:
+            -   key: "MIT"
+                url: "https://github.com/annotated-types/annotated-types/blob/main/LICENSE"

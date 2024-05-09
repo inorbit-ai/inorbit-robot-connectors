@@ -21,6 +21,7 @@ case "$ans" in
     *)
         exit 1;;
 esac
+echo ""
 
 NAME=$1
 TEMPLATE="$( realpath $( dirname $0 ) )/instock-connector@.service"
@@ -47,11 +48,12 @@ if [ "$1" == "--uninstall" ]; then
     exit 0
 fi
 
-# Check if the inorbit user exists
-if ! id inorbit >/dev/null 2>&1; then
-    echo \`inorbit\` user not found. Creating it...
-    sudo useradd inorbit
-fi
+echo Note: The user in the \`User=\` field in $( relpath $TEMPLATE ) will be the user to run the service.
+echo "If the such user doesn't exist it can be created with \`sudo useradd <username>\`"
+echo If you wish to run the service as a different user, edit the User= field in $( relpath $TEMPLATE ) before continuing.
+read -n 1 -s -r -p "Press any key to continue"
+echo ""
+echo ""
 
 echo "Creating systemd service $SYSTEMD_SERVICE_NAME"
 sudo systemctl stop $SYSTEMD_SERVICE_NAME

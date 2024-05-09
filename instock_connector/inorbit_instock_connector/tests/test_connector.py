@@ -5,8 +5,8 @@ import unittest.mock as mock
 
 import pytest
 
-from inorbit_instock_connector.src.instock.config_instock import \
-    DEFAULT_INSTOCK_API_VERSION, InstockConfig, InstockConfigModel
+from inorbit_instock_connector.src.config import DEFAULT_INSTOCK_API_VERSION, \
+    InstockConfig, InstockConfigModel
 
 
 class TestInstockConnector:

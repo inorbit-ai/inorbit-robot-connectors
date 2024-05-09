@@ -15,8 +15,6 @@ import pytz
 from inorbit_edge.robot import INORBIT_CLOUD_SDK_ROBOT_CONFIG_URL
 from pydantic import BaseModel, HttpUrl, field_validator
 
-# TODO(russell): Abstract this file into edge-sdk/core
-
 # The default timezone to use if no timezone is supplied.
 DEFAULT_TIMEZONE = "UTC"
 
@@ -121,14 +119,14 @@ class InorbitConnectorModel(BaseModel):
         api_url (HttpUrl, optional): The URL of the API. Defaults to inorbit_edge's
                                      INORBIT_CLOUD_SDK_ROBOT_CONFIG_URL
         cameras (List[CameraModel] | None, optional): The list of cameras. Defaults to
-                                                      sNone.
+                                                      None.
         connector_type (str): The type of connector.
         connector_config (BaseModel): The configuration for the connector.
         connector_update_freq (float, optional): The update frequency in Hz. Defaults to
                                                  1.0.
         location_tz (str, optional): The timezone of the location. Defaults to "UTC".
         log_level (LogLevels, optional): The log level. Defaults to LogLevels.INFO.
-        user_script_dir (str, optional): The directory where custom scripts are located.
+        user_scripts_dir (str, optional): The location of customer user scripts.
     """
 
     api_token: str = os.getenv("INORBIT_API_TOKEN")
@@ -178,7 +176,6 @@ class InorbitConnectorModel(BaseModel):
 
         Raises:
             ValueError: If the configuration is just the BaseModel.
-
         """
 
         if connector_config.__class__ == BaseModel:
@@ -201,7 +198,6 @@ class InorbitConnectorModel(BaseModel):
 
         Raises:
             ValueError: If the provided timezone location is not a valid pytz timezone.
-
         """
         if location_tz not in pytz.all_timezones:
             raise ValueError("Timezone must be a valid pytz timezone")

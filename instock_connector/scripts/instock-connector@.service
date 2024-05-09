@@ -1,0 +1,15 @@
+[Unit]
+Description=InOrbit InStock Connector (%i)
+After=network.target
+
+[Service]
+Type=idle
+Restart=on-failure
+User=inorbit
+# By default, the kill signal is SIGTERM so we override it by SIGINT
+# so the connector handles it the same way as a keyboard interrupt
+KillSignal=SIGINT
+ExecStart=/bin/bash /usr/local/bin/instock-connector.sh %i
+
+[Install]
+WantedBy=multi-user.target

@@ -5,12 +5,10 @@
 #
 # Copyright (C) 2024 InOrbit, Inc.
 
+# Third Party
 import pytest
 
-from inorbit_instock_connector.src.instock.config_instock import (
-    InstockConfigModel,
-    DEFAULT_INSTOCK_API_VERSION,
-)
+from inorbit_instock_connector.src.config import InstockConfigModel
 
 
 def test_instock_config_model_init():
@@ -23,14 +21,14 @@ def test_instock_config_model_init():
     model = InstockConfigModel(
         instock_api_url=valid_api_url,
         instock_api_token=valid_api_token,
-        instock_api_version=DEFAULT_INSTOCK_API_VERSION,
+        instock_api_version="v1",
         instock_site_id=valid_site_id,
         instock_org_id=valid_org_id,
         pose=valid_pose,
     )
     assert str(model.instock_api_url) == valid_api_url
     assert model.instock_api_token == valid_api_token
-    assert model.instock_api_version == DEFAULT_INSTOCK_API_VERSION
+    assert model.instock_api_version == "v1"
     assert model.instock_site_id == valid_site_id
     assert model.pose == valid_pose
 
@@ -43,7 +41,7 @@ def test_instock_config_model_pose_validation():
     model = InstockConfigModel(
         instock_api_url="https://example.com/",
         instock_api_token="123a",
-        instock_api_version=DEFAULT_INSTOCK_API_VERSION,
+        instock_api_version="v1",
         instock_site_id="abc123",
         instock_org_id="123abc",
         pose=valid_pose,
@@ -57,7 +55,7 @@ def test_instock_config_model_pose_validation():
 
 
 def test_instock_config_model_api_version_validation():
-    valid_api_version = DEFAULT_INSTOCK_API_VERSION
+    valid_api_version = "v1"
     invalid_api_version = "2.0.0"
 
     model = InstockConfigModel(

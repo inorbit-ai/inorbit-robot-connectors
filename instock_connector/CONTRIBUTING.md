@@ -60,7 +60,7 @@ Setup `virtualenv` with `dev` requirements:
 cd inorbit-robot-connectors/instock_connector
 virtualenv .venv
 source .venv/bin/activate
-pip install -r reqirements-dev.txt
+pip install -r requirements.txt -r requirements-dev.txt
 ```
 
 Then run `bump2version` and choose the part of the version to be bumped, and don't forget to push changes and tags:

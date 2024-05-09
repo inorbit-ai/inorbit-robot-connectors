@@ -10,16 +10,25 @@ import numbers
 import os
 
 # Third Party
-from pydantic import field_validator, HttpUrl, BaseModel
+from pydantic import BaseModel, field_validator, HttpUrl
 
-from inorbit_instock_connector.src.abstract import InorbitConnectorModel
-from inorbit_instock_connector.src.abstract.utils import read_yaml
+from ..abstract import InorbitConnectorModel
+from ..abstract.utils import read_yaml
 
 # Accepted values
 CONNECTOR_TYPE = "instock"
 DEFAULT_INSTOCK_API_VERSION = "v1"
 DEFAULT_INSTOCK_API_URL = f"https://ca.instock.com/incus/{DEFAULT_INSTOCK_API_VERSION}"
 VALID_INSTOCK_API_VERSIONS = [DEFAULT_INSTOCK_API_VERSION]
+
+default_instock_config = {
+    "location_tz": "America/Los_Angeles",
+    "log_level": "INFO",
+    "cameras": [],
+    "connector_type": CONNECTOR_TYPE,
+    "pose": {"x": 0, "y": 0, "yaw": 0},
+    "user_scripts_dir": "./user_scripts",
+}
 
 
 class InstockConfigModel(BaseModel):
@@ -43,7 +52,9 @@ class InstockConfigModel(BaseModel):
     instock_api_version: str = DEFAULT_INSTOCK_API_VERSION
     instock_site_id: str
     instock_org_id: str
-    pose: dict = {"x": 0, "y": 0, "yaw": 0}
+    pose: dict = default_instock_config["pose"]
+
+    # TODO(tomi): instock_base_url validator
 
     # noinspection PyMethodParameters
     @field_validator("pose")
@@ -96,28 +107,19 @@ class InstockConfigModel(BaseModel):
 
 
 class InstockConfig(InorbitConnectorModel):
+    """Instock ASRS connector configuration schema."""
+
     # TODO(russell): docstrings
     connector_config: InstockConfigModel
 
     # noinspection PyMethodParameters
     @field_validator("connector_type")
-    def connector_type_validation(cls, connector_type: str):
-        """Check if the connector type is equal to the predefined CONNECTOR_TYPE.
-
-        Prevents overriding the connector type with a different value.
-
-        Args:
-            connector_type (str): The connector type to be validated.
-
-        Raises:
-            ValueError: If the connector type is not equal to CONNECTOR_TYPE.
-
-        Returns:
-            str: The connector type if it is valid.
-        """
-
+    def connector_type_validation(cls, connector_type):
         if connector_type != CONNECTOR_TYPE:
-            raise ValueError("Unknown connector type override.")
+            raise ValueError(
+                f"Unexpected connector type '{connector_type}'. "
+                f"Expected '{CONNECTOR_TYPE}'"
+            )
         return connector_type
 
 

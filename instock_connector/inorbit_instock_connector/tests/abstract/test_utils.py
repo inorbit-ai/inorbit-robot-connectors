@@ -5,9 +5,10 @@
 #
 # Copyright (C) 2024 InOrbit, Inc.
 
-
+# Standard
 from unittest.mock import mock_open, patch
 
+# Third Party
 import pytest
 import yaml
 
@@ -57,7 +58,7 @@ def test_read_yaml_file_not_found(mock_file):
 
 
 @patch("builtins.open", new_callable=mock_open, read_data="{test: val")
-def test_read_yaml_invalid_yaml(mock_file):
+def test_read_yaml_invalid_yaml(_):  # add this argument
     file_path = "/dummy/path.yaml"
     with pytest.raises(yaml.YAMLError):
         read_yaml(file_path)

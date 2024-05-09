@@ -10,7 +10,7 @@ import logging
 from time import sleep
 
 from connector import InstockConnector
-from instock.config_instock import load_and_validate
+from inorbit_instock_connector.src.config import load_and_validate
 
 
 # TODO(russell): abstract to higher level library

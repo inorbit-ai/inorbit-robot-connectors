@@ -5,8 +5,7 @@
 #
 # Copyright (C) 2024 InOrbit, Inc.
 
-# TODO(russell): Abstract this into edge-sdk/core
-
+# Standard
 import yaml
 
 

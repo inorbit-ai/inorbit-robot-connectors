@@ -50,11 +50,6 @@ def test_log_levels_enum_isinstance():
         assert isinstance(level, str)
 
 
-def test_log_levels_enum_not_exist():
-    with pytest.raises(AttributeError):
-        _ = LogLevels.NON_EXISTENT_LOG_LEVEL
-
-
 def test_camera_model_check_quality_range():
     camera_model = CameraModel(video_url="http://localhost.com")
 

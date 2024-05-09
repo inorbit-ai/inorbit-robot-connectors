@@ -5,9 +5,11 @@
 #
 # Copyright (C) 2024 InOrbit, Inc.
 
+# Standard
 import builtins
 from datetime import datetime
 
+# Third Party
 import pytest
 import requests_mock as req_mock
 from requests.exceptions import HTTPError
@@ -21,10 +23,10 @@ TOKEN = "token"
 
 
 def create_instock_api_v1(
-        base_url=BASE_URL,
-        api_token=TOKEN,
-        org_id=ORG_ID,
-        site_id=SITE_ID,
+    base_url=BASE_URL,
+    api_token=TOKEN,
+    org_id=ORG_ID,
+    site_id=SITE_ID,
 ):
     """Create an instance of the InStockAPIv1 class."""
     api = InStockAPIv1(
@@ -56,7 +58,8 @@ def disable_open(monkeypatch):
 
 @pytest.fixture
 def instock_api_v1(monkeypatch, requests_mock):
-    """Initialize an InStockAPIv1 instance patching pickle.load and pickle.dump."""
+    """Initialize an InStockAPIv1 instance patching pickle.load() and pickle.dump()."""
+
     requests_mock.get(f"{BASE_URL}/sites")
     monkeypatch.setattr(InStockAPIv1, "_load_order_cache", lambda x: None)
     monkeypatch.setattr(InStockAPIv1, "_store_order_cache", lambda x: None)
@@ -114,10 +117,10 @@ def test_paginated_data_request(instock_api_v1, requests_mock):
 
     def match_query(request):
         return (
-                request.url.split("?")[0] == url
-                and request.qs.get("pagesize") == [str(page_size)]
-                and request.qs.get("start_cursor")
-                == ([expected_cursor] if expected_cursor else None)
+            request.url.split("?")[0] == url
+            and request.qs.get("pagesize") == [str(page_size)]
+            and request.qs.get("start_cursor")
+            == ([expected_cursor] if expected_cursor else None)
         )
 
     adapter = requests_mock.get(
@@ -125,7 +128,7 @@ def test_paginated_data_request(instock_api_v1, requests_mock):
     )
     i = 0
     for i, (page, next_cursor) in enumerate(
-            instock_api_v1._paginated_data_request(url=url, page_size=page_size)
+        instock_api_v1._paginated_data_request(url=url, page_size=page_size)
     ):
         assert adapter.called
         assert page == test_pages[i]
@@ -398,15 +401,17 @@ def test_refresh_and_get_orders(instock_api_v1, requests_mock):
     assert instock_api_v1.get_orders() == orders_list
     assert adapter.call_count == 1
 
-    # Test it fetches from the begginning if the cursor is invalid
+    # Test it fetches from the beginning if the cursor is invalid
     adapter.reset()
     instock_api_v1._last_order_cursor = "invalid"
     assert instock_api_v1.get_orders() == orders_list
+
+    # One with the invalid cursor and two for all from the beginning
     assert (
-            adapter.call_count == 3
-    )  # One with the invalid cursor and two for all from the beggining
+        adapter.call_count == 3
+    )
+
     # Test it returns fails if the request is not valid, but also clears the cache
-    # for the next run
     adapter = requests_mock.get(
         req_mock.ANY,
         additional_matcher=lambda x: x.url.split("?")[0] == url,
@@ -415,7 +420,7 @@ def test_refresh_and_get_orders(instock_api_v1, requests_mock):
     with pytest.raises(HTTPError):
         instock_api_v1.get_orders()
     assert adapter.call_count == 1
-    # it cleared the cache
+    # It cleared the cache
     adapter = requests_mock.get(
         req_mock.ANY,
         json=get_response,
@@ -429,8 +434,8 @@ def test_refresh_and_get_orders(instock_api_v1, requests_mock):
     assert instock_api_v1.get_orders(after_id="invalid") is None
     # Test it returns the correct list if after_id is valid
     assert (
-            instock_api_v1.get_orders(after_id=orders_list[0]["order_id"])
-            == orders_list[1:]
+        instock_api_v1.get_orders(after_id=orders_list[0]["order_id"])
+        == orders_list[1:]
     )
 
 

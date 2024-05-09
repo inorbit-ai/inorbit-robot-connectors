@@ -1,2 +1,8 @@
-from .config_base_model import *  # noqa: F401 F403
-from .instock_config import *  # noqa: F401 F403
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+# MIT License
+#
+# Copyright (C) 2024 InOrbit, Inc.
+
+from .config_instock import *  # noqa: F401 F403

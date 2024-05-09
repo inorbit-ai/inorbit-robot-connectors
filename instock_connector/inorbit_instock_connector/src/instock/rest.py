@@ -5,18 +5,21 @@
 #
 # Copyright (C) 2024 InOrbit, Inc.
 
+# Standard
 import logging
 import pickle
 import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
+from typing import Optional
 
+# Third Party
 from requests import Session, Response
 from requests.exceptions import HTTPError
 
 from inorbit_instock_connector.src.abstract import LogLevels
 
-# TODO(Tb): Automatically create folder
+# TODO(tomi): Automatically create folder
 LOCAL_ORDER_CACHE_FILE = ".cache/order_cache.pkl"
 
 TERMINAL_ORDER_STATUSES = ["done", "canceled"]
@@ -101,18 +104,18 @@ class InStockAPIBase(ABC):
 
     @abstractmethod
     def get_inventory(self) -> list[dict]:
-        """Return a list of inventory of artciles with `qty` greater than zero."""
+        """Return a list of inventory of articles with `qty` greater than zero."""
         pass
 
 
 class InStockAPIv1(InStockAPIBase):
     def __init__(
-            self,
-            base_url: str,
-            api_token: str,
-            org_id: str,
-            site_id: str,
-            loglevel: LogLevels = LogLevels.INFO,
+        self,
+        base_url: str,
+        api_token: str,
+        org_id: str,
+        site_id: str,
+        loglevel: LogLevels = LogLevels.INFO,
     ):
         if not all([base_url, api_token, org_id, site_id]):
             raise ValueError("Arguments missing")
@@ -137,7 +140,7 @@ class InStockAPIv1(InStockAPIBase):
         # At startup, the full list is loaded and the _last_order_page is saved as a
         # reference to be able to compare it with new requests and find new orders.
         self._order_page_size = 100
-        self._last_order_cursor: str = None
+        self._last_order_cursor: Optional[str] = None
         self._last_order_page: dict = {}
         self._order_list: list[dict] = []
         # orderId: {order} mapping of orders that have been completed or cancelled.
@@ -169,7 +172,7 @@ class InStockAPIv1(InStockAPIBase):
         return res.status_code == 200
 
     def _paginated_data_request(
-            self, url: str, page_size: int = None, cursor: str = None
+        self, url: str, page_size: int = None, cursor: str = None
     ):
         """Yield a page from a paginated API request.
 
@@ -250,8 +253,10 @@ class InStockAPIv1(InStockAPIBase):
 
     # Override
     def get_order_status(self, order_id: str) -> dict | None:
-        """Query the status of an order. The returned data is the a full order
-        description. Returns None if the order is not found."""
+        """Query the status of an order. The returned data is a full order description.
+
+        Returns None if the order is not found.
+        """
 
         # If the order was cached as terminal, return it.
         terminal_order_status = self._terminal_order_statuses.get(order_id)
@@ -310,14 +315,14 @@ class InStockAPIv1(InStockAPIBase):
         # is new ones.
         query_number = 0
         for order_list_page, next_cursor in self._paginated_data_request(
-                f"{self._base_url}/{self._site_id}/orders",
-                self._order_page_size,
-                self._last_order_cursor,
+            f"{self._base_url}/{self._site_id}/orders",
+            self._order_page_size,
+            self._last_order_cursor,
         ):
             # If the page was empty, there is an error.
             if not order_list_page.get("orders"):
-                # If this is the first query and it was started from a cursor, clear the
-                # local copy and start over.
+                # If this is the first query, and it was started from a cursor, clear
+                # the local copy and start over.
                 if query_number == 0 and self._last_order_cursor:
                     self.logger.warning(
                         "Error querying orders. Requesting from first page."
@@ -353,7 +358,7 @@ class InStockAPIv1(InStockAPIBase):
         """Return a list of inventory of articles with `qty` greater than zero."""
         inventory = []
         for inventory_page, _ in self._paginated_data_request(
-                f"{self._base_url}/{self._site_id}/inventory"
+            f"{self._base_url}/{self._site_id}/inventory"
         ):
             inventory += inventory_page.get("articles", [])
 

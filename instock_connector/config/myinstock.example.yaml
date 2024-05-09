@@ -15,5 +15,5 @@ instock-asrs-1:
     pose: { "x": 0, "y": 0, "yaw": 0 }
     # Map of WMS product IDs to InStock article IDs.
     wms_translation_table:
-      - R8S1B1-KraftParmesan: R8S1B1  # WMS_CHEESE: INSTOCK_CHEESE
-      - R7S1B1-BarillaPasta: R7S1B1  # WMS_PASTA: INSTOCK_PASTA
+      - article1wms: instock-art1
+      - article2wms: instock-art2

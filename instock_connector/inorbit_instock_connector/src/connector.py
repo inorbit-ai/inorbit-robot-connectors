@@ -205,13 +205,13 @@ class InstockConnector(Connector):
 
             # Translate any items for which the WMS goods code differs from the
             # article_id stored in InStock
-            _table = self.config.connector_config.wms_translation_table
-            if line["article_id"] in _table:
+            translation = self.config.connector_config.wms_translation_table
+            if line["article_id"] in translation:
                 self._logger.info(
                     f'Replacing {line["article_id"]} with '
-                    f'{_table[line["article_id"]]}'
+                    f'{translation[line["article_id"]]}'
                 )
-                line["article_id"] = _table[line["article_id"]]
+                line["article_id"] = translation[line["article_id"]]
 
         if "order_id" in data and not isinstance(order_id, str):
             self._logger.error('"order_id" must be a string if provided.')

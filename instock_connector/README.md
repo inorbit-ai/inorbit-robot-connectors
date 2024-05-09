@@ -61,14 +61,14 @@ Configure the Connector:
 
 ### Run the Connector manually
 
-Once all dependencies are installed and the configuration is complete, the Connector can be run as a Python script. The entry point is `inorbit_instock_connector/src/main.py`.
+Once all dependencies are installed and the configuration is complete, the Connector can be run as a Python script. The entry point is `inorbit_instock_connector/src/main.py` (run with `--help` for details).
 
 ```bash
 # Add the environment variables, activate the virtual environment and run the Connector
 cd instock_connector/
 export $(grep -v '^#' config/.env | xargs) && \
 source .venv/bin/activate && \
-python inorbit_instock_connector/src/main.py --help
+python inorbit_instock_connector/src/main.py -c config/myinstock.example.yaml -r instock-asrs-1
 ```
 
 A [script](scripts/start.sh) was provided to help run the Connector.

@@ -57,7 +57,6 @@ class InstockConfigModel(BaseModel):
     pose: dict = default_instock_config["pose"]
     wms_translation_table: dict = {}
 
-
     # TODO(tomi): instock_base_url validator
 
     # noinspection PyMethodParameters

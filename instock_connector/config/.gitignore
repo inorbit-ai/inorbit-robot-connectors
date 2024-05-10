@@ -1,0 +1,4 @@
+# Ignore all but the examples
+*
+!.gitignore
+!*.example.*

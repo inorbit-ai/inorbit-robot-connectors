@@ -15,5 +15,5 @@ instock-asrs-1:
     pose: { "x": 0, "y": 0, "yaw": 0 }
     # Map of WMS product IDs to InStock article IDs.
     wms_translation_table:
-      - article1wms: instock-art1
-      - article2wms: instock-art2
+      article1wms: instock-art1
+      article2wms: instock-art2

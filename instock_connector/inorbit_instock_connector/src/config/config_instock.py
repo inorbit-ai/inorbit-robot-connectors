@@ -46,6 +46,8 @@ class InstockConfigModel(BaseModel):
         - instock_site_id (str): The ID of the InStock site.
         - pose (dict, optional): The pose information which consists of "x", "y", and
                                  "yaw" values. Defaults to {"x": 0, "y": 0, "yaw": 0}.
+        - wms_translation_table (dict, optional): A dictionary that maps WMS product IDs
+                                                  to InStock article IDs.
     """
     instock_api_url: HttpUrl = os.getenv("INSTOCK_API_URL", DEFAULT_INSTOCK_API_URL)
     instock_api_token: str = os.getenv("INSTOCK_API_TOKEN")
@@ -53,6 +55,7 @@ class InstockConfigModel(BaseModel):
     instock_site_id: str
     instock_org_id: str
     pose: dict = default_instock_config["pose"]
+    wms_translation_table: dict = {}
 
     # TODO(tomi): instock_base_url validator
 

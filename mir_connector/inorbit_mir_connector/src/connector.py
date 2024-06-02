@@ -279,6 +279,10 @@ class Mir100Connector:
             except Exception:
                 self.logger.exception("Error reporting mission")
 
+    def inorbit_connected(self):
+        """Check if the InOrbit MQTT session is connected."""
+        return self.inorbit_sess.client.is_connected()
+
     def stop(self):
         """Exit the Connector cleanly."""
         self._should_run = False

@@ -18,6 +18,7 @@ from inorbit_mir_connector.config.mir100_model import MiR100Config
 API_VERSION = "v2.0"
 MirApi = APIS[API_VERSION]["rest"]
 
+
 # NOTE(b-Tomas): Added some example data below to help creating rea
 @pytest.fixture
 def connector(monkeypatch):

@@ -32,6 +32,7 @@ default_mir100_config = {
 # Expected values
 CONNECTOR_TYPE = "mir100"
 
+
 class MiR100ConfigModel(BaseModel):
     """
     Specific configuration for MiR100 connector.

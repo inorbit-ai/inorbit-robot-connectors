@@ -5,8 +5,9 @@
 from pydantic import BaseModel, field_validator
 from .config_base_model import EdgeConnectorModel
 from .utils import read_yaml
+from ..src.mir_api import APIS
 
-# TODO: leverate ruamel.yaml capabilities to add comments to
+# TODO: leverage ruamel.yaml capabilities to add comments to
 # the yaml and improve how the default configuration section
 # that gets added automatically looks.
 default_mir100_config = {
@@ -30,8 +31,6 @@ default_mir100_config = {
 
 # Expected values
 CONNECTOR_TYPE = "mir100"
-MIR_API_VERSION = "v2.0"
-
 
 class MiR100ConfigModel(BaseModel):
     """
@@ -49,9 +48,9 @@ class MiR100ConfigModel(BaseModel):
 
     @field_validator("mir_api_version")
     def api_version_validation(cls, mir_api_version):
-        if mir_api_version != MIR_API_VERSION:
+        if mir_api_version not in APIS.keys():
             raise ValueError(
-                f"Unexpected MiR API version '{mir_api_version}'. Expected '{MIR_API_VERSION}'"
+                f"MiR API version '{mir_api_version}' is not supported. Supported versions are: {', '.join(APIS.keys())}"
             )
         return mir_api_version
 

@@ -10,18 +10,20 @@ import threading
 import websocket
 from inorbit_mir_connector.src.connector import Mir100Connector
 from unittest.mock import MagicMock, Mock, call
-from inorbit_mir_connector.src.mir_api import MirApiV2
+from inorbit_mir_connector.src.mir_api import APIS
 import inorbit_mir_connector.src.connector
 from inorbit_edge.robot import RobotSession
 from inorbit_mir_connector.config.mir100_model import MiR100Config
 
+API_VERSION = "v2.0"
+MirApi = APIS[API_VERSION]["rest"]
 
 # NOTE(b-Tomas): Added some example data below to help creating rea
 @pytest.fixture
 def connector(monkeypatch):
     monkeypatch.setenv("INORBIT_KEY", "abc123")
-    monkeypatch.setattr(MirApiV2, "_create_api_session", MagicMock())
-    monkeypatch.setattr(MirApiV2, "_create_web_session", MagicMock())
+    monkeypatch.setattr(MirApi, "_create_api_session", MagicMock())
+    monkeypatch.setattr(MirApi, "_create_web_session", MagicMock())
     monkeypatch.setattr(websocket, "WebSocketApp", MagicMock())
     monkeypatch.setattr(RobotSession, "connect", MagicMock())
     monkeypatch.setattr(inorbit_mir_connector.src.connector.os, "makedirs", Mock())
@@ -125,8 +127,8 @@ def test_registers_user_scripts_config(monkeypatch):
 
     def create_connector(user_scripts):
         monkeypatch.setenv("INORBIT_KEY", "abc123")
-        monkeypatch.setattr(MirApiV2, "_create_api_session", MagicMock())
-        monkeypatch.setattr(MirApiV2, "_create_web_session", MagicMock())
+        monkeypatch.setattr(MirApi, "_create_api_session", MagicMock())
+        monkeypatch.setattr(MirApi, "_create_web_session", MagicMock())
         monkeypatch.setattr(websocket, "WebSocketApp", MagicMock())
         monkeypatch.setattr(RobotSession, "connect", MagicMock())
         monkeypatch.setattr(RobotSession, "register_commands_path", MagicMock())

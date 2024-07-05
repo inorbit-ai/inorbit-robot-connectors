@@ -12,8 +12,7 @@ from inorbit_edge.robot import COMMAND_MESSAGE
 from inorbit_edge.robot import COMMAND_NAV_GOAL
 from inorbit_edge.robot import RobotSession
 from inorbit_edge.video import OpenCVCamera
-from .mir_api import MirApiV2
-from .mir_api import MirWebSocketV2
+from .mir_api import APIS
 from .mission import MirInorbitMissionTracking
 from ..config.mir100_model import MiR100Config
 
@@ -42,9 +41,11 @@ class Mir100Connector:
         log_level = config.log_level.value
         self.logger = logging.getLogger(name=self.__class__.__name__)
         self.logger.setLevel(log_level)
+        self.api_version = config.connector_config.mir_api_version
+        self.logger.debug(f"Using MiR API version: {self.api_version}")
 
         # Configure the connection to the robot
-        self.mir_api = MirApiV2(
+        self.mir_api = APIS[self.api_version]["rest"](
             mir_host_address=config.connector_config.mir_host_address,
             mir_username=config.connector_config.mir_username,
             mir_password=config.connector_config.mir_password,
@@ -54,7 +55,7 @@ class Mir100Connector:
         )
 
         # Configure the ws connection to the robot
-        self.mir_ws = MirWebSocketV2(
+        self.mir_ws = APIS[self.api_version]["ws"](
             mir_host_address=config.connector_config.mir_host_address,
             mir_ws_port=config.connector_config.mir_ws_port,
             mir_use_ssl=config.connector_config.mir_use_ssl,

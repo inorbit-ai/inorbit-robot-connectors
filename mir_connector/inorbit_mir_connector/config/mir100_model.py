@@ -51,7 +51,8 @@ class MiR100ConfigModel(BaseModel):
     def api_version_validation(cls, mir_api_version):
         if mir_api_version not in APIS.keys():
             raise ValueError(
-                f"MiR API version '{mir_api_version}' is not supported. Supported versions are: {', '.join(APIS.keys())}"
+                f"MiR API version '{mir_api_version}' is not supported. "
+                f"Supported versions are: {', '.join(APIS.keys())}"
             )
         return mir_api_version
 

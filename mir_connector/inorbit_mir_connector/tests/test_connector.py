@@ -184,6 +184,7 @@ def test_registers_user_scripts_config(monkeypatch):
     for k, v in old_env.items():
         os.environ[k] = v
 
+
 def test_enable_ws_flag(monkeypatch):
     monkeypatch.setenv("INORBIT_KEY", "abc123")
     monkeypatch.setattr(MirApiV2, "_create_api_session", MagicMock())
@@ -217,7 +218,7 @@ def test_enable_ws_flag(monkeypatch):
     connector = Mir100Connector("mir100-1", config)
     assert connector.ws_enabled is False
     assert not hasattr(connector, "mir_ws")
-    
+
     config = MiR100Config(
         inorbit_robot_key="robot_key",
         location_tz="UTC",

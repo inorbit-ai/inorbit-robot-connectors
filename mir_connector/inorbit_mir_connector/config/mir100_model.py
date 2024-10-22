@@ -40,6 +40,7 @@ class MiR100ConfigModel(BaseModel):
 
     mir_host_address: str
     mir_host_port: int
+    mir_enable_ws: bool = True
     mir_ws_port: int
     mir_use_ssl: bool
     mir_username: str

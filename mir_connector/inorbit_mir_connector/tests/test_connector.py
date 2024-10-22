@@ -16,7 +16,6 @@ from inorbit_edge.robot import RobotSession
 from inorbit_mir_connector.config.mir100_model import MiR100Config
 
 
-# NOTE(b-Tomas): Added some example data below to help creating rea
 @pytest.fixture
 def connector(monkeypatch):
     monkeypatch.setenv("INORBIT_KEY", "abc123")
@@ -37,6 +36,7 @@ def connector(monkeypatch):
             connector_config={
                 "mir_host_address": "example.com",
                 "mir_host_port": 80,
+                "mir_enable_ws": True,
                 "mir_ws_port": 9090,
                 "mir_use_ssl": False,
                 "mir_username": "user",
@@ -146,6 +146,7 @@ def test_registers_user_scripts_config(monkeypatch):
                     "mir_password": "pass",
                     "mir_host_address": "example.com",
                     "mir_host_port": 80,
+                    "mir_enable_ws": True,
                     "mir_ws_port": 9090,
                     "mir_use_ssl": False,
                     "mir_api_version": "v2.0",
@@ -182,6 +183,64 @@ def test_registers_user_scripts_config(monkeypatch):
 
     for k, v in old_env.items():
         os.environ[k] = v
+
+def test_enable_ws_flag(monkeypatch):
+    monkeypatch.setenv("INORBIT_KEY", "abc123")
+    monkeypatch.setattr(MirApiV2, "_create_api_session", MagicMock())
+    monkeypatch.setattr(MirApiV2, "_create_web_session", MagicMock())
+    monkeypatch.setattr(websocket, "WebSocketApp", MagicMock())
+    monkeypatch.setattr(RobotSession, "connect", MagicMock())
+    monkeypatch.setattr(RobotSession, "register_commands_path", MagicMock())
+    monkeypatch.setattr(time, "sleep", Mock())
+    monkeypatch.setattr(inorbit_mir_connector.src.connector.os, "makedirs", Mock())
+
+    config = MiR100Config(
+            inorbit_robot_key="robot_key",
+            location_tz="UTC",
+            log_level="INFO",
+            connector_type="mir100",
+            connector_version="0.1.0",
+            connector_config={
+                "mir_username": "user",
+                "mir_password": "pass",
+                "mir_host_address": "example.com",
+                "mir_host_port": 80,
+                "mir_enable_ws": False,
+                "mir_ws_port": 9090,
+                "mir_use_ssl": False,
+                "mir_api_version": "v2.0",
+                "enable_mission_tracking": False,
+            },
+            user_scripts={},
+            cameras=[],
+        )
+    connector = Mir100Connector("mir100-1", config)
+    assert connector.ws_enabled is False
+    assert not hasattr(connector, "mir_ws")
+    
+    config = MiR100Config(
+        inorbit_robot_key="robot_key",
+        location_tz="UTC",
+        log_level="INFO",
+        connector_type="mir100",
+        connector_version="0.1.0",
+        connector_config={
+            "mir_username": "user",
+            "mir_password": "pass",
+            "mir_host_address": "example.com",
+            "mir_host_port": 80,
+            "mir_enable_ws": True,
+            "mir_ws_port": 9090,
+            "mir_use_ssl": False,
+            "mir_api_version": "v2.0",
+            "enable_mission_tracking": False,
+        },
+        user_scripts={},
+        cameras=[],
+    )
+    connector = Mir100Connector("mir100-1", config)
+    assert connector.ws_enabled is True
+    assert hasattr(connector, "mir_ws")
 
 
 def test_command_callback_state(connector, callback_kwargs):

@@ -20,6 +20,7 @@ default_mir100_config = {
         "mir_host_port": 80,
         "mir_ws_port": 9090,
         "mir_use_ssl": False,
+        "mir_enable_ws": True,
         "mir_username": "",
         "mir_password": "",
         "enable_mission_tracking": True,

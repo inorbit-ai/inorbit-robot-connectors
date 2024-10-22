@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 import logging
+import uuid
 import pytz
 from time import sleep
 import math
@@ -78,6 +79,7 @@ class Mir100Connector:
             "robot_name": robot_id,
             "api_key": os.environ["INORBIT_KEY"],
             "robot_key": config.inorbit_robot_key,
+            "use_ssl": False,
         }
         if "INORBIT_URL" in os.environ:
             robot_session_params["endpoint"] = os.environ["INORBIT_URL"]
@@ -129,7 +131,7 @@ class Mir100Connector:
         The callback signature is `callback(command_name, args, options)`
 
         Arguments:
-            command_name -- identifies the specific command to be executed
+            command_name -- identifies the specific mir_apicommand to be executed
             args -- is an ordered list with each argument as an entry. Each
                 element of the array can be a string or an object, depending on
                 the definition of the action.
@@ -191,7 +193,7 @@ class Mir100Connector:
         elif command_name == COMMAND_NAV_GOAL:
             self.logger.info(f"Received '{command_name}'!. {args}")
             pose = args[0]
-            self.mir_api.send_waypoint(pose)
+            self.send_waypoint(pose)
         elif command_name == COMMAND_MESSAGE:
             msg = args[0]
             if msg == "inorbit_pause":
@@ -201,6 +203,37 @@ class Mir100Connector:
 
         else:
             self.logger.info(f"Received '{command_name}'!. {args}")
+    
+    def send_waypoint(self, pose):
+        # TODO(b-Tomas): This is a poor, highly blocking implementation, only meant to be a patch
+        mission_groups: list[dict] = self.mir_api.get_mission_groups()
+        group = next((x for x in mission_groups if x["name"] == "inorbit testing"), None)
+        if group is None:
+            self.logger.error("Could not find mission group 'inorbit testing'")
+            return
+
+        mission_id = str(uuid.uuid4())
+        self.mir_api.create_mission(
+            group["guid"], "Move to waypoint", guid=mission_id, description="Mission created by InOrbit"
+        )
+        action_parameters = [
+            {
+                "value": v,
+                "input_name": None,
+                "guid": str(uuid.uuid4()),
+                "id": k
+            }
+            for k, v in {
+                "x": float(pose["x"]),
+                "y": float(pose["y"]),
+                "orientation": math.degrees(float(pose["theta"])),
+                "distance_threshold": 0.2,
+                "retries": 5,
+            }.items()
+        ]
+        self.mir_api.add_action_to_mission("move_to_position", mission_id, action_parameters, 1)
+        self.mir_api.queue_mission(mission_id)
+        
 
     def start(self):
         """Run the main loop of the Connector"""

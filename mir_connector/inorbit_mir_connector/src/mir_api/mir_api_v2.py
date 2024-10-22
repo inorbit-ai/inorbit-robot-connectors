@@ -19,6 +19,7 @@ API_V2_CONTEXT_URL = "/api/v2.0.0"
 # Endpoints
 METRICS_ENDPOINT_V2 = "metrics"
 MISSION_QUEUE_ENDPOINT_V2 = "mission_queue"
+MISSION_GROUPS_ENDPOINT_V2 = "mission_groups"
 MISSIONS_ENDPOINT_V2 = "missions"
 STATUS_ENDPOINT_V2 = "status"
 
@@ -79,6 +80,46 @@ class MirApiV2(MirApiBaseClass):
             for sample in family.samples:
                 samples[sample.name] = sample.value
         return samples
+    
+    def get_mission_groups(self):
+        """Get available mission groups"""
+        mission_groups_api_url = f"{self.mir_api_base_url}/{MISSION_GROUPS_ENDPOINT_V2}"
+        groups = self._get(mission_groups_api_url, self.api_session).json()
+        return groups
+    
+    def create_mission(self, group_id, name, **kwargs):
+        """Create a mission"""
+        mission_api_url = f"{self.mir_api_base_url}/{MISSIONS_ENDPOINT_V2}"
+        mission = {
+            "group_id": group_id,
+            "name": name,
+            **kwargs
+        }
+        response = self._post(
+            mission_api_url,
+            self.api_session,
+            headers={"Content-Type": "application/json"},
+            json=mission,
+        )
+        return response.json()
+
+    def add_action_to_mission(self, action_type, mission_id, parameters, priority, **kwargs):
+        """Add an action to an existing mission"""
+        action_api_url = f"{self.mir_api_base_url}/{MISSIONS_ENDPOINT_V2}/{mission_id}/actions"
+        action = {
+            "mission_id": mission_id,
+            "action_type": action_type,
+            "parameters": parameters,
+            "priority": priority,
+            **kwargs
+        }
+        response = self._post(
+            action_api_url,
+            self.api_session,
+            headers={"Content-Type": "application/json"},
+            json=action,
+        )
+        return response.json()
 
     def get_mission(self, mission_queue_id):
         """Queries a mission using the mission_queue/{mission_id} endpoint"""

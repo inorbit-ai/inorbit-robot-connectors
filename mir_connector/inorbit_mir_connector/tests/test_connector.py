@@ -196,25 +196,25 @@ def test_enable_ws_flag(monkeypatch):
     monkeypatch.setattr(inorbit_mir_connector.src.connector.os, "makedirs", Mock())
 
     config = MiR100Config(
-            inorbit_robot_key="robot_key",
-            location_tz="UTC",
-            log_level="INFO",
-            connector_type="mir100",
-            connector_version="0.1.0",
-            connector_config={
-                "mir_username": "user",
-                "mir_password": "pass",
-                "mir_host_address": "example.com",
-                "mir_host_port": 80,
-                "mir_enable_ws": False,
-                "mir_ws_port": 9090,
-                "mir_use_ssl": False,
-                "mir_api_version": "v2.0",
-                "enable_mission_tracking": False,
-            },
-            user_scripts={},
-            cameras=[],
-        )
+        inorbit_robot_key="robot_key",
+        location_tz="UTC",
+        log_level="INFO",
+        connector_type="mir100",
+        connector_version="0.1.0",
+        connector_config={
+            "mir_username": "user",
+            "mir_password": "pass",
+            "mir_host_address": "example.com",
+            "mir_host_port": 80,
+            "mir_enable_ws": False,
+            "mir_ws_port": 9090,
+            "mir_use_ssl": False,
+            "mir_api_version": "v2.0",
+            "enable_mission_tracking": False,
+        },
+        user_scripts={},
+        cameras=[],
+    )
     connector = Mir100Connector("mir100-1", config)
     assert connector.ws_enabled is False
     assert not hasattr(connector, "mir_ws")

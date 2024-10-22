@@ -25,6 +25,9 @@ CONNECTOR_UPDATE_FREQ = 1
 # Available MiR states to select via actions
 MIR_STATE = {3: "READY", 4: "PAUSE", 11: "MANUALCONTROL"}
 
+# Connector missions group name
+MIR_INORBIT_MISSIONS_GROUP_NAME = "InOrbit Temporary Missions Group"
+
 
 class Mir100Connector:
     """MiR100 connector.
@@ -79,7 +82,6 @@ class Mir100Connector:
             "robot_name": robot_id,
             "api_key": os.environ["INORBIT_KEY"],
             "robot_key": config.inorbit_robot_key,
-            "use_ssl": False,
         }
         if "INORBIT_URL" in os.environ:
             robot_session_params["endpoint"] = os.environ["INORBIT_URL"]
@@ -124,6 +126,9 @@ class Mir100Connector:
             loglevel=log_level,
             enable_io_mission_tracking=config.connector_config.enable_mission_tracking,
         )
+
+        # Get or create the required missions and mission groups
+        self.setup_connector_missions()
 
     def command_callback(self, command_name, args, options):
         """Callback method for command messages.
@@ -193,7 +198,10 @@ class Mir100Connector:
         elif command_name == COMMAND_NAV_GOAL:
             self.logger.info(f"Received '{command_name}'!. {args}")
             pose = args[0]
-            self.send_waypoint(pose)
+            # Use move to waypoint via the reverse-engineered API the browser uses:
+            # self.mir_api.send_waypoint(pose)
+            # Use missions for sending waypoints:
+            self.send_waypoint_over_missions(pose)
         elif command_name == COMMAND_MESSAGE:
             msg = args[0]
             if msg == "inorbit_pause":
@@ -203,26 +211,18 @@ class Mir100Connector:
 
         else:
             self.logger.info(f"Received '{command_name}'!. {args}")
-    
-    def send_waypoint(self, pose):
-        # TODO(b-Tomas): This is a poor, highly blocking implementation, only meant to be a patch
-        mission_groups: list[dict] = self.mir_api.get_mission_groups()
-        group = next((x for x in mission_groups if x["name"] == "inorbit testing"), None)
-        if group is None:
-            self.logger.error("Could not find mission group 'inorbit testing'")
-            return
 
+    def send_waypoint_over_missions(self, pose):
+        """Use the connector's mission group to create a move mission to a designated pose."""
         mission_id = str(uuid.uuid4())
         self.mir_api.create_mission(
-            group["guid"], "Move to waypoint", guid=mission_id, description="Mission created by InOrbit"
+            group_id=self.missions_group_id,
+            name="Move to waypoint",
+            guid=mission_id,
+            description="Mission created by InOrbit",
         )
         action_parameters = [
-            {
-                "value": v,
-                "input_name": None,
-                "guid": str(uuid.uuid4()),
-                "id": k
-            }
+            {"value": v, "input_name": None, "guid": str(uuid.uuid4()), "id": k}
             for k, v in {
                 "x": float(pose["x"]),
                 "y": float(pose["y"]),
@@ -231,9 +231,44 @@ class Mir100Connector:
                 "retries": 5,
             }.items()
         ]
-        self.mir_api.add_action_to_mission("move_to_position", mission_id, action_parameters, 1)
+        self.mir_api.add_action_to_mission(
+            action_type="move_to_position",
+            mission_id=mission_id,
+            parameters=action_parameters,
+            priority=1,
+        )
         self.mir_api.queue_mission(mission_id)
-        
+
+    def setup_connector_missions(self):
+        """Find and store the required missions and mission groups, or create them if they don't
+        exist."""
+        self.logger.info("Setting up connector missions")
+        # Find or create the missions group
+        mission_groups: list[dict] = self.mir_api.get_mission_groups()
+        group = next(
+            (x for x in mission_groups if x["name"] == MIR_INORBIT_MISSIONS_GROUP_NAME), None
+        )
+        self.missions_group_id = group["guid"] if group is not None else str(uuid.uuid4())
+        if group is None:
+            self.logger.info(f"Creating mission group '{MIR_INORBIT_MISSIONS_GROUP_NAME}'")
+            group = self.mir_api.create_mission_group(
+                feature=".",
+                icon=".",
+                name=MIR_INORBIT_MISSIONS_GROUP_NAME,
+                priority=0,
+                guid=self.missions_group_id,
+            )
+            self.logger.info(f"Mission group created with guid '{self.missions_group_id}'")
+        else:
+            self.logger.info(
+                f"Found mission group '{MIR_INORBIT_MISSIONS_GROUP_NAME}' with guid '{self.missions_group_id}'"
+            )
+
+    def cleanup_connector_missions(self):
+        """Delete the missions group created at startup"""
+        self.logger.info("Cleaning up connector missions")
+        self.logger.info(f"Deleting missions group {self.missions_group_id}")
+        self.mir_api.delete_mission_group(self.missions_group_id)
 
     def start(self):
         """Run the main loop of the Connector"""
@@ -319,5 +354,6 @@ class Mir100Connector:
     def stop(self):
         """Exit the Connector cleanly."""
         self._should_run = False
+        self.cleanup_connector_missions()
         self.mir_ws.disconnect()
         self.inorbit_sess.disconnect()

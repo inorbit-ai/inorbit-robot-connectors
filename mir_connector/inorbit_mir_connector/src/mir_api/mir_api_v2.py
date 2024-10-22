@@ -80,21 +80,38 @@ class MirApiV2(MirApiBaseClass):
             for sample in family.samples:
                 samples[sample.name] = sample.value
         return samples
-    
+
     def get_mission_groups(self):
         """Get available mission groups"""
         mission_groups_api_url = f"{self.mir_api_base_url}/{MISSION_GROUPS_ENDPOINT_V2}"
         groups = self._get(mission_groups_api_url, self.api_session).json()
         return groups
-    
+
+    def create_mission_group(self, feature, icon, name, priority, **kwargs):
+        """Create a new mission group"""
+        mission_groups_api_url = f"{self.mir_api_base_url}/{MISSION_GROUPS_ENDPOINT_V2}"
+        group = {"feature": feature, "icon": icon, "name": name, "priority": priority, **kwargs}
+        response = self._post(
+            mission_groups_api_url,
+            self.api_session,
+            headers={"Content-Type": "application/json"},
+            json=group,
+        )
+        return response.json()
+
+    def delete_mission_group(self, group_id):
+        """Delete a mission group"""
+        mission_group_api_url = f"{self.mir_api_base_url}/{MISSION_GROUPS_ENDPOINT_V2}/{group_id}"
+        self._delete(
+            mission_group_api_url,
+            self.api_session,
+            headers={"Content-Type": "application/json"},
+        )
+
     def create_mission(self, group_id, name, **kwargs):
         """Create a mission"""
         mission_api_url = f"{self.mir_api_base_url}/{MISSIONS_ENDPOINT_V2}"
-        mission = {
-            "group_id": group_id,
-            "name": name,
-            **kwargs
-        }
+        mission = {"group_id": group_id, "name": name, **kwargs}
         response = self._post(
             mission_api_url,
             self.api_session,
@@ -111,7 +128,7 @@ class MirApiV2(MirApiBaseClass):
             "action_type": action_type,
             "parameters": parameters,
             "priority": priority,
-            **kwargs
+            **kwargs,
         }
         response = self._post(
             action_api_url,

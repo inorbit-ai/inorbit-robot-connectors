@@ -27,7 +27,8 @@ MIR_STATE = {3: "READY", 4: "PAUSE", 11: "MANUALCONTROL"}
 
 # Connector missions group name
 MIR_INORBIT_MISSIONS_GROUP_NAME = "InOrbit Temporary Missions Group"
-
+# Distance threshold for MiR move missions in meters
+MIR_MOVE_DISTANCE_THRESHOLD = 0.1
 
 class Mir100Connector:
     """MiR100 connector.
@@ -227,7 +228,7 @@ class Mir100Connector:
                 "x": float(pose["x"]),
                 "y": float(pose["y"]),
                 "orientation": math.degrees(float(pose["theta"])),
-                "distance_threshold": 0.2,
+                "distance_threshold": MIR_MOVE_DISTANCE_THRESHOLD,
                 "retries": 5,
             }.items()
         ]

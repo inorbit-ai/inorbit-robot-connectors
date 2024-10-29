@@ -26,6 +26,7 @@ def example_mir100_configuration_dict(example_configuration_dict):
         "connector_config": {
             "mir_host_address": "localhost",
             "mir_host_port": 80,
+            "mir_enable_ws": True,
             "mir_ws_port": 9090,
             "mir_use_ssl": False,
             "mir_username": "admin",

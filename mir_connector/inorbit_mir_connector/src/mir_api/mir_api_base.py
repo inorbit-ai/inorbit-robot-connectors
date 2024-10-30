@@ -19,6 +19,7 @@ class MirApiBaseClass(ABC):
             res.raise_for_status()
         except HTTPError as e:
             self.logger.error(f"Error making request: {e}\nArguments: {request_args}")
+            self.logger.error(e.response.text)
             raise e
 
     def _get(self, url: str, session: Session, **kwargs) -> Response:

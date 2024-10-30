@@ -232,7 +232,10 @@ class Mir100Connector:
                 "y": float(pose["y"]),
                 "orientation": math.degrees(float(pose["theta"])),
                 "distance_threshold": MIR_MOVE_DISTANCE_THRESHOLD,
-                "retries": 5,
+                # TODO(b-Tomas): Make this configurable
+                # For now, only parameter or the other will work on certain models
+                # "retries": 5, # Works on MiR100 only
+                "blocked_path_timeout": 60.0, # Works on MiR250 only
             }.items()
         ]
         self.mir_api.add_action_to_mission(

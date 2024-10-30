@@ -7,7 +7,7 @@ instock-asrs-1:
   connector_update_freq: 5.0
 
   connector_config:
-    instock_base_url: https://ca.instock.com/incus/v1
+    instock_api_url: https://ca.instock.com/incus/v1
     instock_api_version: v1
     instock_org_id: myorg
     instock_site_id: x.y.z-A

@@ -59,12 +59,14 @@ class Mir100Connector:
         )
 
         # Configure the ws connection to the robot
-        self.mir_ws = MirWebSocketV2(
-            mir_host_address=config.connector_config.mir_host_address,
-            mir_ws_port=config.connector_config.mir_ws_port,
-            mir_use_ssl=config.connector_config.mir_use_ssl,
-            loglevel=log_level,
-        )
+        self.ws_enabled = config.connector_config.mir_enable_ws
+        if self.ws_enabled:
+            self.mir_ws = MirWebSocketV2(
+                mir_host_address=config.connector_config.mir_host_address,
+                mir_ws_port=config.connector_config.mir_ws_port,
+                mir_use_ssl=config.connector_config.mir_use_ssl,
+                loglevel=log_level,
+            )
 
         # Configure the timezone
         self.robot_tz_info = pytz.timezone("UTC")
@@ -83,6 +85,7 @@ class Mir100Connector:
             "robot_name": robot_id,
             "api_key": os.environ["INORBIT_KEY"],
             "robot_key": config.inorbit_robot_key,
+            "use_ssl": os.environ.get("INORBIT_USE_SSL", "true").lower() == "true",
         }
         if "INORBIT_URL" in os.environ:
             robot_session_params["endpoint"] = os.environ["INORBIT_URL"]
@@ -333,14 +336,15 @@ class Mir100Connector:
             # Reporting system stats
             # TODO(b-Tomas): Report more system stats
 
-            cpu_usage = self.mir_ws.get_cpu_usage()
-            disk_usage = self.mir_ws.get_disk_usage()
-            memory_usage = self.mir_ws.get_memory_usage()
-            self.inorbit_sess.publish_system_stats(
-                cpu_load_percentage=cpu_usage,
-                hdd_usage_percentage=disk_usage,
-                ram_usage_percentage=memory_usage,
-            )
+            if self.ws_enabled:
+                cpu_usage = self.mir_ws.get_cpu_usage()
+                disk_usage = self.mir_ws.get_disk_usage()
+                memory_usage = self.mir_ws.get_memory_usage()
+                self.inorbit_sess.publish_system_stats(
+                    cpu_load_percentage=cpu_usage,
+                    hdd_usage_percentage=disk_usage,
+                    ram_usage_percentage=memory_usage,
+                )
 
             # publish mission data
             try:
@@ -356,5 +360,6 @@ class Mir100Connector:
         """Exit the Connector cleanly."""
         self._should_run = False
         self.cleanup_connector_missions()
-        self.mir_ws.disconnect()
         self.inorbit_sess.disconnect()
+        if self.ws_enabled:
+            self.mir_ws.disconnect()

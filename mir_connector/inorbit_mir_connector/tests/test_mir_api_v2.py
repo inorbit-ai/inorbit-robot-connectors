@@ -138,6 +138,7 @@ mir_robot_wifi_access_point_frequency_hertz 0.0
 
 
 def test_websocket_connection(mir_websocket):
+    mir_websocket.connect()
     # Check WebSocketApp run_forever loop is called
     mir_websocket.ws.run_forever.assert_called_once()
 

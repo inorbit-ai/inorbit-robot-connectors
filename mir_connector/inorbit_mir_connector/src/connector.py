@@ -48,7 +48,7 @@ class Mir100Connector(Connector):
             mir_password=config.connector_config.mir_password,
             mir_host_port=config.connector_config.mir_host_port,
             mir_use_ssl=config.connector_config.mir_use_ssl,
-            loglevel=config.log_level,
+            loglevel=config.log_level.value,
         )
 
         # Configure the ws connection to the robot
@@ -58,7 +58,7 @@ class Mir100Connector(Connector):
                 mir_host_address=config.connector_config.mir_host_address,
                 mir_ws_port=config.connector_config.mir_ws_port,
                 mir_use_ssl=config.connector_config.mir_use_ssl,
-                loglevel=config.log_level,
+                loglevel=config.log_level.value,
             )
 
         # Configure the timezone
@@ -75,7 +75,7 @@ class Mir100Connector(Connector):
             mir_api=self.mir_api,
             inorbit_sess=self._robot_session,
             robot_tz_info=self.robot_tz_info,
-            loglevel=config.log_level,
+            loglevel=config.log_level.value,
             enable_io_mission_tracking=config.connector_config.enable_mission_tracking,
         )
 

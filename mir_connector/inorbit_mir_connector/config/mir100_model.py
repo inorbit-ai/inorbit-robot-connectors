@@ -3,18 +3,24 @@
 # SPDX-License-Identifier: MIT
 
 from pydantic import BaseModel, field_validator
-from .config_base_model import EdgeConnectorModel
-from .utils import read_yaml
+from inorbit_connector.models import InorbitConnectorConfig
+from inorbit_connector.utils import read_yaml
 
-# TODO: leverate ruamel.yaml capabilities to add comments to
+# TODO: leverage ruamel.yaml capabilities to add comments to
 # the yaml and improve how the default configuration section
 # that gets added automatically looks.
 default_mir100_config = {
     "inorbit_robot_key": "",
+    "account_id": "",
     "location_tz": "America/Los_Angeles",
     "log_level": "INFO",
     "cameras": [],
     "connector_type": "mir100",
+    "user_scripts_dir": "path/to/user/scripts",
+    "env_vars": {
+        "ENV_VAR_NAME": "env_var_value"
+    },
+    "maps": {},
     "connector_config": {
         "mir_host_address": "localhost",
         "mir_host_port": 80,
@@ -26,7 +32,6 @@ default_mir100_config = {
         "enable_mission_tracking": True,
         "mir_api_version": "v2.0",
     },
-    "user_scripts": {},
 }
 
 # Expected values
@@ -58,7 +63,7 @@ class MiR100ConfigModel(BaseModel):
         return mir_api_version
 
 
-class MiR100Config(EdgeConnectorModel):
+class MiR100Config(InorbitConnectorConfig):
     """
     MiR100 connector configuration schema.
     """

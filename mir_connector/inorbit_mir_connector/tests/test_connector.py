@@ -274,7 +274,7 @@ def test_connector_loop(connector, monkeypatch):
     run_loop_once()
 
     assert connector._robot_session.publish_pose.call_args == call(
-        9.52050495147705, 7.156267166137695, 1.8204675458317707, None
+        9.52050495147705, 7.156267166137695, 1.8204675458317707, "map"
     )
     assert connector._robot_session.publish_odometry.call_args == call(
         linear_speed=1.1, angular_speed=math.pi

@@ -188,7 +188,7 @@ class Mir100Connector(Connector):
             "x": self.status["position"]["x"],
             "y": self.status["position"]["y"],
             "yaw": math.radians(self.status["position"]["orientation"]),
-            "frame_id": None,  # TODO: Include frameId
+            "frame_id": "map",  # TODO: Include frameId
         }
         self._logger.debug(f"Publishing pose: {pose_data}")
         self.publish_pose(**pose_data)

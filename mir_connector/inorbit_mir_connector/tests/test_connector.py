@@ -5,11 +5,9 @@
 import math
 import time
 import pytest
-import threading
 import websocket
 from unittest.mock import MagicMock, Mock, call
 from inorbit_edge.robot import RobotSession
-import inorbit_mir_connector.src.connector
 from inorbit_mir_connector.src.mir_api import MirApiV2
 from inorbit_mir_connector.src.connector import Mir100Connector
 from inorbit_mir_connector.config.mir100_model import MiR100Config

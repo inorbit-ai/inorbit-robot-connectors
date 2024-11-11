@@ -17,9 +17,7 @@ default_mir100_config = {
     "cameras": [],
     "connector_type": "mir100",
     "user_scripts_dir": "path/to/user/scripts",
-    "env_vars": {
-        "ENV_VAR_NAME": "env_var_value"
-    },
+    "env_vars": {"ENV_VAR_NAME": "env_var_value"},
     "maps": {},
     "connector_config": {
         "mir_host_address": "localhost",

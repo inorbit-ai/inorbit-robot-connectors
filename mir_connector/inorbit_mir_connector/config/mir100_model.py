@@ -15,7 +15,7 @@ default_mir100_config = {
     "location_tz": "America/Los_Angeles",
     "log_level": "INFO",
     "cameras": [],
-    "connector_type": "mir100",
+    "connector_type": "MiR100",
     "user_scripts_dir": "path/to/user/scripts",
     "env_vars": {"ENV_VAR_NAME": "env_var_value"},
     "maps": {},
@@ -27,16 +27,19 @@ default_mir100_config = {
         "mir_enable_ws": True,
         "mir_username": "",
         "mir_password": "",
+        "mir_firmware_version": "v2",
         "enable_mission_tracking": True,
         "mir_api_version": "v2.0",
     },
 }
 
 # Expected values
-CONNECTOR_TYPE = "mir100"
+CONNECTOR_TYPES = ["MiR100", "MiR250"]
+FIRMWARE_VERSIONS = ["v2", "v3"]
 MIR_API_VERSION = "v2.0"
 
 
+# TODO(b-Tomas): Rename all MiR100* to MiR* to make more generic
 class MiR100ConfigModel(BaseModel):
     """
     Specific configuration for MiR100 connector.
@@ -50,6 +53,7 @@ class MiR100ConfigModel(BaseModel):
     mir_username: str
     mir_password: str
     mir_api_version: str
+    mir_firmware_version: str
     enable_mission_tracking: bool
 
     @field_validator("mir_api_version")
@@ -59,6 +63,15 @@ class MiR100ConfigModel(BaseModel):
                 f"Unexpected MiR API version '{mir_api_version}'. Expected '{MIR_API_VERSION}'"
             )
         return mir_api_version
+
+    @field_validator("mir_firmware_version")
+    def firmware_version_validation(cls, mir_firmware_version):
+        if mir_firmware_version not in FIRMWARE_VERSIONS:
+            raise ValueError(
+                f"Unexpected MiR firmware version '{mir_firmware_version}'. "
+                f"Expected one of '{FIRMWARE_VERSIONS}'"
+            )
+        return mir_firmware_version
 
 
 class MiR100Config(InorbitConnectorConfig):
@@ -70,9 +83,9 @@ class MiR100Config(InorbitConnectorConfig):
 
     @field_validator("connector_type")
     def connector_type_validation(cls, connector_type):
-        if connector_type != CONNECTOR_TYPE:
+        if connector_type not in CONNECTOR_TYPES:
             raise ValueError(
-                f"Unexpected connector type '{connector_type}'. Expected '{CONNECTOR_TYPE}'"
+                f"Unexpected connector type '{connector_type}'. Expected one of '{CONNECTOR_TYPES}'"
             )
         return connector_type
 

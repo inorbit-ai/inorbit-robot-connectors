@@ -19,6 +19,7 @@ requirements = [
     "pydantic>=2.5",
     "psutil==5.9",
     "websocket-client==1.7.0",
+    "uuid==1.30",
 ]
 
 test_requirements = [

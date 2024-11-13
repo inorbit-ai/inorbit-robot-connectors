@@ -13,7 +13,7 @@ def example_configuration_dict():
     return {
         "inorbit_robot_key": "1234567890",
         "location_tz": "America/Los_Angeles",
-        "connector_type": "mir100",
+        "connector_type": "MiR100",
         "log_level": "INFO",
         "user_scripts": {"path": "/path/to/scripts", "env_vars": {"name": "value"}},
     }
@@ -31,6 +31,7 @@ def example_mir100_configuration_dict(example_configuration_dict):
             "mir_username": "admin",
             "mir_password": "admin",
             "mir_api_version": "v2.0",
+            "mir_firmware_version": "v2",
             "enable_mission_tracking": True,
         },
     }

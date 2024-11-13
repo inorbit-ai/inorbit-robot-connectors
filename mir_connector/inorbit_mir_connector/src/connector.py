@@ -273,7 +273,8 @@ class Mir100Connector(Connector):
         param_values = {
             "x": float(pose["x"]),
             "y": float(pose["y"]),
-            "theta": math.degrees(float(pose["yaw"])),
+            "orientation": math.degrees(float(pose["theta"])),
+            "distance_threshold": MIR_MOVE_DISTANCE_THRESHOLD,
         }
         if connector_type == "MiR100" and firmware_version == "v2":
             param_values["retries"] = 5

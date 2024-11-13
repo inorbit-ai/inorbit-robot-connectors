@@ -200,10 +200,10 @@ def test_command_callback_state(connector, callback_kwargs):
 
 def test_command_callback_nav_goal(connector, callback_kwargs):
     callback_kwargs["command_name"] = "navGoal"
-    callback_kwargs["args"] = [{"x": "1", "y": "2", "yaw": "3.14"}]
+    callback_kwargs["args"] = [{"x": "1", "y": "2", "theta": "3.14"}]
     connector.send_waypoint_over_missions = Mock()
     connector._inorbit_command_handler(**callback_kwargs)
-    connector.send_waypoint_over_missions.assert_called_with({"x": "1", "y": "2", "yaw": "3.14"})
+    connector.send_waypoint_over_missions.assert_called_with({"x": "1", "y": "2", "theta": "3.14"})
 
 
 def test_send_waypoint_over_missions(connector, monkeypatch):
@@ -211,7 +211,7 @@ def test_send_waypoint_over_missions(connector, monkeypatch):
     # Test MiR100 firmware v2
     connector.config.connector_type = "MiR100"
     connector.config.connector_config.mir_firmware_version = "v2"
-    connector.send_waypoint_over_missions({"x": "1", "y": "2", "yaw": "0"})
+    connector.send_waypoint_over_missions({"x": "1", "y": "2", "theta": "0"})
     connector.mir_api.create_mission.assert_called_once()
     connector.mir_api.add_action_to_mission.assert_called_once_with(
         action_type="move_to_position",
@@ -219,7 +219,8 @@ def test_send_waypoint_over_missions(connector, monkeypatch):
         parameters=[
             {"value": 1.0, "input_name": None, "guid": "uuid", "id": "x"},
             {"value": 2.0, "input_name": None, "guid": "uuid", "id": "y"},
-            {"value": 0, "input_name": None, "guid": "uuid", "id": "theta"},
+            {"value": 0, "input_name": None, "guid": "uuid", "id": "orientation"},
+            {"value": 0.1, "input_name": None, "guid": "uuid", "id": "distance_threshold"},
             {"value": 5, "input_name": None, "guid": "uuid", "id": "retries"},
         ],
         priority=1,
@@ -229,7 +230,7 @@ def test_send_waypoint_over_missions(connector, monkeypatch):
     # Test MiR100 firmware v3
     connector.config.connector_type = "MiR250"
     connector.config.connector_config.mir_firmware_version = "v3"
-    connector.send_waypoint_over_missions({"x": "1", "y": "2", "yaw": "0"})
+    connector.send_waypoint_over_missions({"x": "1", "y": "2", "theta": "0"})
     connector.mir_api.create_mission.assert_called_once()
     connector.mir_api.add_action_to_mission.assert_called_once_with(
         action_type="move_to_position",
@@ -237,7 +238,8 @@ def test_send_waypoint_over_missions(connector, monkeypatch):
         parameters=[
             {"value": 1.0, "input_name": None, "guid": "uuid", "id": "x"},
             {"value": 2.0, "input_name": None, "guid": "uuid", "id": "y"},
-            {"value": 0, "input_name": None, "guid": "uuid", "id": "theta"},
+            {"value": 0, "input_name": None, "guid": "uuid", "id": "orientation"},
+            {"value": 0.1, "input_name": None, "guid": "uuid", "id": "distance_threshold"},
             {"value": 60.0, "input_name": None, "guid": "uuid", "id": "blocked_path_timeout"},
         ],
         priority=1,

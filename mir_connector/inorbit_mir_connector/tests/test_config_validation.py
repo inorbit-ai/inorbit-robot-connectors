@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: MIT
 
 import pytest
-from inorbit_mir_connector.config.config_base_model import EdgeConnectorModel
 from inorbit_mir_connector.config.mir100_model import MiR100Config
 from pydantic import ValidationError
 from copy import deepcopy
@@ -35,18 +34,6 @@ def example_mir100_configuration_dict(example_configuration_dict):
             "enable_mission_tracking": True,
         },
     }
-
-
-def test_base_edge_validator_is_abstract(
-    example_configuration_dict, example_mir100_configuration_dict
-):
-    """
-    Test that the base edge config validator cannot be instantiated
-    """
-    with pytest.raises(Exception):
-        EdgeConnectorModel(**example_configuration_dict)
-    with pytest.raises(Exception):
-        EdgeConnectorModel(**example_mir100_configuration_dict)
 
 
 def test_mir100_validator(example_mir100_configuration_dict, example_configuration_dict):

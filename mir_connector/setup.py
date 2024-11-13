@@ -6,8 +6,9 @@
 from setuptools import setup
 
 requirements = [
-    "requests==2.26.0",
-    "inorbit-edge[video]>=1.12.1",
+    "requests>=2.31,<3.0",
+    "inorbit-edge[video]>=1.17",
+    "inorbit-connector>=0.3.0",
     "prometheus-client>=0.14.1",
     "pytz>=2022.7",
     # NOTE: both pyyaml and ruamel.yaml packages are included here. Otherwise, the
@@ -15,7 +16,7 @@ requirements = [
     # to ruamel.yaml or fix the dependency issue and them remove pyyaml from here.
     "pyyaml>=6.0,<6.1",
     "ruamel.yaml>=0.18,<0.19",
-    "pydantic==2.5",
+    "pydantic>=2.5",
     "psutil==5.9",
     "websocket-client==1.7.0",
 ]

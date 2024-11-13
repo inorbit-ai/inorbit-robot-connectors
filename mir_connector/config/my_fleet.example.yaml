@@ -29,12 +29,11 @@
     # Mission Tracking features are not available on every InOrbit edition.
     enable_mission_tracking: false
   # Configuration for running user scripts
-  user_scripts:
-    # Folder where the user scripts are. If not set, "~/.inorbit_connectors/connector-<robot_id>/local/" will be used
-    path: /home/inorbit/mir100_connector/user_scripts_mir100-1
-    # Environment variables that will be available to the user scripts (Optional)
-    env_vars:
-      INORBIT_API_KEY: foo
-      MIR_API_ENDPOINT: 10.0.0.1:80
-      MIR_USERNAME: username
-      MIR_PASSWORD: password
+  # Folder where the user scripts are. If not set, "~/.inorbit_connectors/connector-<robot_id>/local/" will be used
+  user_scripts_dir: /home/inorbit/mir100_connector/user_scripts_mir100-1
+  # Environment variables that will be available to the user scripts (Optional)
+  env_vars:
+    INORBIT_API_KEY: foo
+    MIR_API_ENDPOINT: 10.0.0.1:80
+    MIR_USERNAME: username
+    MIR_PASSWORD: password

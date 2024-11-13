@@ -211,10 +211,6 @@ class MirWebSocketV2:
             url=self.mir_ws_url, on_message=self.on_message, on_close=self.on_close
         )
 
-        self.connect()
-
-        self.subscribe_diagnostics_agg()
-
     def on_close(self, ws, close_status_code, close_msg):
         self.logger.info("Disconnected from server")
 
@@ -240,6 +236,8 @@ class MirWebSocketV2:
             sleep(1)
             if not conn_retries:
                 raise RuntimeError(f"Failed to connect to ws: '{self.mir_ws_url}")
+
+        self.subscribe_diagnostics_agg()
 
     def disconnect(self):
         self.logger.info("Closing ws connection")

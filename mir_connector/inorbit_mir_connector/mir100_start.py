@@ -5,11 +5,10 @@
 import argparse
 import logging
 import sys
+from inorbit_connector.utils import read_yaml
 from inorbit_mir_connector.src.connector import Mir100Connector
-from inorbit_mir_connector.config.mir100_model import MiR100Config
 from inorbit_mir_connector.config.mir100_model import load_and_validate
 from inorbit_mir_connector.config.mir100_model import default_mir100_config
-from inorbit_mir_connector.config.utils import read_yaml
 from inorbit_mir_connector.config.utils import write_yaml
 
 logging.basicConfig(level=logging.INFO)
@@ -60,7 +59,8 @@ def start():
         config_dict = read_yaml(config_filename)
         config_dict[robot_id] = default_mir100_config
         write_yaml(config_filename, config_dict)
-        mir_config = MiR100Config(**config_dict[robot_id])
+        LOGGER.info("Configuration file updated. Please fill in the missing values.")
+        exit(1)
 
     mir_connector = Mir100Connector(robot_id, mir_config)
     try:

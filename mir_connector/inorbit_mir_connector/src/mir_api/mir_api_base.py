@@ -44,10 +44,10 @@ class MirApiBaseClass(ABC):
         self._handle_status(res, kwargs)
         return res
 
-    def _put(self, url: str, session: Session, *kwargs) -> Response:
+    def _put(self, url: str, session: Session, **kwargs) -> Response:
         """Perform a PUT request."""
         self.logger.debug(f"PUTing {url}: {kwargs}")
-        res = session.delete(url, **kwargs)
+        res = session.put(url, **kwargs)
         self.logger.debug(f"Response: {res}")
         self._handle_status(res, kwargs)
         return res

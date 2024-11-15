@@ -137,6 +137,27 @@ class Mir100Connector(Connector):
             elif script_name == "set_waiting_for" and script_args[0] == "--text":
                 self._logger.info(f"Setting 'waiting for' value to {script_args[1]}")
                 self.mission_tracking.waiting_for_text = script_args[1]
+            elif script_name == "change_map":
+                if (
+                    script_args[0] == "--mir_map_id"
+                    and script_args[2] == "--x"
+                    and script_args[4] == "--y"
+                    and script_args[6] == "--orientation"
+                ):
+                    status = {
+                        "position": {
+                            "x": float(script_args[3]),
+                            "y": float(script_args[5]),
+                            "orientation": float(script_args[7]),
+                        },
+                        "map_id": script_args[1],
+                    }
+                    self._logger.info(f"Changing map to {script_args[1]}")
+                    self.mir_api.set_status(status)
+                else:
+                    self._logger.error("Invalid arguments for 'change_map' command")
+                    options["result_function"]("1", execution_status_details="Invalid arguments")
+                    return
             else:
                 # Other kind if custom commands may be handled by the edge-sdk (e.g. user_scripts)
                 # and not by the connector code itself

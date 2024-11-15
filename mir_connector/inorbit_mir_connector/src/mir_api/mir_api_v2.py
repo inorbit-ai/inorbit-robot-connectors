@@ -165,8 +165,8 @@ class MirApiV2(MirApiBaseClass):
         response = self._put(
             status_api_url,
             self.api_session,
-            data=data,
             headers={"Content-Type": "application/json"},
+            json=data,
         )
         return response.json()
 

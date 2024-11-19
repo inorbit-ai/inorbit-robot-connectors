@@ -211,6 +211,42 @@ def test_command_callback_inorbit_messages(connector, callback_kwargs):
         assert connector.mir_api.set_state.call_args == call(code)
 
 
+def test_command_callback_change_map(connector, callback_kwargs):
+    callback_kwargs["command_name"] = "customCommand"
+    # test invalid args
+    callback_kwargs["args"] = ["localize", ["--map_id", "map_id"]]
+    connector._inorbit_command_handler(**callback_kwargs)
+    connector.mir_api.change_map.assert_not_called()
+    callback_kwargs["options"]["result_function"].assert_called_with(
+        "1", execution_status_details="Invalid arguments"
+    )
+    # test valid args
+    callback_kwargs["args"] = [
+        "localize",
+        [
+            "--x",
+            1.0,
+            "--y",
+            2.0,
+            "--orientation",
+            90.0,
+            "--map_id",
+            "map_id",
+        ],
+    ]
+    connector._inorbit_command_handler(**callback_kwargs)
+    connector.mir_api.set_status.assert_called_with(
+        {
+            "position": {
+                "x": 1.0,
+                "y": 2.0,
+                "orientation": 90.0,
+            },
+            "map_id": "map_id",
+        }
+    )
+
+
 def test_connector_loop(connector, monkeypatch):
     connector.mission_tracking.report_mission = Mock()
 

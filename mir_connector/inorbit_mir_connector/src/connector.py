@@ -28,7 +28,7 @@ MIR_INORBIT_MISSIONS_GROUP_NAME = "InOrbit Temporary Missions Group"
 MIR_MOVE_DISTANCE_THRESHOLD = 0.1
 
 # Remove missions created in the temporary missions group every 12 hours
-MISSIONS_GARBAGE_COLLECTION_INTERVAL_SECS = 10  # 12 * 60 * 60
+MISSIONS_GARBAGE_COLLECTION_INTERVAL_SECS = 12 * 60 * 60
 
 
 # TODO(b-Tomas): Rename all MiR100* to MiR* to make more generic

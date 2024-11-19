@@ -347,3 +347,60 @@ def test_connector_loop(connector):
     assert not connector._robot_session.publish_pose.called
     assert not connector._robot_session.publish_key_values.called
     assert not connector._robot_session.publish_odometry.called
+
+
+def test_garbage_collection_calllback(connector, callback_kwargs):
+    connector.start_missions_garbage_collector = Mock()
+    # Missions in the temporary group
+    connector.tmp_missions_group_id = "tmp_group_id"
+    connector.mir_api.get_mission_group_missions.return_value = [
+        {
+            "url": "/v2.0.0/missions/72003359-6445-419c-85fb-df5576a9ce2e",
+            "guid": "72003359-6445-419c-85fb-df5576a9ce2e",
+            "name": "Move to waypoint",
+        },
+        {
+            "url": "/v2.0.0/missions/c0a17f65-39f1-4b10-8fee-77dfe1470ac1",
+            "guid": "c0a17f65-39f1-4b10-8fee-77dfe1470ac1",
+            "name": "Move to waypoint",
+        },
+        {
+            "url": "/v2.0.0/missions/d871d686-9006-4ddf-af78-bac9a22ddb53",
+            "guid": "d871d686-9006-4ddf-af78-bac9a22ddb53",
+            "name": "Move to waypoint",
+        },
+        {
+            "url": "/v2.0.0/missions/not_in_queue_so_safe_to_delete",
+            "guid": "not_in_queue_so_safe_to_delete",
+            "name": "Move to waypoint",
+        },
+    ]
+    # Missions in the queue
+    connector.mir_api.get_missions_queue.return_value = [
+        {"url": "/v2.0.0/mission_queue/1", "state": "Abort", "id": 1},
+        {"url": "/v2.0.0/mission_queue/2", "state": "Finalized", "id": 2},
+        {"url": "/v2.0.0/mission_queue/3", "state": "Pending", "id": 3},
+        {"url": "/v2.0.0/mission_queue/4", "state": "Executing", "id": 4},
+    ]
+    # Definition of missions in the queue
+    defs = {
+        1: {
+            "mission_id": "72003359-6445-419c-85fb-df5576a9ce2e",
+            "id": 1,
+        },  # Would be safe to delete
+        2: {"mission_id": "not_in_tmp_group", "id": 2},  # Should not be deleted
+        3: {"mission_id": "d871d686-9006-4ddf-af78-bac9a22ddb53", "id": 3},  # Not safe to delete
+        4: {"mission_id": "c0a17f65-39f1-4b10-8fee-77dfe1470ac1", "id": 4},  # Not safe to delete
+    }
+    connector.mir_api.get_mission.side_effect = lambda id: defs[id]
+    connector._missions_gc_callback(..., ...)
+    # Only deletes the mission definition of mission with id 1
+    # and mission that is not in the queue
+    connector.mir_api.delete_mission_definition.assert_any_call(
+        "72003359-6445-419c-85fb-df5576a9ce2e"
+    )
+    connector.mir_api.delete_mission_definition.assert_any_call("not_in_queue_so_safe_to_delete")
+    print(connector.mir_api.delete_mission_definition.call_args_list)
+    assert connector.mir_api.delete_mission_definition.call_count == 2
+    # Restarts automatically
+    connector.start_missions_garbage_collector.assert_called_once()

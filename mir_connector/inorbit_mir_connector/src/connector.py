@@ -358,9 +358,9 @@ class Mir100Connector(Connector):
             missions_queue = self.mir_api.get_missions_queue()
             # Do not delete definitions of missions that are pending or executing
             protected_mission_defs = [
-                self.mir_api.get_mission(mission["url"].split("/")[-1])["mission_id"]
+                self.mir_api.get_mission(mission["id"])["mission_id"]
                 for mission in missions_queue
-                if mission["state"] in ["Pending", "Executing"]
+                if mission["state"].lower() in ["pending", "executing"]
             ]
             # Delete the missions definitions in the temporary group that are not
             # associated to pending or executing missions

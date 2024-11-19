@@ -87,6 +87,14 @@ class MirApiV2(MirApiBaseClass):
         groups = self._get(mission_groups_api_url, self.api_session).json()
         return groups
 
+    def get_mission_group_missions(self, mission_group_id: str):
+        """Get available missions for a mission group"""
+        mission_group_api_url = (
+            f"{self.mir_api_base_url}/{MISSION_GROUPS_ENDPOINT_V2}/{mission_group_id}/missions"
+        )
+        missions = self._get(mission_group_api_url, self.api_session).json()
+        return missions
+
     def create_mission_group(self, feature, icon, name, priority, **kwargs):
         """Create a new mission group"""
         mission_groups_api_url = f"{self.mir_api_base_url}/{MISSION_GROUPS_ENDPOINT_V2}"
@@ -104,6 +112,15 @@ class MirApiV2(MirApiBaseClass):
         mission_group_api_url = f"{self.mir_api_base_url}/{MISSION_GROUPS_ENDPOINT_V2}/{group_id}"
         self._delete(
             mission_group_api_url,
+            self.api_session,
+            headers={"Content-Type": "application/json"},
+        )
+
+    def delete_mission_definition(self, mission_id):
+        """Delete a mission definition"""
+        mission_api_url = f"{self.mir_api_base_url}/{MISSIONS_ENDPOINT_V2}/{mission_id}"
+        self._delete(
+            mission_api_url,
             self.api_session,
             headers={"Content-Type": "application/json"},
         )
@@ -168,6 +185,12 @@ class MirApiV2(MirApiBaseClass):
         response = self._get(actions_api_url, self.api_session)
         actions = response.json()
         return actions
+
+    def get_missions_queue(self):
+        """Returns all missions in the missions queue"""
+        missions_api_url = f"{self.mir_api_base_url}/{MISSION_QUEUE_ENDPOINT_V2}"
+        response = self._get(missions_api_url, self.api_session)
+        return response.json()
 
     def get_executing_mission_id(self):
         """Returns the id of the mission being currently executed by the robot"""

@@ -5,6 +5,7 @@
 import pytz
 import math
 import uuid
+import signal
 from inorbit_connector.connector import Connector
 from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND
 from inorbit_edge.robot import COMMAND_MESSAGE
@@ -25,6 +26,9 @@ MIR_INORBIT_MISSIONS_GROUP_NAME = "InOrbit Temporary Missions Group"
 # Distance threshold for MiR move missions in meters
 # Used in waypoints sent via missions when the WS interface is not enabled
 MIR_MOVE_DISTANCE_THRESHOLD = 0.1
+
+# Remove missions created in the temporary missions group every 12 hours
+MISSIONS_GARBAGE_COLLECTION_INTERVAL_SECS = 10  # 12 * 60 * 60
 
 
 # TODO(b-Tomas): Rename all MiR100* to MiR* to make more generic
@@ -89,6 +93,9 @@ class Mir100Connector(Connector):
 
         # Get or create the required missions and mission groups
         self.setup_connector_missions()
+
+        # Start garbage collection for missions
+        self.start_missions_garbage_collector()
 
     def _inorbit_command_handler(self, command_name, args, options):
         """Callback method for command messages.
@@ -265,7 +272,7 @@ class Mir100Connector(Connector):
         firmware_version = self.config.connector_config.mir_firmware_version
 
         self.mir_api.create_mission(
-            group_id=self.missions_group_id,
+            group_id=self.tmp_missions_group_id,
             name="Move to waypoint",
             guid=mission_id,
             description="Mission created by InOrbit",
@@ -312,7 +319,7 @@ class Mir100Connector(Connector):
         group = next(
             (x for x in mission_groups if x["name"] == MIR_INORBIT_MISSIONS_GROUP_NAME), None
         )
-        self.missions_group_id = group["guid"] if group is not None else str(uuid.uuid4())
+        self.tmp_missions_group_id = group["guid"] if group is not None else str(uuid.uuid4())
         if group is None:
             self._logger.info(f"Creating mission group '{MIR_INORBIT_MISSIONS_GROUP_NAME}'")
             group = self.mir_api.create_mission_group(
@@ -320,17 +327,59 @@ class Mir100Connector(Connector):
                 icon=".",
                 name=MIR_INORBIT_MISSIONS_GROUP_NAME,
                 priority=0,
-                guid=self.missions_group_id,
+                guid=self.tmp_missions_group_id,
             )
-            self._logger.info(f"Mission group created with guid '{self.missions_group_id}'")
+            self._logger.info(f"Mission group created with guid '{self.tmp_missions_group_id}'")
         else:
             self._logger.info(
                 f"Found mission group '{MIR_INORBIT_MISSIONS_GROUP_NAME}' with "
-                f"guid '{self.missions_group_id}'"
+                f"guid '{self.tmp_missions_group_id}'"
             )
 
     def cleanup_connector_missions(self):
         """Delete the missions group created at startup"""
         self._logger.info("Cleaning up connector missions")
-        self._logger.info(f"Deleting missions group {self.missions_group_id}")
-        self.mir_api.delete_mission_group(self.missions_group_id)
+        self._logger.info(f"Deleting missions group {self.tmp_missions_group_id}")
+        self.mir_api.delete_mission_group(self.tmp_missions_group_id)
+
+    def start_missions_garbage_collector(self):
+        """Start the garbage collector for missions"""
+        signal.signal(signal.SIGALRM, self._missions_gc_callback)
+        self._logger.info(
+            "Starting missions garbage collector. Will cleanup in "
+            f"{MISSIONS_GARBAGE_COLLECTION_INTERVAL_SECS / 3600} hours"
+        )
+        signal.alarm(MISSIONS_GARBAGE_COLLECTION_INTERVAL_SECS)
+
+    def _missions_gc_callback(self, signum, frame):
+        """Delete all missions in the temporary missions group but the last one"""
+        try:
+            mission_defs = self.mir_api.get_mission_group_missions(self.tmp_missions_group_id)
+            missions_queue = self.mir_api.get_missions_queue()
+            # Do not delete definitions of missions that are pending or executing
+            protected_mission_defs = [
+                self.mir_api.get_mission(mission["url"].split("/")[-1])["mission_id"]
+                for mission in missions_queue
+                if mission["state"] in ["Pending", "Executing"]
+            ]
+            # Delete the missions definitions in the temporary group that are not
+            # associated to pending or executing missions
+            missions_to_delete = [
+                mission["guid"]
+                for mission in mission_defs
+                if mission["guid"] not in protected_mission_defs
+            ]
+        except Exception as ex:
+            self._logger.error(f"Failed to get missions for garbage collection: {ex}")
+            self.start_missions_garbage_collector()
+            return
+
+        for mission_id in missions_to_delete:
+            try:
+                self._logger.info(f"Deleting mission {mission_id}")
+                self.mir_api.delete_mission_definition(mission_id)
+            except Exception as ex:
+                self._logger.error(f"Failed to delete mission {mission_id}: {ex}")
+
+        # Restart the garbage collector
+        self.start_missions_garbage_collector()

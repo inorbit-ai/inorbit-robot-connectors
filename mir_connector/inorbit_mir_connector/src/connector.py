@@ -155,6 +155,32 @@ class Mir100Connector(Connector):
             elif script_name == "set_waiting_for" and script_args[0] == "--text":
                 self._logger.info(f"Setting 'waiting for' value to {script_args[1]}")
                 self.mission_tracking.waiting_for_text = script_args[1]
+            elif script_name == "localize":
+                # The localize command sets the robot's position and current map
+                # The expected arguments are "x" and "y" in meters and "orientation" in degrees, as
+                # in MiR Fleet, and "map_id" as the target map in MiR Fleet, which matches the
+                # uploaded "frame_id" in InOrbit
+                if (
+                    len(script_args) == 8
+                    and script_args[0] == "--x"
+                    and script_args[2] == "--y"
+                    and script_args[4] == "--orientation"
+                    and script_args[6] == "--map_id"
+                ):
+                    status = {
+                        "position": {
+                            "x": float(script_args[1]),
+                            "y": float(script_args[3]),
+                            "orientation": float(script_args[5]),
+                        },
+                        "map_id": script_args[7],
+                    }
+                    self._logger.info(f"Changing map to {script_args[7]}")
+                    self.mir_api.set_status(status)
+                else:
+                    self._logger.error("Invalid arguments for 'localize' command")
+                    options["result_function"]("1", execution_status_details="Invalid arguments")
+                    return
             else:
                 # Other kind if custom commands may be handled by the edge-sdk (e.g. user_scripts)
                 # and not by the connector code itself

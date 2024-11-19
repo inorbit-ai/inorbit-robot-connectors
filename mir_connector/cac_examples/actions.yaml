@@ -1,0 +1,41 @@
+# Action Definition examples for robots connected via the MiR <> InOrbit Connector.
+# It is recommended to fill the `scope` field with a tag that groups all robots using the connector
+# (e.g. `tag/<ACCOUNT_ID>/<TAG_ID>`).
+
+# Actions can make use of specific behavior defined in the MiR <> InOrbit Connector, by setting the
+# `filename` argument to the name of the command to execute.
+
+# The "localize" command sets the robot's position and current map.
+# The expected arguments are "x" and "y" in meters and "orientation" in degrees, as the target pose
+# in MiR Fleet, and "map_id" as the target map in MiR Fleet, which matches the "frame_id" uploaded 
+# to InOrbit
+kind: ActionDefinition
+metadata:
+  # REQUIRED, see note at the beginning of the file.
+  # scope: <CONFIG_SCOPE>
+  id: localize-map-1
+apiVersion: v0.1
+spec:
+  arguments:
+  - name: filename
+    type: string
+    value: localize
+  - name: --x
+    type: number
+    value: 1.0
+  - name: --y
+    type: number
+    value: 1.0
+  - name: --orientation
+    type: number
+    value: 90
+  - name: --map_id
+    type: string
+    value: "<MiR_fleet_map_id>"
+  confirmation:
+    required: true
+  description: ''
+  group: Maps
+  label: Map 1
+  lock: false
+  type: RunScript

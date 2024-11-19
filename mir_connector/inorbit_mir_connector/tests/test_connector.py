@@ -214,7 +214,7 @@ def test_command_callback_inorbit_messages(connector, callback_kwargs):
 def test_command_callback_change_map(connector, callback_kwargs):
     callback_kwargs["command_name"] = "customCommand"
     # test invalid args
-    callback_kwargs["args"] = ["change_map", ["--map_id", "map_id"]]
+    callback_kwargs["args"] = ["localize", ["--map_id", "map_id"]]
     connector._inorbit_command_handler(**callback_kwargs)
     connector.mir_api.change_map.assert_not_called()
     callback_kwargs["options"]["result_function"].assert_called_with(
@@ -222,8 +222,17 @@ def test_command_callback_change_map(connector, callback_kwargs):
     )
     # test valid args
     callback_kwargs["args"] = [
-        "change_map",
-        ["--mir_map_id", "map_id", "--x", 1, "--y", "2", "--orientation", 3.14],
+        "localize",
+        [
+            "--x",
+            1.0,
+            "--y",
+            2.0,
+            "--orientation",
+            90.0,
+            "--map_id",
+            "map_id",
+        ],
     ]
     connector._inorbit_command_handler(**callback_kwargs)
     connector.mir_api.set_status.assert_called_with(
@@ -231,7 +240,7 @@ def test_command_callback_change_map(connector, callback_kwargs):
             "position": {
                 "x": 1.0,
                 "y": 2.0,
-                "orientation": 3.14,
+                "orientation": 90.0,
             },
             "map_id": "map_id",
         }

@@ -1,0 +1,29 @@
+# Example docker compose file for running multiple instances of the MiR Connector
+
+# Requires CONNECTOR_VERSION to be set to the preferred version of the connector
+# Optionally, each instace may use a different docker image version
+
+# This compose file runs a fleet of two robots. The configuration for each robot is in the same
+# shared file `my_fleet.yaml`, which is mounted into the container as `/config/fleet.yaml`, the
+# default location for the connector to read the fleet configuration from.
+
+# Run the following command to start the containers:
+# export CONNECTOR_VERSION=$(grep -oP '(?<=current_version = ")[^"]*' ../.bumpversion.toml) && \
+#   docker compose up
+
+services:
+  MiR100-1:
+    image: us-central1-docker.pkg.dev/inorbit-integrations/connectors/mir_connector:${CONNECTOR_VERSION}
+    volumes:
+      - ../config/my_fleet.yaml:/config/fleet.yaml
+    environment:
+      - ROBOT_ID=MiR100-1
+      restart: unless-stopped
+
+  MiR100-2:
+    image: us-central1-docker.pkg.dev/inorbit-integrations/connectors/mir_connector:${CONNECTOR_VERSION}
+    volumes:
+      - ../config/my_fleet.yaml:/config/fleet.yaml
+    environment:
+      - ROBOT_ID=MiR100-2
+    restart: unless-stopped

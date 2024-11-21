@@ -2,10 +2,11 @@
 #
 # SPDX-License-Identifier: MIT
 
+from time import sleep
 import pytz
 import math
 import uuid
-import signal
+import multiprocessing
 from inorbit_connector.connector import Connector
 from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND
 from inorbit_edge.robot import COMMAND_MESSAGE
@@ -93,9 +94,6 @@ class Mir100Connector(Connector):
 
         # Get or create the required missions and mission groups
         self.setup_connector_missions()
-
-        # Start garbage collection for missions
-        self.start_missions_garbage_collector()
 
     def _inorbit_command_handler(self, command_name, args, options):
         """Callback method for command messages.
@@ -205,8 +203,12 @@ class Mir100Connector(Connector):
     def _connect(self) -> None:
         """Connect to the robot services and to InOrbit"""
         super()._connect()
+        # If enabled, initiate the websockets client
         if self.ws_enabled:
             self.mir_ws.connect()
+        # Start garbage collection for missions
+        self._missions_gc_process = multiprocessing.Process(target=self._missions_garbage_collector)
+        self._missions_gc_process.start()
 
     def _disconnect(self):
         """Disconnect from any external services"""
@@ -214,6 +216,7 @@ class Mir100Connector(Connector):
         super()._disconnect()
         if self.ws_enabled:
             self.mir_ws.disconnect()
+        self._missions_gc_process.terminate()
 
     def _execution_loop(self):
         """The main execution loop for the connector"""
@@ -368,17 +371,9 @@ class Mir100Connector(Connector):
         self._logger.info(f"Deleting missions group {self.tmp_missions_group_id}")
         self.mir_api.delete_mission_group(self.tmp_missions_group_id)
 
-    def start_missions_garbage_collector(self):
-        """Start the garbage collector for missions"""
-        signal.signal(signal.SIGALRM, self._missions_gc_callback)
-        self._logger.info(
-            "Starting missions garbage collector. Will cleanup in "
-            f"{MISSIONS_GARBAGE_COLLECTION_INTERVAL_SECS / 3600} hours"
-        )
-        signal.alarm(MISSIONS_GARBAGE_COLLECTION_INTERVAL_SECS)
-
-    def _missions_gc_callback(self, signum, frame):
-        """Delete all missions in the temporary missions group but the last one"""
+    def _delete_unused_missions(self):
+        """Delete all missions definitions in the temporary group that are not associated to
+        pending or executing missions"""
         try:
             mission_defs = self.mir_api.get_mission_group_missions(self.tmp_missions_group_id)
             missions_queue = self.mir_api.get_missions_queue()
@@ -407,5 +402,8 @@ class Mir100Connector(Connector):
             except Exception as ex:
                 self._logger.error(f"Failed to delete mission {mission_id}: {ex}")
 
-        # Restart the garbage collector
-        self.start_missions_garbage_collector()
+    def _missions_garbage_collector(self):
+        """Delete unused missions preiodically"""
+        while True:
+            sleep(MISSIONS_GARBAGE_COLLECTION_INTERVAL_SECS)
+            self._delete_unused_missions()

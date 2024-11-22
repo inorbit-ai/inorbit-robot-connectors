@@ -149,7 +149,7 @@ bump-my-version bump minor --dry-run --verbose
 
 ### Build and publish the package
 
-New releases are built and published to PyPi automatically by GitHub Actions when a new version bump commit is pushed.
+New releases are built and published to PyPi and the Docker repository automatically by GitHub Actions when a new version bump commit is pushed.
 
 > _Note:_ The message of the last commit must contain "Bump version" for the publish job to run. e.g. "Bump version: 1.0.0 -> 1.0.1"
 
@@ -161,5 +161,7 @@ python -m build --sdist # Build the package
 twine check dist/* # Run checks
 twine upload --repository testpypi dist/* # Upload to test PyPI. $HOME/.pypirc should exist and contain the api tokens. See https://pypi.org/help/#apitoken
 ```
+
+To manually push the Docker image run `./docker/build.sh --push`
 
 ![Powered by InOrbit](../assets/inorbit_github_footer.png)

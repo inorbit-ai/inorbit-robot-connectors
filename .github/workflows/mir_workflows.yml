@@ -60,7 +60,7 @@ jobs:
           cd  mir_connector
           pytest
 
-  publish:
+  publish-pypi:
     if: contains(github.event.head_commit.message, 'Bump version')
     needs: [test, lint]
     runs-on: ubuntu-latest
@@ -90,3 +90,38 @@ jobs:
         with:
           repository-url: https://test.pypi.org/legacy/
           packages-dir: mir_connector/dist/
+
+  docker-build:
+    # needs: [test, lint]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+    environment: release
+    permissions:
+        id-token: write
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Login to Google Artifact Registry
+        if: contains(github.event.head_commit.message, 'Bump version')
+        uses: docker/login-action@v3
+        with:
+          registry: us-central1-docker.pkg.dev
+          username: _json_key
+          password: ${{ secrets.GAR_JSON_KEY }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: mir_connector/
+          file: ./docker/Dockerfile
+          push: true #  ${{ contains(github.event.head_commit.message, 'Bump version') }}
+          tags: us-central1-docker.pkg.dev/inorbit-integrations/connectors/mir_connector:latest # ${{ steps.meta.outputs.tags }}
+
+      # - name: Generate artifact attestation
+      #   uses: actions/attest-build-provenance@v1
+      #   with:
+      #     subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME}}
+      #     subject-digest: ${{ steps.push.outputs.digest }}
+      #     push-to-registry: true

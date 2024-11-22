@@ -115,7 +115,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: mir_connector/
+          context: "{{defaultContext}}:mir_connector"
           file: ./docker/Dockerfile
           push: false
           tags: us-central1-docker.pkg.dev/inorbit-integrations/connectors/mir_connector:latest # ${{ steps.meta.outputs.tags }}

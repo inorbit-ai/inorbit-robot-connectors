@@ -11,19 +11,30 @@
 # export CONNECTOR_VERSION=$(grep -oP '(?<=current_version = ")[^"]*' ../.bumpversion.toml) && \
 #   docker compose up
 
+# Set the common variables for all services
+# If preferred, a .env file can be used instead. See https://docs.docker.com/compose/how-tos/environment-variables/set-environment-variables/#use-the-env_file-attribute
+x-common-variables: &common-variables
+  # InOrbit API key obtained during the setup process detailed in the README.md file
+  INORBIT_API_KEY: <key>
+  # Other variables can be set here
+  # INORBIT_API_URL:
+  # INORBIT_USE_SSL:
+
 services:
   MiR100-1:
     image: us-central1-docker.pkg.dev/inorbit-integrations/connectors/mir_connector:${CONNECTOR_VERSION}
     volumes:
       - ../config/my_fleet.yaml:/config/fleet.yaml
     environment:
-      - ROBOT_ID=MiR100-1
-      restart: unless-stopped
+      <<: *common-variables
+      ROBOT_ID: MiR100-1
+    restart: unless-stopped
 
   MiR100-2:
     image: us-central1-docker.pkg.dev/inorbit-integrations/connectors/mir_connector:${CONNECTOR_VERSION}
     volumes:
       - ../config/my_fleet.yaml:/config/fleet.yaml
     environment:
-      - ROBOT_ID=MiR100-2
+      <<: *common-variables
+      ROBOT_ID: MiR100-2
     restart: unless-stopped

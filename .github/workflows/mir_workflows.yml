@@ -110,12 +110,15 @@ jobs:
           username: _json_key
           password: ${{ secrets.GAR_JSON_KEY }}
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: mir_connector/
           file: ./docker/Dockerfile
-          push: true
+          push: false
           tags: us-central1-docker.pkg.dev/inorbit-integrations/connectors/mir_connector:latest # ${{ steps.meta.outputs.tags }}
 
       # - name: Generate artifact attestation

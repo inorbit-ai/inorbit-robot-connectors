@@ -97,7 +97,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: true
-    # environment: release # TODO: reactivate this. It makes actions require an approval to run
+    environment: release
     steps:
       - name: Check out the repo
         uses: actions/checkout@v4

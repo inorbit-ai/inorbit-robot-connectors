@@ -123,5 +123,5 @@ jobs:
         with:
           context: "{{defaultContext}}:mir_connector"
           file: ./docker/Dockerfile
-          push: false
+          push: true
           tags: us-central1-docker.pkg.dev/inorbit-integrations/connectors/mir_connector:${{ env.CONNECTOR_VERSION }}

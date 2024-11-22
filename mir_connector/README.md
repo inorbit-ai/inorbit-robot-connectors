@@ -74,6 +74,8 @@ export $(grep -v '^#' config/.env | xargs) && \
 inorbit-mir100-connector -c ../my_fleet.example.yaml -id ${MY_INORBIT_ID}
 ```
 
+### Systemd
+
 It is recommended to run the Connector as a service. An example [systemd](https://www.freedesktop.org/software/systemd/man/systemd.service.html) service unit configuration is provided at [`systemd/mir-connector.service`](systemd/mir-connector.service).
 In a Debian based system the service can usually be installed and enabled at boot the following way:
 
@@ -98,6 +100,10 @@ and its logs can be seen by running:
 ```sh
 sudo journalctl --unit=mir-connector-${MY_INORBIT_ID} --since=today --follow
 ```
+
+### Docker
+
+The Connector may also be run on docker containers. See [`docker/README.md`](docker/README.md) for instructions.
 
 ## Next steps
 

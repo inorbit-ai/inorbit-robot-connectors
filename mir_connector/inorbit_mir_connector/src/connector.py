@@ -2,8 +2,11 @@
 #
 # SPDX-License-Identifier: MIT
 
+from time import sleep
 import pytz
 import math
+import uuid
+from threading import Thread
 from inorbit_connector.connector import Connector
 from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND
 from inorbit_edge.robot import COMMAND_MESSAGE
@@ -14,13 +17,22 @@ from .mission import MirInorbitMissionTracking
 from ..config.mir100_model import MiR100Config
 
 
-# Publish updates every 1s
-CONNECTOR_UPDATE_FREQ = 1
-
 # Available MiR states to select via actions
 MIR_STATE = {3: "READY", 4: "PAUSE", 11: "MANUALCONTROL"}
 
+# Connector missions group name
+# If a group with this name exists it will be used, otherwise it will be created
+# At shutdown, the group will be deleted
+MIR_INORBIT_MISSIONS_GROUP_NAME = "InOrbit Temporary Missions Group"
+# Distance threshold for MiR move missions in meters
+# Used in waypoints sent via missions when the WS interface is not enabled
+MIR_MOVE_DISTANCE_THRESHOLD = 0.1
 
+# Remove missions created in the temporary missions group every 12 hours
+MISSIONS_GARBAGE_COLLECTION_INTERVAL_SECS = 12 * 60 * 60
+
+
+# TODO(b-Tomas): Rename all MiR100* to MiR* to make more generic
 class Mir100Connector(Connector):
     """MiR100 connector.
 
@@ -40,6 +52,7 @@ class Mir100Connector(Connector):
             register_user_scripts=True,
             create_user_scripts_dir=True,
         )
+        self.config = config
 
         # Configure the connection to the robot
         self.mir_api = MirApiV2(
@@ -78,6 +91,9 @@ class Mir100Connector(Connector):
             loglevel=config.log_level.value,
             enable_io_mission_tracking=config.connector_config.enable_mission_tracking,
         )
+
+        # Get or create the required missions and mission groups
+        self.setup_connector_missions()
 
     def _inorbit_command_handler(self, command_name, args, options):
         """Callback method for command messages.
@@ -173,7 +189,7 @@ class Mir100Connector(Connector):
         elif command_name == COMMAND_NAV_GOAL:
             self._logger.info(f"Received '{command_name}'!. {args}")
             pose = args[0]
-            self.mir_api.send_waypoint(pose)
+            self.send_waypoint_over_missions(pose)
         elif command_name == COMMAND_MESSAGE:
             msg = args[0]
             if msg == "inorbit_pause":
@@ -187,11 +203,16 @@ class Mir100Connector(Connector):
     def _connect(self) -> None:
         """Connect to the robot services and to InOrbit"""
         super()._connect()
+        # If enabled, initiate the websockets client
         if self.ws_enabled:
             self.mir_ws.connect()
+        # Start garbage collection for missions
+        # Running with daemon=True will kill the thread when the main thread is done executing
+        Thread(target=self._missions_garbage_collector, daemon=True).start()
 
     def _disconnect(self):
         """Disconnect from any external services"""
+        self.cleanup_connector_missions()
         super()._disconnect()
         if self.ws_enabled:
             self.mir_ws.disconnect()
@@ -271,3 +292,117 @@ class Mir100Connector(Connector):
             self.mission_tracking.report_mission(self.status, self.metrics)
         except Exception:
             self._logger.exception("Error reporting mission")
+
+    def send_waypoint_over_missions(self, pose):
+        """Use the connector's mission group to create a move mission to a designated pose."""
+        mission_id = str(uuid.uuid4())
+        connector_type = self.config.connector_type
+        firmware_version = self.config.connector_config.mir_firmware_version
+
+        self.mir_api.create_mission(
+            group_id=self.tmp_missions_group_id,
+            name="Move to waypoint",
+            guid=mission_id,
+            description="Mission created by InOrbit",
+        )
+        param_values = {
+            "x": float(pose["x"]),
+            "y": float(pose["y"]),
+            "orientation": math.degrees(float(pose["theta"])),
+            "distance_threshold": MIR_MOVE_DISTANCE_THRESHOLD,
+        }
+        if connector_type == "MiR100" and firmware_version == "v2":
+            param_values["retries"] = 5
+        elif connector_type == "MiR250" and firmware_version == "v3":
+            param_values["blocked_path_timeout"] = 60.0
+        else:
+            self._logger.warning(
+                f"Not supported connector type and firmware version combination for waypoint "
+                f"navigation: {connector_type} {firmware_version}. Will attempt to send waypoint "
+                "based on firmware version."
+            )
+            if firmware_version == "v2":
+                param_values["retries"] = 5
+            else:
+                param_values["blocked_path_timeout"] = 60.0
+
+        action_parameters = [
+            {"value": v, "input_name": None, "guid": str(uuid.uuid4()), "id": k}
+            for k, v in param_values.items()
+        ]
+        self.mir_api.add_action_to_mission(
+            action_type="move_to_position",
+            mission_id=mission_id,
+            parameters=action_parameters,
+            priority=1,
+        )
+        self.mir_api.queue_mission(mission_id)
+
+    def setup_connector_missions(self):
+        """Find and store the required missions and mission groups, or create them if they don't
+        exist."""
+        self._logger.info("Setting up connector missions")
+        # Find or create the missions group
+        mission_groups: list[dict] = self.mir_api.get_mission_groups()
+        group = next(
+            (x for x in mission_groups if x["name"] == MIR_INORBIT_MISSIONS_GROUP_NAME), None
+        )
+        self.tmp_missions_group_id = group["guid"] if group is not None else str(uuid.uuid4())
+        if group is None:
+            self._logger.info(f"Creating mission group '{MIR_INORBIT_MISSIONS_GROUP_NAME}'")
+            group = self.mir_api.create_mission_group(
+                feature=".",
+                icon=".",
+                name=MIR_INORBIT_MISSIONS_GROUP_NAME,
+                priority=0,
+                guid=self.tmp_missions_group_id,
+            )
+            self._logger.info(f"Mission group created with guid '{self.tmp_missions_group_id}'")
+        else:
+            self._logger.info(
+                f"Found mission group '{MIR_INORBIT_MISSIONS_GROUP_NAME}' with "
+                f"guid '{self.tmp_missions_group_id}'"
+            )
+
+    def cleanup_connector_missions(self):
+        """Delete the missions group created at startup"""
+        self._logger.info("Cleaning up connector missions")
+        self._logger.info(f"Deleting missions group {self.tmp_missions_group_id}")
+        self.mir_api.delete_mission_group(self.tmp_missions_group_id)
+
+    def _delete_unused_missions(self):
+        """Delete all missions definitions in the temporary group that are not associated to
+        pending or executing missions"""
+        try:
+            mission_defs = self.mir_api.get_mission_group_missions(self.tmp_missions_group_id)
+            missions_queue = self.mir_api.get_missions_queue()
+            # Do not delete definitions of missions that are pending or executing
+            protected_mission_defs = [
+                self.mir_api.get_mission(mission["id"])["mission_id"]
+                for mission in missions_queue
+                if mission["state"].lower() in ["pending", "executing"]
+            ]
+            # Delete the missions definitions in the temporary group that are not
+            # associated to pending or executing missions
+            missions_to_delete = [
+                mission["guid"]
+                for mission in mission_defs
+                if mission["guid"] not in protected_mission_defs
+            ]
+        except Exception as ex:
+            self._logger.error(f"Failed to get missions for garbage collection: {ex}")
+            self.start_missions_garbage_collector()
+            return
+
+        for mission_id in missions_to_delete:
+            try:
+                self._logger.info(f"Deleting mission {mission_id}")
+                self.mir_api.delete_mission_definition(mission_id)
+            except Exception as ex:
+                self._logger.error(f"Failed to delete mission {mission_id}: {ex}")
+
+    def _missions_garbage_collector(self):
+        """Delete unused missions preiodically"""
+        while True:
+            sleep(MISSIONS_GARBAGE_COLLECTION_INTERVAL_SECS)
+            self._delete_unused_missions()

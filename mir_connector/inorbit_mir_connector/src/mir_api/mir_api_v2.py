@@ -19,6 +19,7 @@ API_V2_CONTEXT_URL = "/api/v2.0.0"
 # Endpoints
 METRICS_ENDPOINT_V2 = "metrics"
 MISSION_QUEUE_ENDPOINT_V2 = "mission_queue"
+MISSION_GROUPS_ENDPOINT_V2 = "mission_groups"
 MISSIONS_ENDPOINT_V2 = "missions"
 STATUS_ENDPOINT_V2 = "status"
 
@@ -80,6 +81,80 @@ class MirApiV2(MirApiBaseClass):
                 samples[sample.name] = sample.value
         return samples
 
+    def get_mission_groups(self):
+        """Get available mission groups"""
+        mission_groups_api_url = f"{self.mir_api_base_url}/{MISSION_GROUPS_ENDPOINT_V2}"
+        groups = self._get(mission_groups_api_url, self.api_session).json()
+        return groups
+
+    def get_mission_group_missions(self, mission_group_id: str):
+        """Get available missions for a mission group"""
+        mission_group_api_url = (
+            f"{self.mir_api_base_url}/{MISSION_GROUPS_ENDPOINT_V2}/{mission_group_id}/missions"
+        )
+        missions = self._get(mission_group_api_url, self.api_session).json()
+        return missions
+
+    def create_mission_group(self, feature, icon, name, priority, **kwargs):
+        """Create a new mission group"""
+        mission_groups_api_url = f"{self.mir_api_base_url}/{MISSION_GROUPS_ENDPOINT_V2}"
+        group = {"feature": feature, "icon": icon, "name": name, "priority": priority, **kwargs}
+        response = self._post(
+            mission_groups_api_url,
+            self.api_session,
+            headers={"Content-Type": "application/json"},
+            json=group,
+        )
+        return response.json()
+
+    def delete_mission_group(self, group_id):
+        """Delete a mission group"""
+        mission_group_api_url = f"{self.mir_api_base_url}/{MISSION_GROUPS_ENDPOINT_V2}/{group_id}"
+        self._delete(
+            mission_group_api_url,
+            self.api_session,
+            headers={"Content-Type": "application/json"},
+        )
+
+    def delete_mission_definition(self, mission_id):
+        """Delete a mission definition"""
+        mission_api_url = f"{self.mir_api_base_url}/{MISSIONS_ENDPOINT_V2}/{mission_id}"
+        self._delete(
+            mission_api_url,
+            self.api_session,
+            headers={"Content-Type": "application/json"},
+        )
+
+    def create_mission(self, group_id, name, **kwargs):
+        """Create a mission"""
+        mission_api_url = f"{self.mir_api_base_url}/{MISSIONS_ENDPOINT_V2}"
+        mission = {"group_id": group_id, "name": name, **kwargs}
+        response = self._post(
+            mission_api_url,
+            self.api_session,
+            headers={"Content-Type": "application/json"},
+            json=mission,
+        )
+        return response.json()
+
+    def add_action_to_mission(self, action_type, mission_id, parameters, priority, **kwargs):
+        """Add an action to an existing mission"""
+        action_api_url = f"{self.mir_api_base_url}/{MISSIONS_ENDPOINT_V2}/{mission_id}/actions"
+        action = {
+            "mission_id": mission_id,
+            "action_type": action_type,
+            "parameters": parameters,
+            "priority": priority,
+            **kwargs,
+        }
+        response = self._post(
+            action_api_url,
+            self.api_session,
+            headers={"Content-Type": "application/json"},
+            json=action,
+        )
+        return response.json()
+
     def get_mission(self, mission_queue_id):
         """Queries a mission using the mission_queue/{mission_id} endpoint"""
         mission_api_url = f"{self.mir_api_base_url}/{MISSION_QUEUE_ENDPOINT_V2}/{mission_queue_id}"
@@ -110,6 +185,12 @@ class MirApiV2(MirApiBaseClass):
         response = self._get(actions_api_url, self.api_session)
         actions = response.json()
         return actions
+
+    def get_missions_queue(self):
+        """Returns all missions in the missions queue"""
+        missions_api_url = f"{self.mir_api_base_url}/{MISSION_QUEUE_ENDPOINT_V2}"
+        response = self._get(missions_api_url, self.api_session)
+        return response.json()
 
     def get_executing_mission_id(self):
         """Returns the id of the mission being currently executed by the robot"""
@@ -179,6 +260,7 @@ class MirApiV2(MirApiBaseClass):
 
     def send_waypoint(self, pose):
         """Receives a pose and sends a request to command the robot to navigate to the waypoint"""
+        # Note: This method is deprecated. Prefer creating one-off missions with move actions.
         self.logger.info("Sending waypoint")
         orientation_degs = math.degrees(float(pose["theta"]))
         parameters = {

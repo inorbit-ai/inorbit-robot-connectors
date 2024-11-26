@@ -6,6 +6,7 @@ import math
 import time
 import pytest
 import websocket
+import uuid
 from unittest.mock import MagicMock, Mock, call
 from inorbit_edge.robot import RobotSession
 from inorbit_mir_connector.src.mir_api import MirApiV2
@@ -27,7 +28,7 @@ def connector(monkeypatch, tmp_path):
             inorbit_robot_key="robot_key",
             location_tz="UTC",
             log_level="INFO",
-            connector_type="mir100",
+            connector_type="MiR100",
             connector_version="0.1.0",
             connector_config={
                 "mir_host_address": "example.com",
@@ -38,6 +39,7 @@ def connector(monkeypatch, tmp_path):
                 "mir_username": "user",
                 "mir_password": "pass",
                 "mir_api_version": "v2.0",
+                "mir_firmware_version": "v2",
                 "enable_mission_tracking": False,
             },
             user_scripts_dir=tmp_path,
@@ -128,7 +130,7 @@ def test_enable_ws_flag(monkeypatch, tmp_path):
         inorbit_robot_key="robot_key",
         location_tz="UTC",
         log_level="INFO",
-        connector_type="mir100",
+        connector_type="MiR100",
         connector_version="0.1.0",
         connector_config={
             "mir_username": "user",
@@ -139,6 +141,7 @@ def test_enable_ws_flag(monkeypatch, tmp_path):
             "mir_ws_port": 9090,
             "mir_use_ssl": False,
             "mir_api_version": "v2.0",
+            "mir_firmware_version": "v2",
             "enable_mission_tracking": False,
         },
         user_scripts_dir=tmp_path,
@@ -151,7 +154,7 @@ def test_enable_ws_flag(monkeypatch, tmp_path):
         inorbit_robot_key="robot_key",
         location_tz="UTC",
         log_level="INFO",
-        connector_type="mir100",
+        connector_type="MiR100",
         connector_version="0.1.0",
         connector_config={
             "mir_username": "user",
@@ -162,6 +165,7 @@ def test_enable_ws_flag(monkeypatch, tmp_path):
             "mir_ws_port": 9090,
             "mir_use_ssl": False,
             "mir_api_version": "v2.0",
+            "mir_firmware_version": "v2",
             "enable_mission_tracking": False,
         },
         user_scripts_dir=tmp_path,
@@ -197,10 +201,50 @@ def test_command_callback_state(connector, callback_kwargs):
 def test_command_callback_nav_goal(connector, callback_kwargs):
     callback_kwargs["command_name"] = "navGoal"
     callback_kwargs["args"] = [{"x": "1", "y": "2", "theta": "3.14"}]
+    connector.send_waypoint_over_missions = Mock()
     connector._inorbit_command_handler(**callback_kwargs)
-    assert connector.mir_api.send_waypoint.call_args_list == [
-        call({"x": "1", "y": "2", "theta": "3.14"})
-    ]
+    connector.send_waypoint_over_missions.assert_called_with({"x": "1", "y": "2", "theta": "3.14"})
+
+
+def test_send_waypoint_over_missions(connector, monkeypatch):
+    monkeypatch.setattr(uuid, "uuid4", Mock(return_value="uuid"))
+    # Test MiR100 firmware v2
+    connector.config.connector_type = "MiR100"
+    connector.config.connector_config.mir_firmware_version = "v2"
+    connector.send_waypoint_over_missions({"x": "1", "y": "2", "theta": "0"})
+    connector.mir_api.create_mission.assert_called_once()
+    connector.mir_api.add_action_to_mission.assert_called_once_with(
+        action_type="move_to_position",
+        mission_id="uuid",
+        parameters=[
+            {"value": 1.0, "input_name": None, "guid": "uuid", "id": "x"},
+            {"value": 2.0, "input_name": None, "guid": "uuid", "id": "y"},
+            {"value": 0, "input_name": None, "guid": "uuid", "id": "orientation"},
+            {"value": 0.1, "input_name": None, "guid": "uuid", "id": "distance_threshold"},
+            {"value": 5, "input_name": None, "guid": "uuid", "id": "retries"},
+        ],
+        priority=1,
+    )
+    connector.mir_api.queue_mission.assert_called_once_with("uuid")
+    connector.mir_api.reset_mock()
+    # Test MiR100 firmware v3
+    connector.config.connector_type = "MiR250"
+    connector.config.connector_config.mir_firmware_version = "v3"
+    connector.send_waypoint_over_missions({"x": "1", "y": "2", "theta": "0"})
+    connector.mir_api.create_mission.assert_called_once()
+    connector.mir_api.add_action_to_mission.assert_called_once_with(
+        action_type="move_to_position",
+        mission_id="uuid",
+        parameters=[
+            {"value": 1.0, "input_name": None, "guid": "uuid", "id": "x"},
+            {"value": 2.0, "input_name": None, "guid": "uuid", "id": "y"},
+            {"value": 0, "input_name": None, "guid": "uuid", "id": "orientation"},
+            {"value": 0.1, "input_name": None, "guid": "uuid", "id": "distance_threshold"},
+            {"value": 60.0, "input_name": None, "guid": "uuid", "id": "blocked_path_timeout"},
+        ],
+        priority=1,
+    )
+    connector.mir_api.queue_mission.assert_called_once_with("uuid")
 
 
 def test_command_callback_inorbit_messages(connector, callback_kwargs):
@@ -339,3 +383,56 @@ def test_connector_loop(connector, monkeypatch):
     assert not connector._robot_session.publish_pose.called
     assert not connector._robot_session.publish_key_values.called
     assert not connector._robot_session.publish_odometry.called
+
+
+def test_missions_garbage_collector(connector):
+    # Missions in the temporary group
+    connector.tmp_missions_group_id = "tmp_group_id"
+    connector.mir_api.get_mission_group_missions.return_value = [
+        {
+            "url": "/v2.0.0/missions/72003359-6445-419c-85fb-df5576a9ce2e",
+            "guid": "72003359-6445-419c-85fb-df5576a9ce2e",
+            "name": "Move to waypoint",
+        },
+        {
+            "url": "/v2.0.0/missions/c0a17f65-39f1-4b10-8fee-77dfe1470ac1",
+            "guid": "c0a17f65-39f1-4b10-8fee-77dfe1470ac1",
+            "name": "Move to waypoint",
+        },
+        {
+            "url": "/v2.0.0/missions/d871d686-9006-4ddf-af78-bac9a22ddb53",
+            "guid": "d871d686-9006-4ddf-af78-bac9a22ddb53",
+            "name": "Move to waypoint",
+        },
+        {
+            "url": "/v2.0.0/missions/not_in_queue_so_safe_to_delete",
+            "guid": "not_in_queue_so_safe_to_delete",
+            "name": "Move to waypoint",
+        },
+    ]
+    # Missions in the queue
+    connector.mir_api.get_missions_queue.return_value = [
+        {"url": "/v2.0.0/mission_queue/1", "state": "Abort", "id": 1},
+        {"url": "/v2.0.0/mission_queue/2", "state": "Finalized", "id": 2},
+        {"url": "/v2.0.0/mission_queue/3", "state": "Pending", "id": 3},
+        {"url": "/v2.0.0/mission_queue/4", "state": "Executing", "id": 4},
+    ]
+    # Definition of missions in the queue
+    defs = {
+        1: {
+            "mission_id": "72003359-6445-419c-85fb-df5576a9ce2e",
+            "id": 1,
+        },  # Would be safe to delete
+        2: {"mission_id": "not_in_tmp_group", "id": 2},  # Should not be deleted
+        3: {"mission_id": "d871d686-9006-4ddf-af78-bac9a22ddb53", "id": 3},  # Not safe to delete
+        4: {"mission_id": "c0a17f65-39f1-4b10-8fee-77dfe1470ac1", "id": 4},  # Not safe to delete
+    }
+    connector.mir_api.get_mission.side_effect = lambda id: defs[id]
+    connector._delete_unused_missions()
+    # Only deletes the mission definition of mission with id 1
+    # and mission that is not in the queue
+    connector.mir_api.delete_mission_definition.assert_any_call(
+        "72003359-6445-419c-85fb-df5576a9ce2e"
+    )
+    connector.mir_api.delete_mission_definition.assert_any_call("not_in_queue_so_safe_to_delete")
+    assert connector.mir_api.delete_mission_definition.call_count == 2

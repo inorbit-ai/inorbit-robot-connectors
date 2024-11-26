@@ -15,7 +15,7 @@
       scaling: 0.3 # Percentage of the original image size (optional)
       quality: 60 # JPEG quality (0-100) (optional)
   # Configuration specific for the connector that will connect this robot
-  connector_type: mir100
+  connector_type: MiR100
   connector_config:
     mir_host_address: localhost
     mir_host_port: 80
@@ -25,6 +25,7 @@
     mir_username: username
     mir_password: password
     mir_api_version: v2.0
+    mir_firmware_version: v2
     # Toggle InOrbit Mission Tracking features. https://developer.inorbit.ai/tutorials#mission-tracking-tutorial
     # Mission Tracking features are not available on every InOrbit edition.
     enable_mission_tracking: false

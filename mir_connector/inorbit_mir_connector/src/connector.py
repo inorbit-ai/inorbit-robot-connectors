@@ -6,7 +6,7 @@ from time import sleep
 import pytz
 import math
 import uuid
-import multiprocessing
+from threading import Thread
 from inorbit_connector.connector import Connector
 from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND
 from inorbit_edge.robot import COMMAND_MESSAGE
@@ -207,8 +207,8 @@ class Mir100Connector(Connector):
         if self.ws_enabled:
             self.mir_ws.connect()
         # Start garbage collection for missions
-        self._missions_gc_process = multiprocessing.Process(target=self._missions_garbage_collector)
-        self._missions_gc_process.start()
+        # Running with daemon=True will kill the thread when the main thread is done executing
+        Thread(target=self._missions_garbage_collector, daemon=True).start()
 
     def _disconnect(self):
         """Disconnect from any external services"""
@@ -216,7 +216,6 @@ class Mir100Connector(Connector):
         super()._disconnect()
         if self.ws_enabled:
             self.mir_ws.disconnect()
-        self._missions_gc_process.terminate()
 
     def _execution_loop(self):
         """The main execution loop for the connector"""

@@ -189,12 +189,16 @@ def test_command_callback_state(connector, callback_kwargs):
 
     callback_kwargs["args"] = ["set_state", ["--state_id", "123"]]
     connector._inorbit_command_handler(**callback_kwargs)
-    callback_kwargs["options"]["result_function"].assert_called_with("1")
+    callback_kwargs["options"]["result_function"].assert_called_with(
+        "1", execution_status_details="Invalid `state_id` '123'"
+    )
     assert not connector.mir_api.set_state.called
 
     callback_kwargs["args"] = ["set_state", ["--state_id", "abc"]]
     connector._inorbit_command_handler(**callback_kwargs)
-    callback_kwargs["options"]["result_function"].assert_called_with("1")
+    callback_kwargs["options"]["result_function"].assert_called_with(
+        "1", execution_status_details="Invalid `state_id` 'abc'"
+    )
     assert not connector.mir_api.set_state.called
 
 

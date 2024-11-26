@@ -146,7 +146,7 @@ class Mir100Connector(Connector):
                     if script_args[0] == "--state_id":
                         state_id = script_args[1]
                         if not state_id.isdigit() or int(state_id) not in MIR_STATE.keys():
-                            error = f"Invalid `state_id` ({state_id})"
+                            error = f"Invalid `state_id` '{state_id}'"
                             self._logger.error(error)
                             options["result_function"]("1", execution_status_details=error)
                             return

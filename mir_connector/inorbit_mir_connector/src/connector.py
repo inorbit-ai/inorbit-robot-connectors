@@ -115,6 +115,12 @@ class Mir100Connector(Connector):
         """
         if command_name == COMMAND_CUSTOM_COMMAND:
             self._logger.info(f"Received '{command_name}'!. {args}")
+            if len(args) < 2:
+                self._logger.error("Invalid number of arguments: ", args)
+                options["result_function"](
+                    "1", execution_status_details="Invalid number of arguments"
+                )
+                return
             script_name = args[0]
             script_args = args[1]
             # TODO (Elvio): Needs to be re designed.
@@ -139,8 +145,9 @@ class Mir100Connector(Connector):
                 if script_args[0] == "--state_id":
                     state_id = script_args[1]
                     if not state_id.isdigit() or int(state_id) not in MIR_STATE.keys():
-                        self._logger.error(f"Invalid `state_id` ({state_id})")
-                        options["result_function"]("1")
+                        error = f"Invalid `state_id` '{state_id}'"
+                        self._logger.error(error)
+                        options["result_function"]("1", execution_status_details=error)
                         return
                     state_id = int(state_id)
                     self._logger.info(
@@ -196,9 +203,8 @@ class Mir100Connector(Connector):
                 self.mir_api.set_state(4)
             elif msg == "inorbit_resume":
                 self.mir_api.set_state(3)
-
         else:
-            self._logger.info(f"Received '{command_name}'!. {args}")
+            self._logger.info(f"Received unknown command '{command_name}'!. {args}")
 
     def _connect(self) -> None:
         """Connect to the robot services and to InOrbit"""

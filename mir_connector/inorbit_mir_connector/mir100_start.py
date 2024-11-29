@@ -65,6 +65,7 @@ def start():
     mir_connector = Mir100Connector(robot_id, mir_config)
     try:
         mir_connector.start()
+        mir_connector.join()
     except KeyboardInterrupt:
         LOGGER.info("Received SIGINT, stopping connector")
         mir_connector.stop()

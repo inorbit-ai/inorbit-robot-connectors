@@ -8,7 +8,7 @@ from setuptools import setup
 requirements = [
     "requests>=2.31,<3.0",
     "inorbit-edge[video]>=1.17",
-    "inorbit-connector>=0.3.0",
+    "inorbit-connector==0.4.0",
     "prometheus-client>=0.14.1",
     "pytz>=2022.7",
     # NOTE: both pyyaml and ruamel.yaml packages are included here. Otherwise, the

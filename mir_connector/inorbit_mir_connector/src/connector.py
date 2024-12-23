@@ -11,11 +11,11 @@ from inorbit_connector.connector import Connector
 from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND
 from inorbit_edge.robot import COMMAND_MESSAGE
 from inorbit_edge.robot import COMMAND_NAV_GOAL
+from inorbit_mir_connector import get_module_version
 from .mir_api import MirApiV2
 from .mir_api import MirWebSocketV2
 from .mission import MirInorbitMissionTracking
 from ..config.mir100_model import MiR100Config
-from .. import __version__
 
 
 # Available MiR states to select via actions
@@ -264,7 +264,7 @@ class Mir100Connector(Connector):
         # publish key values
         # TODO(Elvio): Move key values to a "values.py" and represent them with constants
         key_values = {
-            "connector_version": __version__,
+            "connector_version": get_module_version(),
             "battery percent": self.status["battery_percentage"],
             "battery_time_remaining": self.status["battery_time_remaining"],
             "uptime": self.status["uptime"],

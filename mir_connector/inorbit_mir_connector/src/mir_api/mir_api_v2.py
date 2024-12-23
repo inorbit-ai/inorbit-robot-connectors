@@ -235,7 +235,7 @@ class MirApiV2(MirApiBaseClass):
             - 4: PAUSE
             - 11: MANUAL CONTROL
         """
-        return self.set_status(json.dumps({"state_id": state_id}))
+        return self.set_status({"state_id": state_id})
 
     def set_status(self, data):
         """Set robot status
@@ -253,7 +253,7 @@ class MirApiV2(MirApiBaseClass):
 
     def clear_error(self):
         """Clears robot Error state and sets robot state to Ready"""
-        self.set_status(json.dumps({"clear_error": True}))
+        self.set_status({"clear_error": True})
         # Also setting robot state to Ready because it stays
         # paused after clearing the error state
         self.set_state(3)

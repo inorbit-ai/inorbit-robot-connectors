@@ -12,6 +12,7 @@ from inorbit_edge.robot import RobotSession
 from inorbit_mir_connector.src.mir_api import MirApiV2
 from inorbit_mir_connector.src.connector import Mir100Connector
 from inorbit_mir_connector.config.mir100_model import MiR100Config
+from .. import get_module_version
 
 
 @pytest.fixture
@@ -366,6 +367,7 @@ def test_connector_loop(connector, monkeypatch):
     )
     assert connector._robot_session.publish_key_values.call_args == call(
         {
+            "connector_version": get_module_version(),
             "battery percent": 93.5,
             "battery_time_remaining": 89725,
             "uptime": 3552693,

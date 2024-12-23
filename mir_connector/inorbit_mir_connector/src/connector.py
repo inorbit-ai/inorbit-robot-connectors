@@ -11,6 +11,7 @@ from inorbit_connector.connector import Connector
 from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND
 from inorbit_edge.robot import COMMAND_MESSAGE
 from inorbit_edge.robot import COMMAND_NAV_GOAL
+from inorbit_mir_connector import get_module_version
 from .mir_api import MirApiV2
 from .mir_api import MirWebSocketV2
 from .mission import MirInorbitMissionTracking
@@ -113,8 +114,8 @@ class Mir100Connector(Connector):
                 - `metadata` is reserved for the future and will contains additional
                 information about the received command request.
         """
+        self._logger.info(f"Received '{command_name}'!. {args}")
         if command_name == COMMAND_CUSTOM_COMMAND:
-            self._logger.info(f"Received '{command_name}'!. {args}")
             if len(args) < 2:
                 self._logger.error("Invalid number of arguments: ", args)
                 options["result_function"](
@@ -194,7 +195,6 @@ class Mir100Connector(Connector):
             # Return '0' for success
             options["result_function"]("0")
         elif command_name == COMMAND_NAV_GOAL:
-            self._logger.info(f"Received '{command_name}'!. {args}")
             pose = args[0]
             self.send_waypoint_over_missions(pose)
         elif command_name == COMMAND_MESSAGE:
@@ -264,6 +264,7 @@ class Mir100Connector(Connector):
         # publish key values
         # TODO(Elvio): Move key values to a "values.py" and represent them with constants
         key_values = {
+            "connector_version": get_module_version(),
             "battery percent": self.status["battery_percentage"],
             "battery_time_remaining": self.status["battery_time_remaining"],
             "uptime": self.status["uptime"],

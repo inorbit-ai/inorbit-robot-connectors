@@ -4,3 +4,7 @@
 __pycache__/
 dist/
 build/
+
+# Ignore files inside this symlink folder
+# TODO: add this package as a dependency once released
+inorbit_mir_connector/src/inorbit_missions

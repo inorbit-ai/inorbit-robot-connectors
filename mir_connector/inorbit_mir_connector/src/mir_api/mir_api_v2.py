@@ -22,6 +22,7 @@ MISSION_QUEUE_ENDPOINT_V2 = "mission_queue"
 MISSION_GROUPS_ENDPOINT_V2 = "mission_groups"
 MISSIONS_ENDPOINT_V2 = "missions"
 STATUS_ENDPOINT_V2 = "status"
+BATCH_ENDPOINT_V2 = "batch"
 
 
 class MirApiV2(MirApiBaseClass):
@@ -70,6 +71,17 @@ class MirApiV2(MirApiBaseClass):
         else:
             self.logger.info(response.text)
             return session
+
+    def batch_call(self, calls):
+        """Perform a batch call"""
+        batch_url = f"{self.mir_api_base_url}/{METRICS_ENDPOINT_V2}"
+        response = self._post(
+            batch_url,
+            self.api_session,
+            headers={"Content-Type": "application/json"},
+            json={"requests": calls},
+        )
+        return response.json()
 
     def get_metrics(self):
         """Get robot metrics"""

@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 
-from setuptools import setup
+from setuptools import find_packages, setup
 
 requirements = [
     "requests>=2.31,<3.0",
@@ -20,6 +20,52 @@ requirements = [
     "psutil==5.9",
     "websocket-client==1.7.0",
     "uuid==1.30",
+    # Extra missions requirements (not needed once the module is added as a dependency)
+    "async-timeout==4.0.3",
+    "anyio==3.6.2",
+    "autopep8==2.0.0",
+    # "certifi==2022.12.7",
+    "charset-normalizer==2.1.1",
+    "click==8.1.3",
+    "dnspython==2.2.1",
+    "email-validator==1.3.0",
+    "fastapi==0.101.1",
+    "h11==0.14.0",
+    "httpcore==0.16.2",
+    "httptools==0.5.0",
+    "httpx==0.24.1",
+    "idna==3.4",
+    "itsdangerous==2.1.2",
+    "Jinja2==3.1.2",
+    "MarkupSafe==2.1.1",
+    "opentelemetry-api==1.20.0",
+    "opentelemetry-sdk==1.20.0",
+    "opentelemetry-exporter-prometheus==1.12.0rc1",
+    "orjson==3.8.3",
+    "pycodestyle==2.10.0",
+    # "pydantic==2.3.0",
+    # "pydantic-settings==2.0.3",
+    "python-dotenv==0.21.0",
+    "python-multipart==0.0.5",
+    # "PyYAML==5.3.1",
+    "rfc3986==1.5.0",
+    "six==1.16.0",
+    "sniffio==1.3.0",
+    "starlette==0.27.0",
+    "tomli==2.0.1",
+    "typing-extensions==4.7.1",
+    "ujson==5.6.0",
+    "urllib3==1.26.13",
+    "uvicorn==0.20.0",
+    "uvloop==0.17.0",
+    "watchfiles==0.18.1",
+    "websockets==10.4",
+    "pytest==7.4.0",
+    "pytest-httpx==0.22.0",
+    "pytest-asyncio==0.21.1",
+    "aiosql==9.0",
+    "aiosqlite==0.19.0",
+    "bump2version==1.0.1",
 ]
 
 test_requirements = [
@@ -55,7 +101,7 @@ setup(
     author="InOrbit Inc.",
     author_email="support@inorbit.ai",
     license="MIT",
-    packages=["inorbit_mir_connector"],
+    packages=["inorbit_mir_connector", *find_packages()],
     install_requires=requirements,
     tests_require=test_requirements,
     extras_require=extra_requirements,

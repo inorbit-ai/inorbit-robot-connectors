@@ -4,7 +4,6 @@
 
 import math
 import time
-import pytest
 import websocket
 import uuid
 from unittest.mock import MagicMock, Mock, call
@@ -13,55 +12,6 @@ from inorbit_mir_connector.src.mir_api import MirApiV2
 from inorbit_mir_connector.src.connector import Mir100Connector
 from inorbit_mir_connector.config.mir100_model import MiR100Config
 from .. import get_module_version
-
-
-@pytest.fixture
-def connector(monkeypatch, tmp_path):
-    monkeypatch.setenv("INORBIT_KEY", "abc123")
-    monkeypatch.setattr(MirApiV2, "_create_api_session", MagicMock())
-    monkeypatch.setattr(MirApiV2, "_create_web_session", MagicMock())
-    monkeypatch.setattr(websocket, "WebSocketApp", MagicMock())
-    monkeypatch.setattr(RobotSession, "connect", MagicMock())
-
-    connector = Mir100Connector(
-        "mir100-1",
-        MiR100Config(
-            inorbit_robot_key="robot_key",
-            location_tz="UTC",
-            log_level="INFO",
-            connector_type="MiR100",
-            connector_version="0.1.0",
-            connector_config={
-                "mir_host_address": "example.com",
-                "mir_host_port": 80,
-                "mir_enable_ws": True,
-                "mir_ws_port": 9090,
-                "mir_use_ssl": False,
-                "mir_username": "user",
-                "mir_password": "pass",
-                "mir_api_version": "v2.0",
-                "mir_firmware_version": "v2",
-                "enable_mission_tracking": False,
-            },
-            user_scripts_dir=tmp_path,
-        ),
-    )
-    connector.mir_api = MagicMock()
-    connector._robot_session = MagicMock()
-    return connector
-
-
-@pytest.fixture
-def callback_kwargs():
-    return {
-        "command_name": "cmd_name",
-        "args": [],
-        "options": {
-            "result_function": Mock(),
-            "progress_funtion": Mock(),
-            "metadata": {},
-        },
-    }
 
 
 def test_command_callback_unknown_command(connector, callback_kwargs):

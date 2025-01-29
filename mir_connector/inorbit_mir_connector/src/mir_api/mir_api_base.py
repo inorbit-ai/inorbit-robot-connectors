@@ -53,6 +53,11 @@ class MirApiBaseClass(ABC):
         return res
 
     @abstractmethod
+    def batch_call(self, calls: list[dict]):
+        """Batch call multiple requests"""
+        pass
+
+    @abstractmethod
     def _create_api_session(self) -> Session:
         """Configures a session object to interact with the MiR API."""
         pass

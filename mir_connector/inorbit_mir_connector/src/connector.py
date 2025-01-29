@@ -2,7 +2,14 @@
 #
 # SPDX-License-Identifier: MIT
 
+import asyncio
+from enum import Enum
+import json
 from time import sleep
+from inorbit_mir_connector.src.missions_exec.datatypes import MissionExecuteRequest
+from inorbit_mir_connector.src.missions_exec.executor import MissionsExecutor
+from inorbit_mir_connector.src.missions.inorbit import InOrbitAPI
+from pydantic import ValidationError
 import pytz
 import math
 import uuid
@@ -31,6 +38,15 @@ MIR_MOVE_DISTANCE_THRESHOLD = 0.1
 
 # Remove missions created in the temporary missions group every 12 hours
 MISSIONS_GARBAGE_COLLECTION_INTERVAL_SECS = 12 * 60 * 60
+
+
+class InOrbitCommands(Enum):
+    """InOrbit commands that are handled by the MiR100 connector."""
+
+    INORBIT_MISSION_EXECUTE = "executeMissionAction"
+    INORBIT_MISSION_CANCEL = "cancelMissionAction"
+    INORBIT_MISSION_UPDATE = "updateMissionAction"
+    # TODO(b-Tomas): Add all other commands handled in ._inorbit_command_handler()
 
 
 # TODO(b-Tomas): Rename all MiR100* to MiR* to make more generic
@@ -92,6 +108,16 @@ class Mir100Connector(Connector):
             loglevel=config.log_level.value,
             enable_io_mission_tracking=config.connector_config.enable_mission_tracking,
         )
+
+        # InOrbit missions executor
+        self.missions_executor = MissionsExecutor(
+            mir_api=self.mir_api,
+            inorbit_api=InOrbitAPI(
+                base_url=self._robot_session.inorbit_rest_api_endpoint, api_key=config.api_key
+            ),
+            loglevel="DEBUG",  # config.log_level.value,
+        )
+        asyncio.run(self.missions_executor.start())
 
         # Get or create the required missions and mission groups
         self.setup_connector_missions()
@@ -187,6 +213,36 @@ class Mir100Connector(Connector):
                     self._logger.error("Invalid arguments for 'localize' command")
                     options["result_function"]("1", execution_status_details="Invalid arguments")
                     return
+
+            # InOrbit commands
+            elif script_name == InOrbitCommands.INORBIT_MISSION_EXECUTE.value:
+                mission_id = self._get_run_script_argument("missionId", list(script_args))
+                mission_definition = self._get_run_script_argument(
+                    "missionDefinition", list(script_args)
+                )
+                mission_args = self._get_run_script_argument("missionArgs", list(script_args))
+                mission_options = self._get_run_script_argument("options", list(script_args))
+
+                try:
+                    mission_execute_request = MissionExecuteRequest(
+                        missionId=mission_id,
+                        robotId=self.robot_id,
+                        missionDefinition=json.loads(mission_definition),
+                        missionArgs=json.loads(mission_args),
+                        options=json.loads(mission_options),
+                    )
+                except ValidationError as e:
+                    self._logger.error(f"Invalid mission definition. {e}")
+                    return options["result_function"]("1", "Invalid mission definition.")
+
+                # TOOD(b-Tomas): Call the result function with the execution result
+                asyncio.run(self.missions_executor.execute_mission(mission_execute_request))
+
+            elif script_name == InOrbitCommands.INORBIT_MISSION_CANCEL.value:
+                self._logger.warning(f"{script_name} not implemented")
+            elif script_name == InOrbitCommands.INORBIT_MISSION_UPDATE.value:
+                self._logger.warning(f"{script_name} not implemented")
+
             else:
                 # Other kind if custom commands may be handled by the edge-sdk (e.g. user_scripts)
                 # and not by the connector code itself
@@ -205,6 +261,28 @@ class Mir100Connector(Connector):
                 self.mir_api.set_state(3)
         else:
             self._logger.info(f"Received unknown command '{command_name}'!. {args}")
+
+    @staticmethod
+    def _get_run_script_argument(arg_name: str, script_args: list) -> dict:
+        """
+        Retrieves the argument value of a given argument name from a list
+        of script arguments.
+
+        Args:
+            arg_name (str): The name of the argument to retrieve its value.
+            script_args (list): A list of script arguments in the format
+            ["arg1", "value1", "arg2", "value2"]
+
+        Returns:
+            dict: A dictionary containing the argument name and value if found, otherwise None.
+        """
+        try:
+            arg_name_index = script_args.index(arg_name)
+        except ValueError as e:
+            return None
+        if arg_name_index is not None:
+            return script_args[arg_name_index + 1]
+        return None
 
     def _connect(self) -> None:
         """Connect to the robot services and to InOrbit"""
@@ -243,7 +321,7 @@ class Mir100Connector(Connector):
             "yaw": math.radians(self.status["position"]["orientation"]),
             "frame_id": self.status["map_id"],
         }
-        self._logger.debug(f"Publishing pose: {pose_data}")
+        # self._logger.debug(f"Publishing pose: {pose_data}")
         self.publish_pose(**pose_data)
 
         # publish odometry
@@ -251,7 +329,7 @@ class Mir100Connector(Connector):
             "linear_speed": self.status["velocity"]["linear"],
             "angular_speed": math.radians(self.status["velocity"]["angular"]),
         }
-        self._logger.debug(f"Publishing odometry: {odometry}")
+        # self._logger.debug(f"Publishing odometry: {odometry}")
         self._robot_session.publish_odometry(**odometry)
         if self._robot_session.missions_module.executor.wait_until_idle(0):
             mode_text = self.status["mode_text"]
@@ -278,7 +356,7 @@ class Mir100Connector(Connector):
             "robot_model": self.status["robot_model"],
             "waiting_for": self.mission_tracking.waiting_for_text,
         }
-        self._logger.debug(f"Publishing key values: {key_values}")
+        # self._logger.debug(f"Publishing key values: {key_values}")
         self._robot_session.publish_key_values(key_values)
 
         # Reporting system stats

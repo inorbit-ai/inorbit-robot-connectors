@@ -277,6 +277,9 @@ class Mir100Connector(Connector):
             "mode_text": mode_text,
             "robot_model": self.status["robot_model"],
             "waiting_for": self.mission_tracking.waiting_for_text,
+            # The API connected value tells wether or not the last API call was successful
+            # It is recommended to create a status based on this value and use it for incidents
+            "api_connected": self.mir_api.get_last_api_call_successful(),
         }
         self._logger.debug(f"Publishing key values: {key_values}")
         self._robot_session.publish_key_values(key_values)

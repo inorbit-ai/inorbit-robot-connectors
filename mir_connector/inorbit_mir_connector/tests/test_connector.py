@@ -47,6 +47,7 @@ def connector(monkeypatch, tmp_path):
         ),
     )
     connector.mir_api = MagicMock()
+    connector.mir_api.get_last_api_call_successful.return_value = True
     connector._robot_session = MagicMock()
     return connector
 
@@ -380,6 +381,7 @@ def test_connector_loop(connector, monkeypatch):
             "mode_text": "Mission",
             "robot_model": "MiR100",
             "waiting_for": "",
+            "api_connected": True,
         }
     )
 

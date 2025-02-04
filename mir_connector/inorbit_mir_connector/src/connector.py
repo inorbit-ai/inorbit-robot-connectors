@@ -54,6 +54,9 @@ class Mir100Connector(Connector):
             create_user_scripts_dir=True,
         )
         self.config = config
+        # Missions group id for temporary missions
+        # If None, it indicates the missions group has not been set up
+        self.tmp_missions_group_id = None
 
         # Configure the connection to the robot
         self.mir_api = MirApiV2(
@@ -94,7 +97,9 @@ class Mir100Connector(Connector):
         )
 
         # Get or create the required missions and mission groups
-        self.setup_connector_missions()
+        Thread(
+            target=self.retry_until_successful, args=(self.setup_connector_missions,), daemon=True
+        ).start()
 
     def _inorbit_command_handler(self, command_name, args, options):
         """Callback method for command messages.
@@ -309,6 +314,9 @@ class Mir100Connector(Connector):
         connector_type = self.config.connector_type
         firmware_version = self.config.connector_config.mir_firmware_version
 
+        if not self.tmp_missions_group_id:
+            raise Exception("Connector missions group not set up")
+
         self.mir_api.create_mission(
             group_id=self.tmp_missions_group_id,
             name="Move to waypoint",
@@ -374,8 +382,19 @@ class Mir100Connector(Connector):
                 f"guid '{self.tmp_missions_group_id}'"
             )
 
+    def retry_until_successful(self, func, *args, **kwargs):
+        """Retry a function until it is successful"""
+        while True:
+            try:
+                return func(*args, **kwargs)
+            except Exception as ex:
+                self._logger.error(f"Failed to execute function: {ex}")
+                sleep(5)
+
     def cleanup_connector_missions(self):
         """Delete the missions group created at startup"""
+        if not self.tmp_missions_group_id:
+            return
         self._logger.info("Cleaning up connector missions")
         self._logger.info(f"Deleting missions group {self.tmp_missions_group_id}")
         self.mir_api.delete_mission_group(self.tmp_missions_group_id)

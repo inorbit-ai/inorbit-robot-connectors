@@ -223,7 +223,8 @@ class Mir100Connector(Connector):
 
     def _disconnect(self):
         """Disconnect from any external services"""
-        self.cleanup_connector_missions()
+        if self.tmp_missions_group_id:
+            self.cleanup_connector_missions()
         super()._disconnect()
         if self.ws_enabled:
             self.mir_ws.disconnect()
@@ -393,8 +394,6 @@ class Mir100Connector(Connector):
 
     def cleanup_connector_missions(self):
         """Delete the missions group created at startup"""
-        if not self.tmp_missions_group_id:
-            return
         self._logger.info("Cleaning up connector missions")
         self._logger.info(f"Deleting missions group {self.tmp_missions_group_id}")
         self.mir_api.delete_mission_group(self.tmp_missions_group_id)

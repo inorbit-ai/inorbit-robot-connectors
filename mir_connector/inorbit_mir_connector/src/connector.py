@@ -7,8 +7,9 @@ import pytz
 import math
 import uuid
 import logging
-from tenacity import retry, wait_exponential_jitter, before_sleep_log
-from threading import Thread
+import requests
+from tenacity import retry, wait_exponential_jitter, before_sleep_log, retry_if_exception_type
+from threading import Thread, Lock
 from inorbit_connector.connector import Connector
 from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND
 from inorbit_edge.robot import COMMAND_MESSAGE
@@ -59,6 +60,7 @@ class Mir100Connector(Connector):
         # Missions group id for temporary missions
         # If None, it indicates the missions group has not been set up
         self.tmp_missions_group_id = None
+        self.tmp_missions_group_id_lock = Lock()
 
         # Configure the connection to the robot
         self.mir_api = MirApiV2(
@@ -223,9 +225,8 @@ class Mir100Connector(Connector):
 
     def _disconnect(self):
         """Disconnect from any external services"""
-        if self.tmp_missions_group_id:
-            self.cleanup_connector_missions()
         super()._disconnect()
+        self.cleanup_connector_missions()
         if self.ws_enabled:
             self.mir_ws.disconnect()
 
@@ -360,10 +361,16 @@ class Mir100Connector(Connector):
     @retry(
         wait=wait_exponential_jitter(max=10),
         before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING),
+        retry=retry_if_exception_type(requests.exceptions.ConnectionError),
     )
     def setup_connector_missions(self):
         """Find and store the required missions and mission groups, or create them if they don't
         exist."""
+        with self.tmp_missions_group_id_lock:
+            # If the missions group is not None it means it was already setup or it was deleted
+            # intentionally and should not be set up again
+            if self.tmp_missions_group_id is not None:
+                return
         self._logger.info("Setting up connector missions")
         # Find or create the missions group
         mission_groups: list[dict] = self.mir_api.get_mission_groups()
@@ -389,6 +396,15 @@ class Mir100Connector(Connector):
 
     def cleanup_connector_missions(self):
         """Delete the missions group created at startup"""
+        with self.tmp_missions_group_id_lock:
+            # If the missions group id is None, it means it was not set up and there is nothing to
+            # clean up.
+            # Change its value to indicate it should not be set up, in case there is a running
+            # setup thread
+            if self.tmp_missions_group_id is None:
+                self.tmp_missions_group_id = ""
+                return
+            # If the missions group was None, it means it was not set up
         self._logger.info("Cleaning up connector missions")
         self._logger.info(f"Deleting missions group {self.tmp_missions_group_id}")
         self.mir_api.delete_mission_group(self.tmp_missions_group_id)

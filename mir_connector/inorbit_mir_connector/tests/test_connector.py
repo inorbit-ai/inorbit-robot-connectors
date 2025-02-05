@@ -47,6 +47,7 @@ def connector(monkeypatch, tmp_path):
         ),
     )
     connector.mir_api = MagicMock()
+    connector.mir_api.get_last_api_call_successful.return_value = True
     connector._robot_session = MagicMock()
     return connector
 
@@ -380,6 +381,7 @@ def test_connector_loop(connector, monkeypatch):
             "mode_text": "Mission",
             "robot_model": "MiR100",
             "waiting_for": "",
+            "api_connected": True,
         }
     )
 
@@ -387,8 +389,8 @@ def test_connector_loop(connector, monkeypatch):
     connector._robot_session.reset_mock()
     run_loop_once()
     assert not connector._robot_session.publish_pose.called
-    assert not connector._robot_session.publish_key_values.called
     assert not connector._robot_session.publish_odometry.called
+    connector._robot_session.publish_key_values.assert_called_with({"api_connected": False})
 
 
 def test_missions_garbage_collector(connector):

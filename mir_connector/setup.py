@@ -20,6 +20,7 @@ requirements = [
     "psutil==5.9",
     "websocket-client==1.7.0",
     "uuid==1.30",
+    "tenacity==9.0.0",
 ]
 
 test_requirements = [

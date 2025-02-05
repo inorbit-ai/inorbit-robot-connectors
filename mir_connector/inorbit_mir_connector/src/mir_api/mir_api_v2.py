@@ -42,7 +42,10 @@ class MirApiV2(MirApiBaseClass):
         self.mir_username = mir_username
         self.mir_password = mir_password
         self.api_session = self._create_api_session()
-        self.web_session = self._create_web_session()
+
+    def _get_web_session(self) -> requests.Session:
+        if not self.web_session:
+            self.web_session = self._create_web_session()
 
     def _create_api_session(self) -> requests.Session:
         session = requests.Session()
@@ -270,7 +273,7 @@ class MirApiV2(MirApiBaseClass):
             "orientation": orientation_degs,
             "mode": "map-go-to-coordinates",
         }
-        response = self._get(self.mir_base_url, self.web_session, params=parameters)
+        response = self._get(self.mir_base_url, self._get_web_session(), params=parameters)
         self.logger.info(response.text)
 
     def get_status(self):

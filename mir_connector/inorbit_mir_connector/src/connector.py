@@ -6,7 +6,10 @@ from time import sleep
 import pytz
 import math
 import uuid
-from threading import Thread
+import logging
+import requests
+from tenacity import retry, wait_exponential_jitter, before_sleep_log, retry_if_exception_type
+from threading import Thread, Lock
 from inorbit_connector.connector import Connector
 from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND
 from inorbit_edge.robot import COMMAND_MESSAGE
@@ -54,6 +57,10 @@ class Mir100Connector(Connector):
             create_user_scripts_dir=True,
         )
         self.config = config
+        # Missions group id for temporary missions
+        # If None, it indicates the missions group has not been set up
+        self.tmp_missions_group_id = None
+        self.tmp_missions_group_id_lock = Lock()
 
         # Configure the connection to the robot
         self.mir_api = MirApiV2(
@@ -94,7 +101,7 @@ class Mir100Connector(Connector):
         )
 
         # Get or create the required missions and mission groups
-        self.setup_connector_missions()
+        Thread(target=self.setup_connector_missions, daemon=True).start()
 
     def _inorbit_command_handler(self, command_name, args, options):
         """Callback method for command messages.
@@ -218,8 +225,8 @@ class Mir100Connector(Connector):
 
     def _disconnect(self):
         """Disconnect from any external services"""
-        self.cleanup_connector_missions()
         super()._disconnect()
+        self.cleanup_connector_missions()
         if self.ws_enabled:
             self.mir_ws.disconnect()
 
@@ -235,6 +242,7 @@ class Mir100Connector(Connector):
             self.metrics = self.mir_api.get_metrics()
         except Exception as ex:
             self._logger.error(f"Failed to get robot API data: {ex}")
+            self.publish_api_error()
             return
         # publish pose
         pose_data = {
@@ -277,6 +285,9 @@ class Mir100Connector(Connector):
             "mode_text": mode_text,
             "robot_model": self.status["robot_model"],
             "waiting_for": self.mission_tracking.waiting_for_text,
+            # See self.publish_api_error()
+            # This clears the error without publishing a separate message
+            "api_connected": True,
         }
         self._logger.debug(f"Publishing key values: {key_values}")
         self._robot_session.publish_key_values(key_values)
@@ -300,11 +311,19 @@ class Mir100Connector(Connector):
         except Exception:
             self._logger.exception("Error reporting mission")
 
+    def publish_api_error(self):
+        """Publish an error message when the API call fails.
+        This value can be used for setting up status and incidents in InOrbit"""
+        self._robot_session.publish_key_values({"api_connected": False})
+
     def send_waypoint_over_missions(self, pose):
         """Use the connector's mission group to create a move mission to a designated pose."""
         mission_id = str(uuid.uuid4())
         connector_type = self.config.connector_type
         firmware_version = self.config.connector_config.mir_firmware_version
+
+        if not self.tmp_missions_group_id:
+            raise Exception("Connector missions group not set up")
 
         self.mir_api.create_mission(
             group_id=self.tmp_missions_group_id,
@@ -345,9 +364,19 @@ class Mir100Connector(Connector):
         )
         self.mir_api.queue_mission(mission_id)
 
+    @retry(
+        wait=wait_exponential_jitter(max=10),
+        before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING),
+        retry=retry_if_exception_type(requests.exceptions.ConnectionError),
+    )
     def setup_connector_missions(self):
         """Find and store the required missions and mission groups, or create them if they don't
         exist."""
+        with self.tmp_missions_group_id_lock:
+            # If the missions group is not None it means it was already setup or it was deleted
+            # intentionally and should not be set up again
+            if self.tmp_missions_group_id is not None:
+                return
         self._logger.info("Setting up connector missions")
         # Find or create the missions group
         mission_groups: list[dict] = self.mir_api.get_mission_groups()
@@ -373,6 +402,13 @@ class Mir100Connector(Connector):
 
     def cleanup_connector_missions(self):
         """Delete the missions group created at startup"""
+        with self.tmp_missions_group_id_lock:
+            # If the missions group id is None, it means it was not set up and there is nothing to
+            # clean up. Change its value to indicate it should not be set up, in case there is a
+            # running setup thread.
+            if self.tmp_missions_group_id is None:
+                self.tmp_missions_group_id = ""
+                return
         self._logger.info("Cleaning up connector missions")
         self._logger.info(f"Deleting missions group {self.tmp_missions_group_id}")
         self.mir_api.delete_mission_group(self.tmp_missions_group_id)

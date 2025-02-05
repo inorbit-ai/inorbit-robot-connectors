@@ -404,13 +404,11 @@ class Mir100Connector(Connector):
         """Delete the missions group created at startup"""
         with self.tmp_missions_group_id_lock:
             # If the missions group id is None, it means it was not set up and there is nothing to
-            # clean up.
-            # Change its value to indicate it should not be set up, in case there is a running
-            # setup thread
+            # clean up. Change its value to indicate it should not be set up, in case there is a
+            # running setup thread.
             if self.tmp_missions_group_id is None:
                 self.tmp_missions_group_id = ""
                 return
-            # If the missions group was None, it means it was not set up
         self._logger.info("Cleaning up connector missions")
         self._logger.info(f"Deleting missions group {self.tmp_missions_group_id}")
         self.mir_api.delete_mission_group(self.tmp_missions_group_id)

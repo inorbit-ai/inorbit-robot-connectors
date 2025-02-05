@@ -389,8 +389,8 @@ def test_connector_loop(connector, monkeypatch):
     connector._robot_session.reset_mock()
     run_loop_once()
     assert not connector._robot_session.publish_pose.called
-    assert not connector._robot_session.publish_key_values.called
     assert not connector._robot_session.publish_odometry.called
+    assert connector._robot_session.publish_key_values.called_with({"api_connected": False})
 
 
 def test_missions_garbage_collector(connector):

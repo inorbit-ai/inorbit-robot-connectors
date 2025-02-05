@@ -12,16 +12,13 @@ class MirApiBaseClass(ABC):
     def __init__(self, loglevel):
         self.logger = logging.getLogger(name=self.__class__.__name__)
         self.logger.setLevel(loglevel)
-        self.last_api_call_successful = None
 
     def _handle_status(self, res, request_args):
         """Log and raise an exception if the request failed."""
         try:
             res.raise_for_status()
-            self.set_last_api_call_successful(True)
         except HTTPError as e:
             self.logger.error(f"Error making request: {e}\nArguments: {request_args}")
-            self.set_last_api_call_successful(False)
             raise e
 
     def _get(self, url: str, session: Session, **kwargs) -> Response:
@@ -54,12 +51,6 @@ class MirApiBaseClass(ABC):
         self.logger.debug(f"Response: {res}")
         self._handle_status(res, kwargs)
         return res
-
-    def set_last_api_call_successful(self, success: bool) -> None:
-        self.last_api_call_successful = success
-
-    def get_last_api_call_successful(self) -> bool:
-        return self.last_api_call_successful
 
     @abstractmethod
     def _create_api_session(self) -> Session:

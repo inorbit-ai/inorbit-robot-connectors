@@ -242,6 +242,7 @@ class Mir100Connector(Connector):
             self.metrics = self.mir_api.get_metrics()
         except Exception as ex:
             self._logger.error(f"Failed to get robot API data: {ex}")
+            self.publish_api_error()
             return
         # publish pose
         pose_data = {
@@ -284,9 +285,9 @@ class Mir100Connector(Connector):
             "mode_text": mode_text,
             "robot_model": self.status["robot_model"],
             "waiting_for": self.mission_tracking.waiting_for_text,
-            # The API connected value tells wether or not the last API call was successful
-            # It is recommended to create a status based on this value and use it for incidents
-            "api_connected": self.mir_api.get_last_api_call_successful(),
+            # See self.publish_api_error()
+            # This clears the error without publishing a separate message
+            "api_connected": True,
         }
         self._logger.debug(f"Publishing key values: {key_values}")
         self._robot_session.publish_key_values(key_values)
@@ -309,6 +310,11 @@ class Mir100Connector(Connector):
             self.mission_tracking.report_mission(self.status, self.metrics)
         except Exception:
             self._logger.exception("Error reporting mission")
+
+    def publish_api_error(self):
+        """Publish an error message when the API call fails.
+        This value can be used for setting up status and incidents in InOrbit"""
+        self._robot_session.publish_key_values({"api_connected": False})
 
     def send_waypoint_over_missions(self, pose):
         """Use the connector's mission group to create a move mission to a designated pose."""

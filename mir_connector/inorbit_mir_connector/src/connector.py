@@ -6,6 +6,8 @@ from time import sleep
 import pytz
 import math
 import uuid
+import logging
+from tenacity import retry, wait_exponential_jitter, before_sleep_log
 from threading import Thread
 from inorbit_connector.connector import Connector
 from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND
@@ -97,9 +99,7 @@ class Mir100Connector(Connector):
         )
 
         # Get or create the required missions and mission groups
-        Thread(
-            target=self.retry_until_successful, args=(self.setup_connector_missions,), daemon=True
-        ).start()
+        Thread(target=self.setup_connector_missions, daemon=True).start()
 
     def _inorbit_command_handler(self, command_name, args, options):
         """Callback method for command messages.
@@ -357,6 +357,10 @@ class Mir100Connector(Connector):
         )
         self.mir_api.queue_mission(mission_id)
 
+    @retry(
+        wait=wait_exponential_jitter(max=10),
+        before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING),
+    )
     def setup_connector_missions(self):
         """Find and store the required missions and mission groups, or create them if they don't
         exist."""
@@ -382,15 +386,6 @@ class Mir100Connector(Connector):
                 f"Found mission group '{MIR_INORBIT_MISSIONS_GROUP_NAME}' with "
                 f"guid '{self.tmp_missions_group_id}'"
             )
-
-    def retry_until_successful(self, func, *args, **kwargs):
-        """Retry a function until it is successful"""
-        while True:
-            try:
-                return func(*args, **kwargs)
-            except Exception as ex:
-                self._logger.error(f"Failed to execute function: {ex}")
-                sleep(5)
 
     def cleanup_connector_missions(self):
         """Delete the missions group created at startup"""

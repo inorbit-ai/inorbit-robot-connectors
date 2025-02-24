@@ -20,6 +20,7 @@ requirements = [
     "psutil==5.9",
     "websocket-client==1.7.0",
     "uuid==1.30",
+    "tenacity==9.0.0",
     # Extra missions requirements (not needed once the module is added as a dependency)
     "async-timeout==4.0.3",
     "anyio==3.6.2",
@@ -120,5 +121,5 @@ setup(
     python_requires=">=3.7",
     # Do not edit this string manually, always use bump-my-version. See
     # https://github.com/inorbit-ai/inorbit-robot-connectors/tree/main/mir_connector#version-bump
-    version="0.2.1",
+    version="0.2.2",
 )

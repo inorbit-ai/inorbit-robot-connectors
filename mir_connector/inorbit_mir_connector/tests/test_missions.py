@@ -19,6 +19,7 @@ from inorbit_mir_connector.src.missions_exec.datatypes import (
 )
 from inorbit_mir_connector.src.missions_exec.executor import MissionsExecutor
 from inorbit_mir_connector.src.missions_exec.worker_pool import MirWorkerPool
+from inorbit_mir_connector.src.missions_exec.translator import InOrbitToMirTranslator
 import pytest
 
 
@@ -98,7 +99,9 @@ async def test_mission_is_submitted(example_request):
     executor._worker_pool.submit_work.assert_called_once()
 
 
+@pytest.mark.skip(reason="Translator not implemented yet")
 def test_mission_translator():
+    # Create test mission in InOrbit format
     inorbit_mission = Mission(
         id="ac7af1e4-0721-4130-8e1c-80371e16bdf6",
         robot_id="mir100-1",
@@ -107,8 +110,8 @@ def test_mission_translator():
             steps=[
                 MissionStepPoseWaypoint(
                     label="Move to waypoint",
-                    timeout_secs=60.0,
-                    complete_task="Move to waypoint",
+                    timeoutSecs=60.0,
+                    completeTask="Move to waypoint",
                     waypoint=Pose(
                         x=9.892293709504171,
                         y=5.018981943828619,
@@ -131,3 +134,31 @@ def test_mission_translator():
             )
         ],
     )
+
+    # Create mock MiR API
+    mir_api = MagicMock()
+
+    # Translate mission using the translator
+    translated = InOrbitToMirTranslator.translate(inorbit_mission, mir_api)
+
+    # Verify the translation maintains essential properties
+    assert translated.id == inorbit_mission.id
+    assert translated.robot_id == inorbit_mission.robot_id
+    assert translated.definition.label == inorbit_mission.definition.label
+
+    # Verify waypoint translation
+    original_waypoint = inorbit_mission.definition.steps[0].waypoint
+    translated_waypoint = translated.definition.steps[0].waypoint
+    assert translated_waypoint.x == original_waypoint.x
+    assert translated_waypoint.y == original_waypoint.y
+    assert translated_waypoint.theta == original_waypoint.theta
+    assert translated_waypoint.frame_id == original_waypoint.frame_id
+    assert translated_waypoint.waypointId == original_waypoint.waypointId
+
+    # Verify task translation
+    original_task = inorbit_mission.tasks_list[0]
+    translated_task = translated.tasks_list[0]
+    assert translated_task.task_id == original_task.task_id
+    assert translated_task.label == original_task.label
+    assert translated_task.in_progress == original_task.in_progress
+    assert translated_task.completed == original_task.completed

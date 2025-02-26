@@ -241,9 +241,7 @@ class WorkerPool:
         # Create worker, not yet started (it can still be discarded)
         worker = Worker(mission, options, shared_memory)
         try:
-            print("Building BehaviorTree...")
             worker.set_behavior_tree(self.build_tree_for_mission(context))
-            print("Finished building BehaviorTree.")
         except Exception as e:
             logger.error(f"Error compiling mission tree: {e}", exc_info=True)
             return {"error": str(e)}
@@ -281,6 +279,8 @@ class WorkerPool:
             {"id": mission_id} if not.
             False, if the mission was not found.
         """
+        logger.debug(f"Aborting mission {mission_id}")
+        logger.warning("Aborting mission is not implemented")
         if mission_id in self._workers:
             ret = {"id": mission_id}
             # Get the bluebotics Mission ID linked to the inorbit mission id

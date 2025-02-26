@@ -32,10 +32,10 @@ from typing import Union
 
 from async_timeout import timeout
 
-# from .exceptions import TaskPausedException
 from .inorbit import ACTION_CANCEL_NAV_ID
 from .inorbit import ACTION_NAVIGATE_TO_ID
 from .logger import setup_logger
+from inorbit_mir_connector.src.missions.exceptions import TaskPausedException
 from inorbit_mir_connector.src.missions.datatypes import MissionRuntimeOptions
 from inorbit_mir_connector.src.missions.datatypes import MissionRuntimeSharedMemory
 from inorbit_mir_connector.src.missions.datatypes import MissionStepPoseWaypoint
@@ -237,6 +237,7 @@ class BehaviorTree(Observable):
             await self.notify_observers()
             return
         except Exception as e:
+            logger.error(f"Error executing node {self.label}: {str(e)}")
             self.state = NODE_STATE_ERROR
             self.last_error = str(e)
         if self.state == NODE_STATE_RUNNING and not self.state == NODE_STATE_PAUSED:
@@ -560,7 +561,7 @@ class RunActionNode(BehaviorTree):
         self.arguments = arguments
         self.target = target
         if self.target is None:
-            self.robot = context.robot
+            self.robot = context.robot_api
         else:
             self.robot = context.robot_api_factory.build(self.target.robot_id)
 
@@ -606,7 +607,7 @@ class WaitExpressionNode(BehaviorTree):
         self.expression = expression
         self.target = target
         if self.target is None:
-            self.robot = context.robot
+            self.robot = context.robot_api
         else:
             self.robot = context.robot_api_factory.build(self.target.robot_id)
 

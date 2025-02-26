@@ -58,7 +58,6 @@ class MissionsExecutor:
                 definition=request.mission_definition,
                 arguments=request.arguments,
             )
-            print(mission)
         except ValidationError as e:
             self._logger.error(f"Failed to create mission: {e}")
             return

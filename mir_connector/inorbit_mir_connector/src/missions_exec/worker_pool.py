@@ -68,7 +68,7 @@ class MirWorkerPool(WorkerPool):
         tree.add_node(MissionStartNode(context, label="mission start"))
         step_builder = MirNodeFromStepBuilder(context)
 
-        for step, ix in zip(mission.definition.steps, range(len(mission.definition.steps))):
+        for ix, step in enumerate(mission.definition.steps):
             # TODO build the right kind of behavior node
             try:
                 node = step.accept(step_builder)

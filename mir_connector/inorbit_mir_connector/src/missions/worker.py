@@ -2,7 +2,7 @@ import asyncio
 
 from .exceptions import TaskPausedException
 from .logger import setup_logger
-from .behavior_tree import CANCEL_TASK_PAUSE_MESSAGE
+from .behavior_tree import CANCEL_TASK_PAUSE_MESSAGE, BehaviorTree
 from .datatypes import MissionRuntimeOptions
 from .datatypes import MissionRuntimeSharedMemory
 from .datatypes import MissionWorkerState
@@ -42,7 +42,7 @@ class Worker(Observable):
     def id(self):
         return self._mission.id
 
-    def set_behavior_tree(self, tree):
+    def set_behavior_tree(self, tree: BehaviorTree):
         if self._behavior_tree:
             raise Exception("Already initialized")
         self._behavior_tree = tree
@@ -77,13 +77,14 @@ class Worker(Observable):
             self._task.result()
             await self.finish()
             self.set_finished(True)
-        except TaskPausedException as e:
+        except TaskPausedException:
             # The task was paused, mission isn't finished
             logger.debug(f"Mission {self._mission.id} paused.")
         try:
             await self.notify_observers()
-        except Exception as e:
+        except Exception:
             logger.error(f"error notifying observers worker={self.id()}", exc_info=True)
+
         logger.debug(
             f"finished. State {self._behavior_tree.state}. Last error "
             f" {self._behavior_tree.last_error}"

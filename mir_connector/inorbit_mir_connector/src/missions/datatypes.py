@@ -113,6 +113,9 @@ class MissionStepPoseWaypoint(MissionStep):
 
     waypoint: Pose
 
+    def accept(self, visitor):
+        return visitor.visit_pose_waypoint(self)
+
     def get_type(self):
         return MissionStepTypes.POSE_WAYPOINT.value
 

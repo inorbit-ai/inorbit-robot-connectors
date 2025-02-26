@@ -424,7 +424,7 @@ class RobotApi:
     """Wrapper for Robot APIs"""
 
     def __init__(self, robot_id: Robot, api: InOrbitAPI):
-        self._robot_id = robot_id
+        self._robot_id = robot_id.id
         self._api = api
 
     @property
@@ -437,8 +437,8 @@ class RobotApi:
             resp = await self._api.post(build_actions_api_path(self.robot_id), req)
             respData = None
             respData = resp.json()
-        except Exception:
-            raise Exception("Error executing action")
+        except Exception as e:
+            raise Exception("Error executing action: " + str(e))
         if resp.status_code == 200:
             return respData
         else:

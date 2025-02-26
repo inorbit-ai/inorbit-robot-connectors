@@ -6,6 +6,7 @@ import asyncio
 from enum import Enum
 import json
 from time import sleep
+from inorbit_mir_connector.src.missions_exec.contants import CustomCommands
 from inorbit_mir_connector.src.missions_exec.datatypes import MissionExecuteRequest
 from inorbit_mir_connector.src.missions_exec.executor import MiRMissionsExecutor
 from inorbit_mir_connector.src.missions.inorbit import InOrbitAPI
@@ -175,21 +176,27 @@ class Mir100Connector(Connector):
             # 1. script_name is not standarized at all
             # 2. Consider implementing a callback for handling mission specific commands
             # 3. Needs an interface for supporting mission related actions
-            if script_name == "queue_mission" and script_args[0] == "--mission_id":
+            if (
+                script_name == CustomCommands.QUEUE_MISSION.value
+                and script_args[0] == "--mission_id"
+            ):
                 self.mission_tracking.mir_mission_tracking_enabled = (
                     self._robot_session.missions_module.executor.wait_until_idle(0)
                 )
                 self.mir_api.queue_mission(script_args[1])
-            elif script_name == "run_mission_now" and script_args[0] == "--mission_id":
+            elif (
+                script_name == CustomCommands.RUN_MISSION_NOW.value
+                and script_args[0] == "--mission_id"
+            ):
                 self.mission_tracking.mir_mission_tracking_enabled = (
                     self._robot_session.missions_module.executor.wait_until_idle(0)
                 )
                 self.mir_api.abort_all_missions()
                 self.mir_api.queue_mission(script_args[1])
-            elif script_name == "abort_missions":
+            elif script_name == CustomCommands.ABORT_MISSIONS.value:
                 self._robot_session.missions_module.executor.cancel_mission("*")
                 self.mir_api.abort_all_missions()
-            elif script_name == "set_state":
+            elif script_name == CustomCommands.SET_STATE.value:
                 if script_args[0] == "--state_id":
                     state_id = script_args[1]
                     if not state_id.isdigit() or int(state_id) not in MIR_STATE.keys():
@@ -205,10 +212,10 @@ class Mir100Connector(Connector):
                 if script_args[0] == "--clear_error":
                     self._logger.info("Clearing error state")
                     self.mir_api.clear_error()
-            elif script_name == "set_waiting_for" and script_args[0] == "--text":
+            elif script_name == CustomCommands.SET_WAITING_FOR.value and script_args[0] == "--text":
                 self._logger.info(f"Setting 'waiting for' value to {script_args[1]}")
                 self.mission_tracking.waiting_for_text = script_args[1]
-            elif script_name == "localize":
+            elif script_name == CustomCommands.LOCALIZE.value:
                 # The localize command sets the robot's position and current map
                 # The expected arguments are "x" and "y" in meters and "orientation" in degrees, as
                 # in MiR Fleet, and "map_id" as the target map in MiR Fleet, which matches the
@@ -342,7 +349,7 @@ class Mir100Connector(Connector):
             # TODO(Elvio): Move this logic to another class to make it easier to maintain and
             # scale in the future
             self.metrics = self.mir_api.get_metrics()
-        except Exception:
+        except Exception as ex:
             self._logger.error(f"Failed to get robot API data: {ex}")
             self.publish_api_error()
             return

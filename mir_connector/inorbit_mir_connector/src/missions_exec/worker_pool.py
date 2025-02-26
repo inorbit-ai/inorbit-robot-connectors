@@ -36,6 +36,10 @@ class MirBehaviorTreeBuilderContext(BehaviorTreeBuilderContext):
         super().__init__()
         self._mir_api = mir_api
 
+    @property
+    def mir_api(self):
+        return self._mir_api
+
 
 class MirWorkerPool(WorkerPool):
     """
@@ -48,16 +52,24 @@ class MirWorkerPool(WorkerPool):
         self,
         mir_api: MirApiBaseClass,
         inorbit_api: InOrbitAPI,
+        temporary_missions_group_id: str,
+        waypoint_nav_extra_params: dict,
         db: WorkerPersistenceDB = DummyDB(),
     ):
         super().__init__(inorbit_api, db)
         self._mir_api = mir_api
+        self._temporary_missions_group_id = temporary_missions_group_id
+        self._waypoint_nav_extra_params = waypoint_nav_extra_params
 
     def create_builder_context(self) -> BehaviorTreeBuilderContext:
         return MirBehaviorTreeBuilderContext(self._mir_api)
 
     def translate_mission(self, mission: Mission) -> Mission:
-        return InOrbitToMirTranslator.translate(mission, self._mir_api)
+        return InOrbitToMirTranslator.translate(
+            mission,
+            self._temporary_missions_group_id,
+            self._waypoint_nav_extra_params,
+        )
 
     def build_tree_for_mission(self, context: BehaviorTreeBuilderContext):
         # NOTE: Most of the code in this method is copied from the superclass implementation

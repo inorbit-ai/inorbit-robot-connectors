@@ -22,7 +22,6 @@ TODOs in this file:
 """
 
 import asyncio
-import math
 import sys
 import traceback
 from datetime import datetime
@@ -32,8 +31,6 @@ from typing import Union
 
 from async_timeout import timeout
 
-from .inorbit import ACTION_CANCEL_NAV_ID
-from .inorbit import ACTION_NAVIGATE_TO_ID
 from .logger import setup_logger
 from inorbit_mir_connector.src.missions.exceptions import TaskPausedException
 from inorbit_mir_connector.src.missions.datatypes import MissionRuntimeOptions
@@ -225,7 +222,9 @@ class BehaviorTree(Observable):
             await self.notify_observers()
         self.state = NODE_STATE_RUNNING
         try:
+            logger.debug(f"Executing node {self.label}")
             await self._execute()
+            logger.debug(f"Node {self.label} execution completed")
         except asyncio.CancelledError as e:
             if str(e) == CANCEL_TASK_PAUSE_MESSAGE:
                 await self.on_pause()
@@ -567,7 +566,7 @@ class RunActionNode(BehaviorTree):
 
     async def _execute(self):
         arguments = await self.mt.resolve_arguments(self.arguments)
-        resp = await self.robot.execute_action(self.action_id, arguments=arguments)
+        resp = await self.robot.execute_action(self.action_id, arguments=arguments)  # noqa: F841
         # TODO track action execution, as done in the app. This JSON response only guarantees
         # the action was *started*.
 
@@ -897,7 +896,7 @@ class NodeFromStepBuilder:
 
     def visit_pose_waypoint(self, step: MissionStepPoseWaypoint):
         raise Exception(
-            "Waypoint steps should be handled by a subclass, or translated to a a different node type."
+            "Waypoint steps should be handled by a subclass, or translated to a different node type"
         )
 
     def visit_set_data(self, step: MissionStepSetData):

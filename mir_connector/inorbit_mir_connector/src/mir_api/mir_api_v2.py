@@ -75,9 +75,9 @@ class MirApiV2(MirApiBaseClass):
             self.logger.info(response.text)
             return session
 
-    def batch_call(self, calls):
+    def batch_call(self, calls) -> list[dict]:
         """Perform a batch call"""
-        batch_url = f"{self.mir_api_base_url}/{METRICS_ENDPOINT_V2}"
+        batch_url = f"{self.mir_api_base_url}/{BATCH_ENDPOINT_V2}"
         response = self._post(
             batch_url,
             self.api_session,
@@ -217,11 +217,12 @@ class MirApiV2(MirApiBaseClass):
         executing = [m for m in missions if m["state"] == MISSION_STATE_EXECUTING]
         return executing[0]["id"] if len(executing) else None
 
-    def queue_mission(self, mission_id):
+    def queue_mission(self, mission_id, **kwargs) -> dict:
         """Receives a mission ID and sends a request to append it to the robot's mission queue"""
         queue_mission_url = f"{self.mir_api_base_url}/{MISSION_QUEUE_ENDPOINT_V2}"
         mission_queues = {
             "mission_id": mission_id,
+            **kwargs,
         }
 
         response = self._post(
@@ -230,7 +231,7 @@ class MirApiV2(MirApiBaseClass):
             headers={"Content-Type": "application/json"},
             json=mission_queues,
         )
-        self.logger.info(response.text)
+        return response.json()
 
     def abort_all_missions(self):
         """Aborts all missions"""

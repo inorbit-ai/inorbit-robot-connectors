@@ -19,19 +19,33 @@ from pydantic import ValidationError
 # - Implement feedback
 
 
-class MissionsExecutor:
+class MiRMissionsExecutor:
 
-    def __init__(self, inorbit_api: InOrbitAPI, mir_api: MirApiBaseClass, loglevel: str = "INFO"):
+    def __init__(
+        self,
+        inorbit_api: InOrbitAPI,
+        mir_api: MirApiBaseClass,
+        temporary_missions_group_id: str,
+        waypoint_nav_extra_params: dict,
+        loglevel: str = "INFO",
+    ):
         self._logger = logging.getLogger(self.__class__.__name__)
         self._logger.setLevel(loglevel)
         self._mir_api = mir_api
         self._inorbit_api = inorbit_api
         self._worker_pool = None
         self._started = False
+        self._temporary_missions_group_id = temporary_missions_group_id
+        self._waypoint_nav_extra_params = waypoint_nav_extra_params
 
     async def start(self):
         self._logger.debug("Starting MissionsExecutor")
-        self._worker_pool = MirWorkerPool(self._mir_api, self._inorbit_api)
+        self._worker_pool = MirWorkerPool(
+            self._mir_api,
+            self._inorbit_api,
+            self._temporary_missions_group_id,
+            self._waypoint_nav_extra_params,
+        )
         await self._worker_pool.start()
         self._started = True
 

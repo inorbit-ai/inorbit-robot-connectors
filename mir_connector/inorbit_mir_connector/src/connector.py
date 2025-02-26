@@ -7,7 +7,7 @@ from enum import Enum
 import json
 from time import sleep
 from inorbit_mir_connector.src.missions_exec.datatypes import MissionExecuteRequest
-from inorbit_mir_connector.src.missions_exec.executor import MissionsExecutor
+from inorbit_mir_connector.src.missions_exec.executor import MiRMissionsExecutor
 from inorbit_mir_connector.src.missions.inorbit import InOrbitAPI
 from pydantic import ValidationError
 import pytz
@@ -73,10 +73,6 @@ class Mir100Connector(Connector):
             create_user_scripts_dir=True,
         )
         self.config = config
-        # Missions group id for temporary missions
-        # If None, it indicates the missions group has not been set up
-        self.tmp_missions_group_id = None
-        self.tmp_missions_group_id_lock = Lock()
 
         # Configure the connection to the robot
         self.mir_api = MirApiV2(
@@ -116,27 +112,29 @@ class Mir100Connector(Connector):
             enable_io_mission_tracking=config.connector_config.enable_mission_tracking,
         )
 
-        # InOrbit missions executor
-        self.missions_executor = MissionsExecutor(
-            mir_api=self.mir_api,
-            inorbit_api=InOrbitAPI(
-                base_url=self._robot_session.inorbit_rest_api_endpoint, api_key=config.api_key
-            ),
-            loglevel=config.log_level.value,
-        )
-
-        # Create an event loop in a separate thread for the missions executor,
-        # which relies on asyncio for its execution
-        self.executor_loop = asyncio.new_event_loop()
-        self.executor_thread = Thread(
-            target=self._start_executor_loop,
-            args=(self.executor_loop, self.missions_executor),
-            daemon=True,
-        )
-        self.executor_thread.start()
-
+        # Missions group id for temporary missions
+        # If None, it indicates the missions group has not been set up
+        self.tmp_missions_group_id = None
+        self.tmp_missions_group_id_lock = Lock()
         # Get or create the required missions and mission groups
+        self.missions_executor = None
+        self.executor_loop = asyncio.new_event_loop()
+        self.executor_thread = None
         Thread(target=self.setup_connector_missions, daemon=True).start()
+
+    def _get_waypoint_nav_extra_params(self):
+        """Get extra parameters needed for waypoint navigation based on the connector type and
+        firmware version."""
+        params = {
+            "distance_threshold": MIR_MOVE_DISTANCE_THRESHOLD,
+        }
+        connector_type = self.config.connector_type
+        firmware_version = self.config.connector_config.mir_firmware_version
+        if connector_type == "MiR100" and firmware_version == "v2":
+            params["retries"] = 5
+        elif connector_type == "MiR250" and firmware_version == "v3":
+            params["blocked_path_timeout"] = 60.0
+        return params
 
     def _start_executor_loop(self, loop, executor):
         """Run the executor's event loop in a separate thread."""
@@ -305,7 +303,7 @@ class Mir100Connector(Connector):
         """
         try:
             arg_name_index = script_args.index(arg_name)
-        except ValueError as e:
+        except ValueError:
             return None
         if arg_name_index is not None:
             return script_args[arg_name_index + 1]
@@ -344,7 +342,7 @@ class Mir100Connector(Connector):
             # TODO(Elvio): Move this logic to another class to make it easier to maintain and
             # scale in the future
             self.metrics = self.mir_api.get_metrics()
-        except Exception as ex:
+        except Exception:
             self._logger.error(f"Failed to get robot API data: {ex}")
             self.publish_api_error()
             return
@@ -423,8 +421,6 @@ class Mir100Connector(Connector):
     def send_waypoint_over_missions(self, pose):
         """Use the connector's mission group to create a move mission to a designated pose."""
         mission_id = str(uuid.uuid4())
-        connector_type = self.config.connector_type
-        firmware_version = self.config.connector_config.mir_firmware_version
 
         if not self.tmp_missions_group_id:
             raise Exception("Connector missions group not set up")
@@ -439,22 +435,8 @@ class Mir100Connector(Connector):
             "x": float(pose["x"]),
             "y": float(pose["y"]),
             "orientation": math.degrees(float(pose["theta"])),
-            "distance_threshold": MIR_MOVE_DISTANCE_THRESHOLD,
+            **self._get_waypoint_nav_extra_params(),
         }
-        if connector_type == "MiR100" and firmware_version == "v2":
-            param_values["retries"] = 5
-        elif connector_type == "MiR250" and firmware_version == "v3":
-            param_values["blocked_path_timeout"] = 60.0
-        else:
-            self._logger.warning(
-                f"Not supported connector type and firmware version combination for waypoint "
-                f"navigation: {connector_type} {firmware_version}. Will attempt to send waypoint "
-                "based on firmware version."
-            )
-            if firmware_version == "v2":
-                param_values["retries"] = 5
-            else:
-                param_values["blocked_path_timeout"] = 60.0
 
         action_parameters = [
             {"value": v, "input_name": None, "guid": str(uuid.uuid4()), "id": k}
@@ -503,6 +485,26 @@ class Mir100Connector(Connector):
                 f"Found mission group '{MIR_INORBIT_MISSIONS_GROUP_NAME}' with "
                 f"guid '{self.tmp_missions_group_id}'"
             )
+
+        # InOrbit missions executor
+        self.missions_executor = MiRMissionsExecutor(
+            mir_api=self.mir_api,
+            inorbit_api=InOrbitAPI(
+                base_url=self._robot_session.inorbit_rest_api_endpoint, api_key=self.config.api_key
+            ),
+            temporary_missions_group_id=self.tmp_missions_group_id,
+            waypoint_nav_extra_params=self._get_waypoint_nav_extra_params(),
+            loglevel=self.config.log_level.value,
+        )
+
+        # Create an event loop in a separate thread for the missions executor,
+        # which relies on asyncio for its execution
+        self.executor_thread = Thread(
+            target=self._start_executor_loop,
+            args=(self.executor_loop, self.missions_executor),
+            daemon=True,
+        )
+        self.executor_thread.start()
 
     def cleanup_connector_missions(self):
         """Delete the missions group created at startup"""

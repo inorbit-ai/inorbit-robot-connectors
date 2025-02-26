@@ -53,7 +53,7 @@ class MirApiBaseClass(ABC):
         return res
 
     @abstractmethod
-    def batch_call(self, calls: list[dict]):
+    def batch_call(self, calls: list[dict]) -> list[dict]:
         """Batch call multiple requests"""
         pass
 
@@ -80,7 +80,12 @@ class MirApiBaseClass(ABC):
         pass
 
     @abstractmethod
-    def queue_mission(self, mission_id: str):
+    def create_mission(self, *args, **kwargs):
+        """Creates a new mission"""
+        pass
+
+    @abstractmethod
+    def queue_mission(self, mission_id: str, **kwargs) -> dict:
         """Receives a mission ID and sends a request to append it to the robot's mission queue"""
         pass
 

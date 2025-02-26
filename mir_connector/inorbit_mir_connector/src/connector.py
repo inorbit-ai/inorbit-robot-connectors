@@ -122,12 +122,28 @@ class Mir100Connector(Connector):
             inorbit_api=InOrbitAPI(
                 base_url=self._robot_session.inorbit_rest_api_endpoint, api_key=config.api_key
             ),
-            loglevel="DEBUG",  # config.log_level.value,
+            loglevel=config.log_level.value,
         )
-        asyncio.run(self.missions_executor.start())
+
+        # Create an event loop in a separate thread for the missions executor,
+        # which relies on asyncio for its execution
+        self.executor_loop = asyncio.new_event_loop()
+        self.executor_thread = Thread(
+            target=self._start_executor_loop,
+            args=(self.executor_loop, self.missions_executor),
+            daemon=True,
+        )
+        self.executor_thread.start()
 
         # Get or create the required missions and mission groups
         Thread(target=self.setup_connector_missions, daemon=True).start()
+
+    def _start_executor_loop(self, loop, executor):
+        """Run the executor's event loop in a separate thread."""
+        asyncio.set_event_loop(loop)
+        # Start the executor and keep the loop running
+        loop.run_until_complete(executor.start())
+        loop.run_forever()
 
     def _inorbit_command_handler(self, command_name, args, options):
         """Callback method for command messages.
@@ -242,8 +258,12 @@ class Mir100Connector(Connector):
                     self._logger.error(f"Invalid mission definition. {e}")
                     return options["result_function"]("1", "Invalid mission definition.")
 
+                # Schedule mission execution in the existing executor loop
                 # TOOD(b-Tomas): Call the result function with the execution result
-                asyncio.run(self.missions_executor.execute_mission(mission_execute_request))
+                asyncio.run_coroutine_threadsafe(
+                    self.missions_executor.execute_mission(mission_execute_request),
+                    self.executor_loop,
+                )
 
             elif script_name == InOrbitCommands.INORBIT_MISSION_CANCEL.value:
                 self._logger.warning(f"{script_name} not implemented")
@@ -303,6 +323,12 @@ class Mir100Connector(Connector):
 
     def _disconnect(self):
         """Disconnect from any external services"""
+        # Stop the executor loop
+        if hasattr(self, "executor_loop"):
+            self.executor_loop.call_soon_threadsafe(self.executor_loop.stop)
+            self.executor_thread.join()
+            self.executor_loop.close()
+
         super()._disconnect()
         self.cleanup_connector_missions()
         if self.ws_enabled:

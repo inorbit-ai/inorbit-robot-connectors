@@ -65,7 +65,6 @@ class MissionStepCreateMiRMission(MissionStep):
     # All of the tasks in between the first and last task are not tracked yet,
     # They are all marked as completed when the mission ends.
     first_task_id: str
-    last_task_id: str
 
     def accept(self, visitor: "MirNodeFromStepBuilder"):
         return visitor.visit_create_mir_mission(self)

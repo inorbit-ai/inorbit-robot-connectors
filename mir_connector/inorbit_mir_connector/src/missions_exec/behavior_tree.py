@@ -13,7 +13,6 @@ from inorbit_mir_connector.src.missions.behavior_tree import (
     BehaviorTreeSequential,
     MissionInProgressNode,
     NodeFromStepBuilder,
-    TaskCompletedNode,
     TaskStartedNode,
 )
 
@@ -302,7 +301,6 @@ class MirNodeFromStepBuilder(NodeFromStepBuilder):
             MissionInProgressNode(self.context)
         )  # HACK: Why is this not in the superclass??
         bt_sequential.add_node(TrackRunningMiRMissionNode(self.context))
-        bt_sequential.add_node(TaskCompletedNode(self.context, step.last_task_id))  # HACK
 
         # TODO(b-Tomas): Error handlers
         on_error = None

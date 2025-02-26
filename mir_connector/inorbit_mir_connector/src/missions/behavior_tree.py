@@ -896,78 +896,9 @@ class NodeFromStepBuilder:
         return WaitNode(self.context, step.timeout_secs, label=step.label)
 
     def visit_pose_waypoint(self, step: MissionStepPoseWaypoint):
-        waypoint = step.waypoint
-        go_node = RunActionNode(
-            context=self.context,
-            action_id=ACTION_NAVIGATE_TO_ID,
-            arguments=dict(
-                pose=dict(
-                    x=waypoint.x,
-                    y=waypoint.y,
-                    theta=waypoint.theta,
-                    frameId=waypoint.frame_id,
-                )
-            ),
-            label=step.label,
+        raise Exception(
+            "Waypoint steps should be handled by a subclass, or translated to a a different node type."
         )
-        expr = f"pose = getValue('pose'); pose and pose.frameId == '{waypoint.frame_id}' and sqrt(pow(pose.x-{waypoint.x}, 2) + pow(pose.y-{waypoint.y}, 2)) < {self.waypoint_distance_tolerance} and abs((pose.theta-{waypoint.theta})%(2*{math.pi})) < {self.waypoint_angular_tolerance}"
-        wait_node = WaitExpressionNode(
-            self.context,
-            expr,
-            label=f"Wait until waypoint is reached '{step.label}'",
-        )
-        bt_sequential = BehaviorTreeSequential(label=step.label)
-        bt_sequential.add_node(go_node)
-        bt_sequential.add_node(wait_node)
-        # Pause handler
-        on_pause = BehaviorTreeSequential(label="Waypoint pause handler")
-        # NOTE: since tree can't share nodes, the cancel navigation node
-        # needs to be declared for each handler (pause, cancel, error)
-        cancel_nav_on_pause = RunActionNode(
-            context=self.context,
-            action_id=ACTION_CANCEL_NAV_ID,
-            arguments={},
-            label="Cancel navigation goal",
-        )
-        on_pause.add_node(cancel_nav_on_pause)
-        on_pause.add_node(MissionPausedNode(self.context, label="mission paused"))
-        # Cancel handler
-        on_cancel = BehaviorTreeSequential(label="cancel handlers")
-        cancel_nav_on_cancel = RunActionNode(
-            context=self.context,
-            action_id=ACTION_CANCEL_NAV_ID,
-            arguments={},
-            label="Cancel navigation goal",
-        )
-        on_cancel.add_node(cancel_nav_on_cancel)
-        on_cancel.add_node(
-            MissionAbortedNode(self.context, status=MissionStatus.ok, label="mission cancelled")
-        )
-        on_cancel.add_node(UnlockRobotNode(self.context, label="unlock robot after mission cancel"))
-        on_error = BehaviorTreeSequential(label="error handlers")
-        cancel_nav_on_error = RunActionNode(
-            context=self.context,
-            action_id=ACTION_CANCEL_NAV_ID,
-            arguments={},
-            label="Cancel navigation goal",
-        )
-        # Error handler
-        on_error.add_node(cancel_nav_on_error)
-        on_error.add_node(
-            MissionAbortedNode(self.context, status=MissionStatus.error, label="mission aborted")
-        )
-        on_error.add_node(UnlockRobotNode(self.context, label="unlock robot after mission abort"))
-        tree = BehaviorTreeErrorHandler(
-            context=self.context,
-            behavior=bt_sequential,
-            error_handler=on_error,
-            cancelled_handler=on_cancel,
-            pause_handler=on_pause,
-            error_context=self.context.error_context,
-            reset_execution_on_pause=True,
-            label=bt_sequential.label,
-        )
-        return tree
 
     def visit_set_data(self, step: MissionStepSetData):
         # HACK(mike) allow setting the waypoint tolerance using SetData

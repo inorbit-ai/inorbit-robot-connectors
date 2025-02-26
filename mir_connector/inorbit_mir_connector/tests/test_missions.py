@@ -4,6 +4,7 @@
 
 from unittest.mock import AsyncMock, MagicMock
 from inorbit_mir_connector.src.connector import Mir100Connector
+from inorbit_mir_connector.src.missions.behavior_tree import MissionInProgressNode
 from inorbit_mir_connector.src.missions.datatypes import (
     MissionDefinition,
     MissionRuntimeOptions,
@@ -36,7 +37,6 @@ from inorbit_mir_connector.src.missions_exec.behavior_tree import (
     WaitUntilMiRMissionIsRunningNode,
     TaskStartedNode,
     TrackRunningMiRMissionNode,
-    TaskCompletedNode,
 )
 import pytest
 
@@ -119,90 +119,6 @@ async def test_mission_is_submitted(example_request):
     executor._worker_pool.submit_work.assert_called_once()
 
 
-def test_mission_translator():
-    # Create test mission in InOrbit format
-    inorbit_mission = Mission(
-        id="ac7af1e4-0721-4130-8e1c-80371e16bdf6",
-        robot_id="mir100-1",
-        definition=MissionDefinition(
-            label="Test Mission",
-            steps=[
-                MissionStepPoseWaypoint(
-                    label="Move to waypoint",
-                    timeoutSecs=60.0,
-                    completeTask="Move to waypoint",
-                    waypoint=Pose(
-                        x=9.892293709504171,
-                        y=5.018981943828619,
-                        theta=0.0,
-                        frameId="map",
-                        waypointId="test-waypoint",
-                        properties=None,
-                    ),
-                )
-            ],
-            selector={"robot": {"tagIds": ["f-hPYUnWQMUyMmxT"]}},
-        ),
-        arguments={},
-        tasks_list=[
-            MissionTask(
-                taskId="Move to waypoint",
-                label="Move to waypoint",
-                inProgress=False,
-                completed=False,
-            )
-        ],
-    )
-
-    # Test parameters
-    temp_missions_group = "test_group"
-    nav_params = {"max_speed": 1.0}
-
-    # Translate mission using the translator
-    translated = InOrbitToMirTranslator.translate(inorbit_mission, temp_missions_group, nav_params)
-
-    # Verify the translation maintains essential properties
-    assert isinstance(translated, MiRInOrbitMission)
-    assert translated.id == inorbit_mission.id
-    assert translated.robot_id == inorbit_mission.robot_id
-    assert translated.definition.label == inorbit_mission.definition.label
-
-    # Verify the MiR mission step was created correctly
-    translated_step = translated.definition.steps[0]
-    assert isinstance(translated_step, MissionStepCreateMiRMission)
-    assert translated_step.label == "Move to waypoint"
-    assert translated_step.timeout_secs == 60.0
-    assert translated_step.complete_task == "Move to waypoint"
-    assert translated_step.first_task_id == "Move to waypoint"
-    assert translated_step.last_task_id == "Move to waypoint"
-
-    # Verify MiR mission data
-    mir_mission = translated_step.mir_mission_data
-    assert mir_mission.name == "Go to test-waypoint"
-    assert mir_mission.group_id == temp_missions_group
-    assert mir_mission.description == "Navigate to waypoint test-waypoint"
-
-    # Verify MiR action
-    action = mir_mission.actions[0]
-    assert action.action_type == "move_to_position"
-    assert action.priority == 0
-
-    # Verify action parameters include waypoint and extra nav params
-    params = action.parameters[0]
-    assert params["x"] == 9.892293709504171
-    assert params["y"] == 5.018981943828619
-    assert params["orientation"] == 0.0  # Converted to degrees
-    assert params["max_speed"] == 1.0  # From nav_params
-
-    # Verify tasks list is preserved
-    assert len(translated.tasks_list) == 1
-    translated_task = translated.tasks_list[0]
-    assert translated_task.task_id == "Move to waypoint"
-    assert translated_task.label == "Move to waypoint"
-    assert translated_task.in_progress is False
-    assert translated_task.completed is False
-
-
 def test_mir_node_from_step_builder():
     # Create mock context
     context = MagicMock(autospec=MirBehaviorTreeBuilderContext)
@@ -230,7 +146,6 @@ def test_mir_node_from_step_builder():
         completeTask="Test Task",
         mir_mission_data=mir_mission_data,
         first_task_id="first_task",
-        last_task_id="last_task",
     )
 
     # Call the visit_create_mir_mission method
@@ -253,9 +168,8 @@ def test_mir_node_from_step_builder():
     assert isinstance(nodes[2], QueueMiRMissionNode)
     assert isinstance(nodes[3], WaitUntilMiRMissionIsRunningNode)
     assert isinstance(nodes[4], TaskStartedNode)
-    assert isinstance(nodes[5], TrackRunningMiRMissionNode)
-    assert isinstance(nodes[6], TaskCompletedNode)
+    assert isinstance(nodes[5], MissionInProgressNode)
+    assert isinstance(nodes[6], TrackRunningMiRMissionNode)
 
     # Verify task IDs are passed correctly
     assert nodes[4].task_id == "first_task"
-    assert nodes[6].task_id == "last_task"

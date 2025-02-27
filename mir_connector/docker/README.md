@@ -20,10 +20,11 @@ This document provides instructions on how to set up and run the MiR Connector u
     ./build.sh
     ```
 
-3. Run the Docker container:
+3. Run the Docker container. e.g.:
     ```sh
     docker run -d --name ${ROBOT_ID}_connector \
-        -v /path/to/your/config.yaml:/config/config.yaml \
+        -v $(pwd)/../config/my_fleet.yaml:/config/fleet.yaml \
+        --env-file ../config/.env \
         -e ROBOT_ID=$ROBOT_ID \
         mir_connector
     ```
@@ -34,3 +35,8 @@ Multiple robot fleets can be easily managed with a combination of one connector 
 and one Docker Compose file.
 
 The file `docker-compose.yaml` in this folder provides an example setup for a fleet of two robots. The configuration for each robot is in the shared file `my_fleet.yaml`, which is mounted into the container as `/config/fleet.yaml`, the default location for the connector to read the fleet configuration from.
+
+To start the containers, fill the provided template and run the following command:
+```sh
+CONNECTOR_VERSION='<connector-version>' docker compose up
+```

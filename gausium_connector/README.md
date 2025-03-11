@@ -21,7 +21,7 @@ The connector is configured using a YAML file. See `config/` for examples.
 ## Usage
 
 ```bash
-inorbit_gausium_connector -c config/myfleet.example.yaml -id phantas-1
+inorbit_gausium_connector -c config/example.yaml -id my-example-robot
 ```
 
 Environment variables will be loaded from `config/.env` if it exists. Otherwise, they can be set manaully.

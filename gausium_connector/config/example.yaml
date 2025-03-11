@@ -9,4 +9,4 @@ my-example-robot:
   # This is where you define custom fields specific to your robot's connector
   connector_config:
     # Base URL of the API
-    base_url:
+    base_url: http://ip_and_port

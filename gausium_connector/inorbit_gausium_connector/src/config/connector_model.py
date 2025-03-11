@@ -17,7 +17,7 @@ default_config = {
     "log_level": "INFO",
     "connector_type": CONNECTOR_TYPES[0],
     "connector_config": {
-        "base_url": "http://ip:port",
+        "base_url": "http://ip_and_port",
     },
 }
 

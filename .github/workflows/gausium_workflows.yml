@@ -2,12 +2,12 @@ name: Gausium Connector Workflow
 
 on:
   push:
-    branches: 
+    branches:
       - main
     paths:
       - gausium_connector/**
   pull_request:
-    branches: 
+    branches:
       - main
     paths:
       - gausium_connector/**
@@ -37,6 +37,16 @@ jobs:
           version: "~= 23.0"
           src: gausium_connector
           options: "--diff --check --line-length=100"
+
+  reuse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: REUSE Compliance Check
+        uses: fsfe/reuse-action@v1
+        with:
+          args: --root gausium_connector lint
+
   test:
     runs-on: ${{ matrix.os }}
     strategy:

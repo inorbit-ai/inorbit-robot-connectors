@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2025 InOrbit, Inc.
+
+SPDX-License-Identifier: MIT
+-->
+
 # Config As Code examples
 
 The files in this folder contain example [configuration as code](https://developer.inorbit.ai/docs#summary) objects, useful to unlock the full capabilities of the InOrbit <> Gausium Connector. They can be managed through the [InOrbit CLI](https://developer.inorbit.ai/docs#using-the-inorbit-cli).

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
 from unittest.mock import call
 from unittest.mock import MagicMock
 from unittest.mock import Mock

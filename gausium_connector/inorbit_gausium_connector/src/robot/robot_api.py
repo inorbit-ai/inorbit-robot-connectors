@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
 import logging
 from abc import ABC, abstractmethod
 from math import radians

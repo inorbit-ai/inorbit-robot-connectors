@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
 import pytest
 from unittest.mock import patch
 from pydantic import HttpUrl

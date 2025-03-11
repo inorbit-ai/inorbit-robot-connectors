@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
 import argparse
 import logging
 import sys

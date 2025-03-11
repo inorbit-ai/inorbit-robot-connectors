@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
 from inorbit_connector.models import InorbitConnectorConfig
 from inorbit_connector.utils import read_yaml
 from inorbit_gausium_connector.src.robot.robot_factory import ROBOT_API_CLASSES

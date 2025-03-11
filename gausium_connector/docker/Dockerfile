@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
 # Use the official Python 3.12 image from the Docker Hub
 FROM python:3.12-slim
 

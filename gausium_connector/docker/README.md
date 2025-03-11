@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2025 InOrbit, Inc.
+
+SPDX-License-Identifier: MIT
+-->
+
 # Gausium Connector Docker Setup
 
 Build the Docker image:

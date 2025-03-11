@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
 """Top-level package for InOrbit <> Gausium Connector."""
 
 __author__ = """InOrbit Inc."""

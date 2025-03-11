@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# SPDX-FileCopyrightText: 2025 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
 # This script builds the Docker image for the Gausium Connector.
 # The image is tagged with the current version of the connector.
 

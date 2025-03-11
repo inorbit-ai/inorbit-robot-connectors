@@ -1,0 +1,5 @@
+# Ignore all but the examples
+*
+!.gitignore
+!*example.*
+!README.md

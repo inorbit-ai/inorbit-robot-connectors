@@ -32,7 +32,8 @@ tox -e py310
 
 ## Version Bump
 
-> [!NOTE] This section is only relevant for maintainers.
+> [!NOTE]
+> This section is only relevant for maintainers.
 
 To bump the version of the Connector, use the `bump-my-version` tool.
 
@@ -48,13 +49,16 @@ bump-my-version bump minor --dry-run --verbose
 
 ## Build and publish the package
 
-> [!NOTE] This section is only relevant for maintainers.
+> [!NOTE]
+> This section is only relevant for maintainers.
 
-> **Note**: PyPI is not set up for the Gausium Connector yet.
+> [!WARNING]
+> PyPI is not set up for the Gausium Connector yet.
 
 New releases are built and published to PyPi and the Docker repository automatically by GitHub Actions when a new version bump commit is pushed.
 
-> [!NOTE] The message of the last commit must contain "Bump version" for the publish job to run. e.g. "Bump version: 1.0.0 -> 1.0.1"
+> [!IMPORTANT]
+> The message of the last commit must contain "Bump version" for the publish job to run. e.g. "Bump version: 1.0.0 -> 1.0.1"
 
 To manually build and publish the package to https://test.pypi.org/, run:
 

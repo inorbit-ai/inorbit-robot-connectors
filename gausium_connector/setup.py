@@ -19,6 +19,7 @@ with open("requirements-dev.txt", "r") as file:
 
 extra_requirements = {
     "dev": [*dev_requirements],
+    "test": [*dev_requirements],
 }
 
 setup(

@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: 2025 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
+twine==4.0
+build==1.0
+bump-my-version==0.15
+black
+flake8
+pytest>=3
+pytest-cov>=6
+requests_mock==1.11

@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: 2025 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
+# This is an example configuration file for the Gausium Connector.
+# It is used to demonstrate how to configure the connector for a specific robot.
+# It is not intended to be used as a production configuration file.
+# Definitions for different robots can be hosted in the same file.
+
+my-example-robot:
+  # The timezone of the robot location as a pytz timezone (https://pythonhosted.org/pytz/#helpers)
+  location_tz: America/Los_Angeles
+  # Connector log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+  log_level: INFO
+  # The type of connector
+  connector_type: V40
+
+  # This is where you define custom fields specific to your robot's connector
+  # All fields in this section can also be set in environment variables
+  # using the INORBIT_GAUSIUM_ prefix (e.g. base_url -> INORBIT_GAUSIUM_BASE_URL)
+  connector_config:
+    # Base URL of the API
+    base_url: http://ip_and_port
+    # If true, the connector will not validate the model type of the robot
+    # against the connector type.
+    # This is an optional field.
+    # ignore_model_type_validation: false

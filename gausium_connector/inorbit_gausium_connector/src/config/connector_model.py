@@ -31,7 +31,12 @@ class GausiumConnectorConfig(BaseSettings):
     Specific configuration for the Gausium Connector.
     If any field is missing, the initializer will attempt to replace it by reading from the
     environment. Every field can be ignored if set in the env with the prefix INORBIT_GAUSIUM_
-    (e.g. access_key_secret -> INORBIT_GAUSIUM_ACCESS_KEY_SECRET)
+    (e.g. base_url -> INORBIT_GAUSIUM_BASE_URL)
+
+    Fields:
+        base_url (HttpUrl): The base URL for connecting to the Gausium robot API.
+        ignore_model_type_validation (bool): If True, the validation of the `connector_type`
+            against the reported robot model type will be ignored.
     """
 
     model_config = SettingsConfigDict(
@@ -41,6 +46,7 @@ class GausiumConnectorConfig(BaseSettings):
     )
 
     base_url: HttpUrl
+    ignore_model_type_validation: bool = False
 
 
 class ConnectorConfig(InorbitConnectorConfig):

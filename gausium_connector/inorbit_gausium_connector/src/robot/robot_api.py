@@ -13,6 +13,18 @@ from requests import Session
 from requests.exceptions import HTTPError
 
 
+class ModelTypeMismatchError(Exception):
+    """Exception raised when the model type of the robot and the API wrapper in use do not match."""
+
+    def __init__(self, robot_model_type: str, supported_model_types: List[str]):
+        super().__init__(
+            f"Robot model type '{robot_model_type}' is not supported by the API wrapper. "
+            f"Supported model types are: {supported_model_types}.\n"
+            "Make sure the `connector_type` value in the configuration matches the robot "
+            "model."
+        )
+
+
 class GausiumRobotAPI(ABC):
     """Gausium robot API wrapper."""
 
@@ -123,7 +135,21 @@ class GausiumRobotAPI(ABC):
 class GausiumCloudAPI(GausiumRobotAPI):
     """Gausium cloud API wrapper."""
 
-    def __init__(self, base_url: HttpUrl, loglevel: str = "INFO"):
+    def __init__(
+        self,
+        base_url: HttpUrl,
+        loglevel: str = "INFO",
+        allowed_model_types: List[str] = [],
+    ):
+        """Initialize the Gausium Cloud API wrapper.
+
+        Args:
+            base_url (HttpUrl): Base URL for the Gausium Cloud API.
+            loglevel (str, optional): Logging level. Defaults to "INFO".
+            allowed_model_types (List[str], optional): List of robot model types
+                supported by this API wrapper. Defaults to an empty list.
+                If empty, the model type will not be validated.
+        """
         super().__init__(base_url, loglevel)
         self._pose: dict | None = None
         self._odometry: dict | None = None
@@ -132,42 +158,43 @@ class GausiumCloudAPI(GausiumRobotAPI):
         self._device_status: dict | None = None
         self._map_name: str | None = None
         self._is_initialized: bool = False
+        self._allowed_model_types: List[str] = allowed_model_types
 
     def update(self) -> None:
         """Update the robot's status data"""
-        try:
-            # Update pose
-            position_data = self._fetch_position()
-            self._pose = {
-                "x": position_data.get("worldPosition", {}).get("position", {}).get("x"),
-                "y": position_data.get("worldPosition", {}).get("position", {}).get("y"),
-                # Extract the yaw from the orientation quaternion
-                "yaw": radians(
-                    position_data.get("worldPosition", {}).get("orientation", {}).get("z")
-                ),
-                # TODO: Get the frameId
-                "frame_id": " ",
-            }
 
-            # TODO: Get the odometry data
-            self._odometry = {}
+        # Update pose
+        position_data = self._fetch_position()
+        self._pose = {
+            "x": position_data.get("worldPosition", {}).get("position", {}).get("x"),
+            "y": position_data.get("worldPosition", {}).get("position", {}).get("y"),
+            # Extract the yaw from the orientation quaternion
+            "yaw": radians(position_data.get("worldPosition", {}).get("orientation", {}).get("z")),
+            # TODO: Get the frameId
+            "frame_id": " ",
+        }
 
-            # Update firmware version
-            robot_info = self._get_robot_info().get("data", {})
-            self._firmware_version = robot_info.get("softwareVersion")
+        # TODO: Get the odometry data
+        self._odometry = {}
 
-            # Update device status and key values
-            device_data = self._get_device_status()
-            self._device_status = device_data.get("data", {})
+        # Update firmware version
+        robot_info = self._get_robot_info().get("data", {})
+        self._firmware_version = robot_info.get("softwareVersion")
 
-            # Extract key values
-            self._key_values = {
-                **self._device_status,
-                **robot_info,
-            }
+        # Update device status and key values
+        device_data = self._get_device_status()
+        self._device_status = device_data.get("data", {})
 
-        except Exception as e:
-            self.logger.error(f"Error updating robot status: {e}")
+        # Extract key values
+        self._key_values = {
+            **self._device_status,
+            **robot_info,
+        }
+
+        # Validate the model type of the robot and the API wrapper in use match
+        model_type = robot_info.get("modelType")
+        if self._allowed_model_types and model_type not in self._allowed_model_types:
+            raise ModelTypeMismatchError(model_type, self._allowed_model_types)
 
     @property
     def pose(self) -> dict:

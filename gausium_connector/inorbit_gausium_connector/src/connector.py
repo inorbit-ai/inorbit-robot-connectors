@@ -7,6 +7,8 @@ from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND
 from inorbit_edge.robot import COMMAND_MESSAGE
 from inorbit_edge.robot import COMMAND_NAV_GOAL
 
+from inorbit_gausium_connector.src.robot.robot_api import ModelTypeMismatchError
+
 from .. import __version__
 from .config.connector_model import ConnectorConfig
 from .robot import create_robot_api
@@ -30,6 +32,7 @@ class GausiumConnector(Connector):
             connector_type=config.connector_type,
             base_url=config.connector_config.base_url,
             loglevel=config.log_level.value,
+            ignore_model_type_validation=config.connector_config.ignore_model_type_validation,
         )
         self.status = {}
 
@@ -49,9 +52,12 @@ class GausiumConnector(Connector):
         """
 
         # Update the robot data
-        # If not availabe, return
+        # If case of a model type mismatch, raise an exception so that the connector is stopped.
+        # Otherwise, log the error and continue.
         try:
             self.robot_api.update()
+        except ModelTypeMismatchError as ex:
+            raise ex
         except Exception as ex:
             self._logger.error(f"Failed to refresh robot data: {ex}")
             return

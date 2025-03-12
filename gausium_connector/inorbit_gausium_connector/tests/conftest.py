@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 import pytest
+import warnings
 
 # Fixtures defined in conftest.py do not require importing
 
@@ -11,6 +12,20 @@ import pytest
 def disable_network_calls(monkeypatch, requests_mock):
     # Including requests_mock will disable network calls on every test
     pass
+
+
+@pytest.fixture(autouse=True)
+def suppress_pydantic_warnings():
+    """Suppress pydantic serialization warnings during tests.
+
+    This fixture runs automatically for all tests and suppresses the UserWarnings
+    that Pydantic generates when serializing HttpUrl objects.
+    """
+    # Filter the specific Pydantic serialization warnings
+    warnings.filterwarnings("ignore", message="Pydantic serializer warnings", category=UserWarning)
+    yield
+    # Reset the filter after the test (optional - helps keep the warning filter clean)
+    warnings.resetwarnings()
 
 
 @pytest.fixture

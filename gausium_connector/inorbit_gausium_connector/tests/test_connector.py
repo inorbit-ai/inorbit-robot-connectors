@@ -175,9 +175,7 @@ class TestGausiumConnector:
             "1", "Robot is not available"
         )
 
-    def test_execution_loop(
-        self, connector, firmware_version_info, current_position_data, device_status_data
-    ):
+    def test_execution_loop(self, connector, robot_info, current_position_data, device_status_data):
         # Setup mock return values based on fixtures
         connector.robot_api.pose = {
             "x": current_position_data["worldPosition"]["position"]["x"],
@@ -188,7 +186,7 @@ class TestGausiumConnector:
         connector.robot_api.odometry = {"vx": 0.1, "vy": 0.2, "vtheta": 0.3}
         connector.robot_api.key_values = {
             "battery_percentage": device_status_data["data"]["battery"],
-            "model": firmware_version_info["data"]["modelType"],
+            "model": robot_info["data"]["modelType"],
             "uptime": 1000,
         }
 

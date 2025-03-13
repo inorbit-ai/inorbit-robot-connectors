@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from math import radians
 from typing import List
 from urllib.parse import urljoin
-from pydantic import HttpUrl
+from pydantic import BaseModel, HttpUrl
 from requests import Response
 from requests import Session
 from requests.exceptions import HTTPError
@@ -135,6 +135,14 @@ class GausiumRobotAPI(ABC):
 class GausiumCloudAPI(GausiumRobotAPI):
     """Gausium cloud API wrapper."""
 
+    class MapData(BaseModel):
+        """Data class to hold gausium map information."""
+
+        map_name: str = None
+        map_id: str = None
+        # The map image can be fetched and stored. It is not used for now but it could be.
+        # map_image: bytes = None
+
     def __init__(
         self,
         base_url: HttpUrl,
@@ -156,45 +164,53 @@ class GausiumCloudAPI(GausiumRobotAPI):
         self._key_values: dict | None = None
         self._firmware_version: str | None = None
         self._device_status: dict | None = None
-        self._map_name: str | None = None
+        self._current_map: GausiumCloudAPI.MapData | None = None
         self._is_initialized: bool = False
         self._allowed_model_types: List[str] = allowed_model_types
 
     def update(self) -> None:
         """Update the robot's status data"""
 
-        # Update pose
-        position_data = self._fetch_position()
-        self._pose = {
-            "x": position_data.get("worldPosition", {}).get("position", {}).get("x"),
-            "y": position_data.get("worldPosition", {}).get("position", {}).get("y"),
-            # Extract the yaw from the orientation quaternion
-            "yaw": radians(position_data.get("worldPosition", {}).get("orientation", {}).get("z")),
-            # TODO: Get the frameId
-            "frame_id": " ",
-        }
-
-        # TODO: Get the odometry data
-        self._odometry = {}
-
-        # Update firmware version
+        # Fetch fresh data from the robot
         robot_info = self._get_robot_info().get("data", {})
-        self._firmware_version = robot_info.get("softwareVersion")
-
-        # Update device status and key values
-        device_data = self._get_device_status()
-        self._device_status = device_data.get("data", {})
-
-        # Extract key values
-        self._key_values = {
-            **self._device_status,
-            **robot_info,
-        }
+        device_data = self._get_device_status().get("data", {})
+        position_data = self._fetch_position()
 
         # Validate the model type of the robot and the API wrapper in use match
         model_type = robot_info.get("modelType")
         if self._allowed_model_types and model_type not in self._allowed_model_types:
             raise ModelTypeMismatchError(model_type, self._allowed_model_types)
+
+        # Update the firmware version
+        self._firmware_version = robot_info.get("softwareVersion")
+
+        # Update current device status
+        self._device_status = device_data
+
+        # Update the current map data if it's different or not set yet
+        curr_map_name = self._device_status.get("currentMapName")
+        curr_map_id = self._device_status.get("currentMapID")
+        if self._current_map and curr_map_id != self._current_map.map_id:
+            self.logger.info(
+                f"Current map changed from {self._current_map.map_name} to {curr_map_name}"
+            )
+            self._current_map = None
+        if self._current_map is None and curr_map_name and curr_map_id:
+            self._current_map = self.MapData(map_name=curr_map_name, map_id=curr_map_id)
+
+        # Update publishable data
+        self._key_values = {
+            **self._device_status,
+            **robot_info,
+        }
+        self._pose = {
+            "x": position_data.get("worldPosition", {}).get("position", {}).get("x"),
+            "y": position_data.get("worldPosition", {}).get("position", {}).get("y"),
+            # Extract the yaw from the orientation quaternion
+            "yaw": radians(position_data.get("worldPosition", {}).get("orientation", {}).get("z")),
+            "frame_id": self._current_map.map_name if self._current_map else "map",
+        }
+        self._odometry = {}  # TODO: Get the odometry data
 
     @property
     def pose(self) -> dict:
@@ -309,7 +325,6 @@ class GausiumCloudAPI(GausiumRobotAPI):
         response = res.json()
         success = response.get("successed", False)
         if success:
-            self._map_name = map_name
             self._is_initialized = False  # Map changed, robot needs to be initialized again
         return success
 
@@ -327,7 +342,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         Returns:
             bool: True if successful, False otherwise
         """
-        if self._map_name != map_name:
+        if self._current_map and self._current_map.map_name != map_name:
             self._load_map(map_name)
 
         if with_rotation:
@@ -362,7 +377,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         Returns:
             bool: True if successful, False otherwise
         """
-        if self._map_name != map_name:
+        if self._current_map and self._current_map.map_name != map_name:
             self._load_map(map_name)
 
         url = "/gs-robot/cmd/initialize_customized"

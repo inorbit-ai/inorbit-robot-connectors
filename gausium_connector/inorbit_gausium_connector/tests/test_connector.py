@@ -79,7 +79,11 @@ class TestGausiumConnector:
         # Create mock map data from the robot
         mock_map_data = MagicMock()
         mock_map_data.map_id = "robot_map"
+        mock_map_data.map_name = "test_map_name"
         mock_map_data.map_image = b"fake_image_data"
+        mock_map_data.origin_x = 10.5
+        mock_map_data.origin_y = 20.7
+        mock_map_data.resolution = 0.05
         connector.robot_api.current_map = mock_map_data
 
         # Mock tempfile.mkstemp to return a known file descriptor and path
@@ -112,13 +116,14 @@ class TestGausiumConnector:
         mock_file.__enter__().write.assert_called_once_with(b"flipped_image_data")
 
         # Verify MapConfig was called with the correct parameters
+        # Now using the actual property values from mock_map_data
         mock_map_config.assert_called_once_with(
             file=mock_temp_path,
             map_id="robot_map",
             frame_id="new_map",
-            origin_x=0.0,
-            origin_y=0.0,
-            resolution=0.05,
+            origin_x=mock_map_data.origin_x,
+            origin_y=mock_map_data.origin_y,
+            resolution=mock_map_data.resolution,
         )
 
         # Verify parent method was called to publish the map

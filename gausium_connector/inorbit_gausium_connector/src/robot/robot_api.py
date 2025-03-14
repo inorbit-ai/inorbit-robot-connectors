@@ -31,6 +31,9 @@ class MapData(BaseModel):
 
     map_name: str
     map_id: str
+    origin_x: float
+    origin_y: float
+    resolution: float
     # Lazy loaded map image
     # NOTE: Maybe not a great solution, since some maps may be quite large
     map_image: Optional[bytes] = None
@@ -231,7 +234,13 @@ class GausiumCloudAPI(GausiumRobotAPI):
             )
             self._current_map = None
         if self._current_map is None and curr_map_name and curr_map_id:
-            self._current_map = MapData(map_name=curr_map_name, map_id=curr_map_id)
+            self._current_map = MapData(
+                map_name=curr_map_name,
+                map_id=curr_map_id,
+                origin_x=position_data.get("mapInfo", {}).get("originX"),
+                origin_y=position_data.get("mapInfo", {}).get("originY"),
+                resolution=position_data.get("mapInfo", {}).get("resolution"),
+            )
 
         # Update publishable data
         self._key_values = {

@@ -128,11 +128,9 @@ class GausiumConnector(Connector):
                         file=temp_path,
                         map_id=map_data.map_id,
                         frame_id=frame_id,
-                        # Default values for origin and resolution
-                        # TODO: Get these from the robot
-                        origin_x=0.0,
-                        origin_y=0.0,
-                        resolution=0.05,
+                        origin_x=map_data.origin_x,
+                        origin_y=map_data.origin_y,
+                        resolution=map_data.resolution,
                     )
 
                     self._logger.info(f"Added map {frame_id} from robot to configuration")

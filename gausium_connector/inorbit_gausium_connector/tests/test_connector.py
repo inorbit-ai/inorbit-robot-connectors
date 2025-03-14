@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
+import math
 from unittest.mock import call
 from unittest.mock import MagicMock
 from unittest.mock import Mock
@@ -238,9 +239,7 @@ class TestGausiumConnector:
         callback_kwargs["command_name"] = COMMAND_NAV_GOAL
         callback_kwargs["args"] = [{"x": "1", "y": "2", "theta": "3.14"}]
         connector._inorbit_command_handler(**callback_kwargs)
-        assert connector.robot_api.send_waypoint.call_args_list == [
-            call({"x": "1", "y": "2", "theta": "3.14"})
-        ]
+        assert connector.robot_api.send_waypoint.call_args_list == [call(1, 2, math.degrees(3.14))]
 
     @pytest.mark.skip(reason="Custom commands not yet implemented")
     def test_command_callback_inorbit_messages(self, connector, callback_kwargs):

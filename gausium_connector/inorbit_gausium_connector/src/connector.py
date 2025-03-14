@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 import io
+import math
 import os
 import tempfile
 from typing import override
@@ -160,8 +161,9 @@ class GausiumConnector(Connector):
                 - `metadata` is reserved for the future and will contains additional
                 information about the received command request.
         """
+        self._logger.info(f"Received '{command_name}'!. {args}")
+
         if command_name == COMMAND_CUSTOM_COMMAND:
-            self._logger.info(f"Received '{command_name}'!. {args}")
             if not self.is_robot_available():
                 self._logger.error("Robot is unavailable")
                 return options["result_function"]("1", "Robot is not available")
@@ -192,9 +194,11 @@ class GausiumConnector(Connector):
             return options["result_function"]("0")
 
         elif command_name == COMMAND_NAV_GOAL:
-            self._logger.info(f"Received '{command_name}'!. {args}")
             pose = args[0]
-            self.robot_api.send_waypoint(pose)
+            x = float(pose["x"])
+            y = float(pose["y"])
+            orientation = math.degrees(float(pose["theta"]))
+            self.robot_api.send_waypoint(x, y, orientation)
 
         elif command_name == COMMAND_MESSAGE:
             return options["result_function"]("1", f"'{COMMAND_MESSAGE}' is not implemented")

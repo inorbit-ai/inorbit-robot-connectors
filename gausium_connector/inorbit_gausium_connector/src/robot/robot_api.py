@@ -2,16 +2,16 @@
 #
 # SPDX-License-Identifier: MIT
 
+import collections.abc
 import logging
 from abc import ABC, abstractmethod
 from math import radians
-from typing import List, Optional
+from typing import List, Optional, override
 from urllib.parse import urljoin
+
 from pydantic import BaseModel, HttpUrl
-from requests import Response
-from requests import Session
+from requests import Response, Session
 from requests.exceptions import HTTPError
-import collections.abc
 
 
 class ModelTypeMismatchError(Exception):
@@ -146,9 +146,8 @@ class GausiumRobotAPI(ABC):
         pass
 
     @abstractmethod
-    def send_waypoint(self, pose: dict) -> bool:
-        """Example: Receives a pose and sends a request to command the robot to
-        navigate to the waypoint"""
+    def send_waypoint(self, x: float, y: float, orientation: float) -> bool:
+        """Receives a pose and sends a request to command the robot to navigate to the waypoint"""
         pass
 
 
@@ -206,6 +205,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         self._is_initialized: bool = False
         self._allowed_model_types: List[str] = allowed_model_types
 
+    @override
     def update(self) -> None:
         """Update the robot's status data"""
 
@@ -258,6 +258,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         self._odometry = {}  # TODO: Get the odometry data
 
     @property
+    @override
     def pose(self) -> dict:
         """Get the pose of the robot"""
         if self._pose is None:
@@ -265,6 +266,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         return self._pose
 
     @property
+    @override
     def odometry(self) -> dict:
         """Get the odometry of the robot"""
         if self._odometry is None:
@@ -272,6 +274,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         return self._odometry
 
     @property
+    @override
     def key_values(self) -> dict:
         """Get the key values of the robot"""
         if self._key_values is None:
@@ -309,6 +312,23 @@ class GausiumCloudAPI(GausiumRobotAPI):
         if self._current_map and self._current_map.map_image is None:
             self._current_map.map_image = self._get_map_image(self._current_map.map_name)
         return self._current_map
+
+    @override
+    def send_waypoint(self, x: float, y: float, orientation: float) -> bool:
+        """Send the robot to a waypoint (named waypoint)
+
+        Args:
+            x (float): X coordinate in grid units
+            y (float): Y coordinate in grid units
+            orientation (float): Orientation angle in degrees
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        map_name = self._current_map.map_name if self._current_map else None
+        if not map_name:
+            raise Exception("No current map found to send waypoint to")
+        return self._navigate_to_coordinates(map_name, x, y, orientation)
 
     # ---------- General APIs ----------#
 
@@ -663,36 +683,16 @@ class GausiumCloudAPI(GausiumRobotAPI):
 
     # ---------- Navigation Task APIs ----------#
 
-    def send_waypoint(self, pose: dict) -> bool:
-        """Send the robot to a waypoint (named waypoint)
-
-        Args:
-            pose (dict): A dictionary containing the waypoint information
-                {
-                    "map_name": str,
-                    "position_name": str
-                }
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        return self._send_waypoint(pose)
-
-    def _send_waypoint(self, pose: dict) -> bool:
+    def _navigate_to_named_waypoint(self, map_name: str, position_name: str) -> bool:
         """Implementation of send_waypoint that handles robot API calls
 
         Args:
-            pose (dict): A dictionary containing the waypoint information
-                {
-                    "map_name": str,
-                    "position_name": str
-                }
+            map_name (str): Name of the map
+            position_name (str): Name of the waypoint
 
         Returns:
             bool: True if successful, False otherwise
         """
-        map_name = pose.get("map_name")
-        position_name = pose.get("position_name")
 
         if not map_name or not position_name:
             self.logger.error("Map name and position name are required for send_waypoint")
@@ -773,7 +773,9 @@ class GausiumCloudAPI(GausiumRobotAPI):
         Returns:
             bool: True if successful, False otherwise
         """
-        return self._send_waypoint({"map_name": map_name, "position_name": dock_position_name})
+        return self._navigate_to_named_waypoint(
+            {"map_name": map_name, "position_name": dock_position_name}
+        )
 
     def _pause_navigation_task(self) -> bool:
         """Pause the ongoing navigation task

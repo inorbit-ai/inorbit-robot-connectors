@@ -21,7 +21,18 @@ my-example-robot:
   connector_config:
     # Base URL of the API
     base_url: http://ip_and_port
-    # If true, the connector will not validate the model type of the robot
+    # (Optional) If true, the connector will not validate the model type of the robot
     # against the connector type.
-    # This is an optional field.
     # ignore_model_type_validation: false
+
+  # (Optional) Map configuration.
+  # Each entry represents a map that will be published to InOrbit. If not set, the connector
+  # will publish map images downloaded from the robot.
+  # This is useful for using custom maps in InOrbit.
+  # maps:
+  #   <gausium_map_name>:  # Will become the frame_id in InOrbit
+  #     file: <path_to_map_image>
+  #     map_id: <map_id>
+  #     origin_x: <origin_x>
+  #     origin_y: <origin_y>
+  #     resolution: <resolution>

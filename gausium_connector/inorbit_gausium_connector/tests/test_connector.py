@@ -54,6 +54,106 @@ class TestGausiumConnector:
 
         return connector
 
+    def test_publish_map(self, connector, monkeypatch):
+        """Test the publish_map method in different scenarios."""
+        # Mock the parent class's publish_map method
+        super_publish_map = MagicMock()
+        monkeypatch.setattr("inorbit_connector.connector.Connector.publish_map", super_publish_map)
+
+        # Mock the MapConfig class to avoid file validation
+        mock_map_config = MagicMock()
+        monkeypatch.setattr("inorbit_gausium_connector.src.connector.MapConfig", mock_map_config)
+
+        # Test case 1: Map exists in config
+        # Setup a test map in the config
+        connector.config.maps = {"existing_map": MagicMock()}
+
+        # Call the method with an existing map
+        connector.publish_map("existing_map")
+
+        # Verify parent method was called with correct parameters
+        super_publish_map.assert_called_once_with("existing_map", False)
+        super_publish_map.reset_mock()
+
+        # Test case 2: Map doesn't exist in config but robot provides map data
+        # Create mock map data from the robot
+        mock_map_data = MagicMock()
+        mock_map_data.map_id = "robot_map"
+        mock_map_data.map_name = "test_map_name"
+        mock_map_data.map_image = b"fake_image_data"
+        mock_map_data.origin_x = 10.5
+        mock_map_data.origin_y = 20.7
+        mock_map_data.resolution = 0.05
+        connector.robot_api.current_map = mock_map_data
+
+        # Mock tempfile.mkstemp to return a known file descriptor and path
+        mock_fd = 42
+        mock_temp_path = "/tmp/test_map.png"
+        monkeypatch.setattr("tempfile.mkstemp", Mock(return_value=(mock_fd, mock_temp_path)))
+
+        # Mock os.fdopen to avoid actual file operations
+        mock_file = MagicMock()
+        mock_fdopen = MagicMock(return_value=mock_file)
+        monkeypatch.setattr("os.fdopen", mock_fdopen)
+
+        # Mock PIL Image operations
+        mock_image = MagicMock()
+        mock_flipped_image = MagicMock()
+        mock_image.transpose.return_value = mock_flipped_image
+        mock_byte_io = MagicMock()
+        mock_byte_io.getvalue.return_value = b"flipped_image_data"
+
+        # Mock Image.open and io.BytesIO
+        monkeypatch.setattr("PIL.Image.open", Mock(return_value=mock_image))
+        monkeypatch.setattr("io.BytesIO", Mock(return_value=mock_byte_io))
+
+        # Call the method with a non-existing map
+        connector.publish_map("new_map")
+
+        # Verify temporary file was created and written to
+        assert mock_fdopen.call_args.args[0] == mock_fd
+        assert mock_fdopen.call_args.args[1] == "wb"
+        mock_file.__enter__().write.assert_called_once_with(b"flipped_image_data")
+
+        # Verify MapConfig was called with the correct parameters
+        # Now using the actual property values from mock_map_data
+        mock_map_config.assert_called_once_with(
+            file=mock_temp_path,
+            map_id="robot_map",
+            frame_id="new_map",
+            origin_x=mock_map_data.origin_x,
+            origin_y=mock_map_data.origin_y,
+            resolution=mock_map_data.resolution,
+        )
+
+        # Verify parent method was called to publish the map
+        super_publish_map.assert_called_once_with("new_map", False)
+        super_publish_map.reset_mock()
+
+        # Test case 3: Map doesn't exist and robot doesn't provide map data
+        connector.robot_api.current_map = None
+        connector.config.maps = {}  # Reset maps
+
+        # Call the method
+        connector.publish_map("nonexistent_map")
+
+        # Verify parent method was not called since no map was available
+        assert not super_publish_map.called
+
+        # Test case 4: Error flipping the image
+        connector.robot_api.current_map = mock_map_data
+        monkeypatch.setattr("PIL.Image.open", Mock(side_effect=Exception("Failed to open image")))
+
+        # Reset counters for this test case
+        mock_map_config.reset_mock()
+        mock_file.__enter__().write.reset_mock()
+
+        # Call the method
+        connector.publish_map("error_map")
+
+        # Verify original bytes were used when flipping failed
+        mock_file.__enter__().write.assert_called_once_with(b"fake_image_data")
+
     def test_connector_passes_ignore_model_type_validation(self, monkeypatch):
         """Test that ignore_model_type_validation parameter is passed to the robot API."""
         # Patch environment and robot session
@@ -175,9 +275,7 @@ class TestGausiumConnector:
             "1", "Robot is not available"
         )
 
-    def test_execution_loop(
-        self, connector, firmware_version_info, current_position_data, device_status_data
-    ):
+    def test_execution_loop(self, connector, robot_info, current_position_data, device_status_data):
         # Setup mock return values based on fixtures
         connector.robot_api.pose = {
             "x": current_position_data["worldPosition"]["position"]["x"],
@@ -188,7 +286,7 @@ class TestGausiumConnector:
         connector.robot_api.odometry = {"vx": 0.1, "vy": 0.2, "vtheta": 0.3}
         connector.robot_api.key_values = {
             "battery_percentage": device_status_data["data"]["battery"],
-            "model": firmware_version_info["data"]["modelType"],
+            "model": robot_info["data"]["modelType"],
             "uptime": 1000,
         }
 

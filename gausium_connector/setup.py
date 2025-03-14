@@ -63,5 +63,5 @@ setup(
     # Do not edit this string manually, always use bump-my-version.
     # See section "version-bump" in README.md
     version="0.1.0",
-    python_requires=">=3.10",
+    python_requires=">=3.12",
 )

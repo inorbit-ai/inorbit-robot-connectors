@@ -26,7 +26,7 @@ So far tested with:
 
 ## Requirements
 
--   Python 3.10 or later.
+-   Python 3.12 or later.
 -   InOrbit account [(it's free to sign up!)](https://control.inorbit.ai/ "InOrbit").
 
 ## Setup

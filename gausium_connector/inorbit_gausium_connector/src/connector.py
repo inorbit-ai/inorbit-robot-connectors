@@ -2,12 +2,16 @@
 #
 # SPDX-License-Identifier: MIT
 
-from inorbit_connector.connector import Connector
-from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND
-from inorbit_edge.robot import COMMAND_MESSAGE
-from inorbit_edge.robot import COMMAND_NAV_GOAL
+import io
+import os
+import tempfile
+from typing import override
 
+from inorbit_connector.connector import Connector
+from inorbit_connector.models import MapConfig
+from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND, COMMAND_MESSAGE, COMMAND_NAV_GOAL
 from inorbit_gausium_connector.src.robot.robot_api import ModelTypeMismatchError
+from PIL import Image
 
 from .. import __version__
 from .config.connector_model import ConnectorConfig
@@ -70,6 +74,75 @@ class GausiumConnector(Connector):
                 "connector_version": __version__,
             }
         )
+
+    @override
+    def publish_map(self, frame_id: str, is_update: bool = False) -> None:
+        """Publish a map to InOrbit. If `frame_id` is present in the maps config, it acts normal.
+        If `frame_id` is not present in the maps config, it will attempt to load the map from the
+        robot.
+        """
+        # If a map was provided by the user, publish it as normal
+        if frame_id in self.config.maps:
+            super().publish_map(frame_id, is_update)
+        # Else, attempt to load the map from the robot and publish it instead
+        else:
+            self._logger.info(
+                f"Map with frame_id {frame_id} not found in config, attempting to load from robot"
+            )
+            map_data = self.robot_api.current_map
+            # HACK(b-Tomas): Create a temporary file with .png extension to store the map image
+            # It should be possible to avoid this and work with the in-memory bytes instead
+            if map_data and map_data.map_image:
+                # Create a temporary file with .png extension to store the map image
+                fd, temp_path = tempfile.mkstemp(suffix=".png")
+                self._logger.debug(f"Created temporary file: {temp_path}")
+                # Flip the map image bytes vertically
+                # NOTE(b-Tomas): This is done in order to display the image correctly in the
+                # InOrbit platform, but can be computationally expensive
+                # TODO(b-Tomas): Find a better solution
+                # Convert the map image bytes to a PIL Image
+                try:
+                    # Create an image from the bytes
+                    image = Image.open(io.BytesIO(map_data.map_image))
+
+                    # Flip the image vertically
+                    flipped_image = image.transpose(Image.FLIP_TOP_BOTTOM)
+
+                    # Convert back to bytes
+                    img_byte_arr = io.BytesIO()
+                    flipped_image.save(img_byte_arr, format="PNG")
+                    flipped_bytes = img_byte_arr.getvalue()
+
+                    self._logger.debug("Successfully flipped map image")
+                except Exception as e:
+                    self._logger.error(f"Failed to flip map image: {e}")
+                    # If flipping fails, use the original bytes
+                    flipped_bytes = map_data.map_image
+                try:
+                    # Write the map image bytes to the temporary file
+                    with os.fdopen(fd, "wb") as tmp_file:
+                        tmp_file.write(flipped_bytes)
+
+                    # Create a new map configuration
+                    self.config.maps[frame_id] = MapConfig(
+                        file=temp_path,
+                        map_id=map_data.map_id,
+                        frame_id=frame_id,
+                        # Default values for origin and resolution
+                        # TODO: Get these from the robot
+                        origin_x=0.0,
+                        origin_y=0.0,
+                        resolution=0.05,
+                    )
+
+                    self._logger.info(f"Added map {frame_id} from robot to configuration")
+                except Exception as e:
+                    self._logger.error(f"Failed to create temporary map file: {e}")
+                    os.unlink(temp_path)  # Clean up the file in case of error
+            else:
+                self._logger.error(f"No map data available for {frame_id}")
+                return
+            self.publish_map(frame_id, is_update)
 
     def _inorbit_command_handler(self, command_name, args, options):
         """Callback method for command messages.

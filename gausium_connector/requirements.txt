@@ -10,3 +10,4 @@ ruamel.yaml>=0.18,<0.19
 pydantic>=2.6,<3.0
 pydantic-settings>=2.6,<3.0
 python-dotenv==1
+pillow==10.4.0

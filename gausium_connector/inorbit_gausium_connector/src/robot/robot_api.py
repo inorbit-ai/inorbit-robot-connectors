@@ -5,7 +5,7 @@
 import logging
 from abc import ABC, abstractmethod
 from math import radians
-from typing import List
+from typing import List, Optional
 from urllib.parse import urljoin
 from pydantic import BaseModel, HttpUrl
 from requests import Response
@@ -23,6 +23,16 @@ class ModelTypeMismatchError(Exception):
             "Make sure the `connector_type` value in the configuration matches the robot "
             "model."
         )
+
+
+class MapData(BaseModel):
+    """Data class to hold gausium map information."""
+
+    map_name: str
+    map_id: str
+    # Lazy loaded map image
+    # NOTE: Maybe not a great solution, since some maps may be quite large
+    map_image: Optional[bytes] = None
 
 
 class GausiumRobotAPI(ABC):
@@ -125,6 +135,12 @@ class GausiumRobotAPI(ABC):
         """Get the key values of the robot"""
         pass
 
+    @property
+    @abstractmethod
+    def current_map(self) -> MapData:
+        """Get the current map"""
+        pass
+
     @abstractmethod
     def send_waypoint(self, pose: dict) -> bool:
         """Example: Receives a pose and sends a request to command the robot to
@@ -134,14 +150,6 @@ class GausiumRobotAPI(ABC):
 
 class GausiumCloudAPI(GausiumRobotAPI):
     """Gausium cloud API wrapper."""
-
-    class MapData(BaseModel):
-        """Data class to hold gausium map information."""
-
-        map_name: str = None
-        map_id: str = None
-        # The map image can be fetched and stored. It is not used for now but it could be.
-        # map_image: bytes = None
 
     def __init__(
         self,
@@ -164,7 +172,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         self._key_values: dict | None = None
         self._firmware_version: str | None = None
         self._device_status: dict | None = None
-        self._current_map: GausiumCloudAPI.MapData | None = None
+        self._current_map: MapData | None = None
         self._is_initialized: bool = False
         self._allowed_model_types: List[str] = allowed_model_types
 
@@ -196,7 +204,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
             )
             self._current_map = None
         if self._current_map is None and curr_map_name and curr_map_id:
-            self._current_map = self.MapData(map_name=curr_map_name, map_id=curr_map_id)
+            self._current_map = MapData(map_name=curr_map_name, map_id=curr_map_id)
 
         # Update publishable data
         self._key_values = {
@@ -253,6 +261,17 @@ class GausiumCloudAPI(GausiumRobotAPI):
         if self._is_initialized is None:
             self.update()
         return self._is_initialized
+
+    @property
+    def current_map(self) -> MapData:
+        """Get the current map.
+        If the map is not loaded, the update() method will load it.
+        If the map image isn't loaded, it will be lazily fetched from the robot."""
+        if self._current_map is None:
+            self.update()
+        if self._current_map and self._current_map.map_image is None:
+            self._current_map.map_image = self._get_map_image(self._current_map.map_name)
+        return self._current_map
 
     # ---------- General APIs ----------#
 

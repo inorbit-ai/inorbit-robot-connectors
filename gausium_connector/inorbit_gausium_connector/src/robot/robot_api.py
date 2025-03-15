@@ -150,6 +150,11 @@ class GausiumRobotAPI(ABC):
         """Receives a pose and sends a request to command the robot to navigate to the waypoint"""
         pass
 
+    @abstractmethod
+    def localize_at(self, x: float, y: float, orientation: float) -> bool:
+        """Requests the robot to localize at the given coordinates within the same map"""
+        pass
+
 
 def flatten(dictionary, parent_key=False, separator="."):
     """
@@ -329,6 +334,14 @@ class GausiumCloudAPI(GausiumRobotAPI):
         if not map_name:
             raise Exception("No current map found to send waypoint to")
         return self._navigate_to_coordinates(map_name, x, y, orientation)
+
+    @override
+    def localize_at(self, x: float, y: float, orientation: float) -> bool:
+        """Requests the robot to localize at the given coordinates within the same map"""
+        map_name = self._current_map.map_name if self._current_map else None
+        if not map_name:
+            raise Exception("No current map found to localize at")
+        return self._initialize_at_custom_position(map_name, x, y, orientation)
 
     # ---------- General APIs ----------#
 

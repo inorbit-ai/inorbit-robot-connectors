@@ -23,6 +23,9 @@ from .. import __version__
 from .config.connector_model import ConnectorConfig
 from .robot import create_robot_api
 
+COMMAND_MESSAGE_PAUSE = "inorbit_pause"
+COMMAND_MESSAGE_RESUME = "inorbit_resume"
+
 
 class GausiumConnector(Connector):
     """Gausium connector.
@@ -222,7 +225,11 @@ class GausiumConnector(Connector):
 
         # InOrbit messages (PublishToTopic actions)
         elif command_name == COMMAND_MESSAGE:
-            return options["result_function"]("1", f"'{COMMAND_MESSAGE}' is not implemented")
+            message = args[0]
+            if message == COMMAND_MESSAGE_PAUSE:
+                self.robot_api.pause()
+            elif message == COMMAND_MESSAGE_RESUME:
+                self.robot_api.resume()
 
         else:
             return options["result_function"]("1", f"'{command_name}' is not implemented")

@@ -155,6 +155,16 @@ class GausiumRobotAPI(ABC):
         """Requests the robot to localize at the given coordinates within the same map"""
         pass
 
+    @abstractmethod
+    def pause(self) -> bool:
+        """Requests the robot to pause whatever it is doing"""
+        pass
+
+    @abstractmethod
+    def resume(self) -> bool:
+        """Requests the robot to resume whatever it was doing"""
+        pass
+
 
 def flatten(dictionary, parent_key=False, separator="."):
     """
@@ -342,6 +352,18 @@ class GausiumCloudAPI(GausiumRobotAPI):
         if not map_name:
             raise Exception("No current map found to localize at")
         return self._initialize_at_custom_position(map_name, x, y, orientation)
+
+    @override
+    def pause(self) -> bool:
+        """Requests the robot to pause whatever it is doing"""
+        # TODO(b-Tomas): Determine which pause command to use
+        raise NotImplementedError("Pause command not implemented")
+
+    @override
+    def resume(self) -> bool:
+        """Requests the robot to resume whatever it was doing"""
+        # TODO(b-Tomas): Determine which resume command to use
+        raise NotImplementedError("Resume command not implemented")
 
     # ---------- General APIs ----------#
 
@@ -588,7 +610,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
 
     def _pause_task(self) -> bool:
         """Pause the ongoing cleaning task. Suitable for pausing a task on a currently loaded map
-        or on an unloaded map
+        or on an unloaded map (v3-6-6 and higher)
 
         Returns:
             bool: True if successful, False otherwise
@@ -620,16 +642,15 @@ class GausiumCloudAPI(GausiumRobotAPI):
         return response.get("successed", False)
 
     def _resume_task_queue(self) -> bool:
-        """Resume the paused cleaning task
+        """Resume the paused cleaning task.
+
+        On v3-6-6 and higher it resumes a paused task on currently loaded map
+        On pre v3-6-6 it resumes an ongoing task queue that has been paused
 
         Returns:
             bool: True if successful, False otherwise
         """
-        if self._is_firmware_post_v3_6_6():
-            # For v3-6-6 and higher, we have multiple options
-            url = "/gs-robot/cmd/resume_task_queue"  # For tasks on currently loaded map
-        else:
-            url = "/gs-robot/cmd/resume_task_queue"
+        url = "/gs-robot/cmd/resume_task_queue"
 
         res = self._get(self._build_url(url))
         response = res.json()
@@ -637,7 +658,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
 
     def _resume_task(self) -> bool:
         """Resume the paused cleaning task. Suitable for resuming a task on a currently loaded map
-        or on an unloaded map
+        or on an unloaded map (v3-6-6 and higher)
 
         Returns:
             bool: True if successful, False otherwise

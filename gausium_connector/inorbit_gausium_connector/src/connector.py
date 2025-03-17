@@ -3,19 +3,28 @@
 # SPDX-License-Identifier: MIT
 
 import io
+import math
 import os
 import tempfile
 from typing import override
 
 from inorbit_connector.connector import Connector
 from inorbit_connector.models import MapConfig
-from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND, COMMAND_MESSAGE, COMMAND_NAV_GOAL
+from inorbit_edge.robot import (
+    COMMAND_CUSTOM_COMMAND,
+    COMMAND_INITIAL_POSE,
+    COMMAND_MESSAGE,
+    COMMAND_NAV_GOAL,
+)
 from inorbit_gausium_connector.src.robot.robot_api import ModelTypeMismatchError
 from PIL import Image
 
 from .. import __version__
 from .config.connector_model import ConnectorConfig
 from .robot import create_robot_api
+
+COMMAND_MESSAGE_PAUSE = "inorbit_pause"
+COMMAND_MESSAGE_RESUME = "inorbit_resume"
 
 
 class GausiumConnector(Connector):
@@ -160,8 +169,10 @@ class GausiumConnector(Connector):
                 - `metadata` is reserved for the future and will contains additional
                 information about the received command request.
         """
+        self._logger.info(f"Received '{command_name}'!. {args}")
+
+        # InOrbit custom commands (RunScript actions)
         if command_name == COMMAND_CUSTOM_COMMAND:
-            self._logger.info(f"Received '{command_name}'!. {args}")
             if not self.is_robot_available():
                 self._logger.error("Robot is unavailable")
                 return options["result_function"]("1", "Robot is not available")
@@ -191,16 +202,37 @@ class GausiumConnector(Connector):
             # Return '0' for success
             return options["result_function"]("0")
 
+        # Waypoint navigation
         elif command_name == COMMAND_NAV_GOAL:
-            self._logger.info(f"Received '{command_name}'!. {args}")
             pose = args[0]
-            self.robot_api.send_waypoint(pose)
+            x = float(pose["x"])
+            y = float(pose["y"])
+            orientation = math.degrees(float(pose["theta"]))
+            self.robot_api.send_waypoint(x, y, orientation)
 
+        # Pose initalization
+        elif command_name == COMMAND_INITIAL_POSE:
+            # Localize the robot within the current map
+            current_pose = self.robot_api.pose
+            pose_diff = args[0]
+            new_x = current_pose["x"] + float(pose_diff["x"])
+            new_y = current_pose["y"] + float(pose_diff["y"])
+            new_orientation = current_pose["yaw"] + float(pose_diff["theta"])
+            # Normalize the angle to be between -pi and pi
+            new_orientation = ((new_orientation + math.pi) % (2 * math.pi)) - math.pi
+            new_orientation = math.degrees(new_orientation)
+            self.robot_api.localize_at(new_x, new_y, new_orientation)
+
+        # InOrbit messages (PublishToTopic actions)
         elif command_name == COMMAND_MESSAGE:
-            return options["result_function"]("1", f"'{COMMAND_MESSAGE}' is not implemented")
+            message = args[0]
+            if message == COMMAND_MESSAGE_PAUSE:
+                self.robot_api.pause()
+            elif message == COMMAND_MESSAGE_RESUME:
+                self.robot_api.resume()
 
         else:
-            self._logger.info(f"Received '{command_name}'!. {args}")
+            return options["result_function"]("1", f"'{command_name}' is not implemented")
 
     def is_robot_available(self) -> bool:
         """Check if the robot is available for receiving commands.

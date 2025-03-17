@@ -2,11 +2,13 @@
 #
 # SPDX-License-Identifier: MIT
 
+import math
 from unittest.mock import call
 from unittest.mock import MagicMock
 from unittest.mock import Mock
 import logging
 
+from inorbit_edge.commands import COMMAND_INITIAL_POSE
 import pytest
 from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND
 from inorbit_edge.robot import COMMAND_MESSAGE
@@ -228,7 +230,9 @@ class TestGausiumConnector:
     def test_command_callback_unknown_command(self, connector, callback_kwargs):
         callback_kwargs["command_name"] = "unknown"
         connector._inorbit_command_handler(**callback_kwargs)
-        assert not callback_kwargs["options"]["result_function"].called
+        callback_kwargs["options"]["result_function"].assert_called_with(
+            "1", "'unknown' is not implemented"
+        )
         callback_kwargs["command_name"] = "customCommand"
         callback_kwargs["args"] = ["unknown_command", ["arg1", "arg2"]]
         connector._inorbit_command_handler(**callback_kwargs)
@@ -238,9 +242,23 @@ class TestGausiumConnector:
         callback_kwargs["command_name"] = COMMAND_NAV_GOAL
         callback_kwargs["args"] = [{"x": "1", "y": "2", "theta": "3.14"}]
         connector._inorbit_command_handler(**callback_kwargs)
-        assert connector.robot_api.send_waypoint.call_args_list == [
-            call({"x": "1", "y": "2", "theta": "3.14"})
-        ]
+        assert connector.robot_api.send_waypoint.call_args_list == [call(1, 2, math.degrees(3.14))]
+
+    def test_command_callback_initial_pose(self, connector, callback_kwargs):
+        callback_kwargs["command_name"] = COMMAND_INITIAL_POSE
+        callback_kwargs["args"] = [{"x": "1", "y": "2", "theta": "3.1415"}]
+        connector.robot_api.pose = {"x": 0, "y": 0, "yaw": 0}
+        connector._inorbit_command_handler(**callback_kwargs)
+        assert connector.robot_api.localize_at.call_args_list[0].args[0] == 1
+        assert connector.robot_api.localize_at.call_args_list[0].args[1] == 2
+        assert abs(connector.robot_api.localize_at.call_args_list[0].args[2] - 180) < 0.1
+        connector.robot_api.localize_at.reset_mock()
+        callback_kwargs["args"] = [{"x": "1", "y": "2", "theta": "3.1415"}]
+        connector.robot_api.pose = {"x": 1, "y": 2, "yaw": 3.1415}
+        connector._inorbit_command_handler(**callback_kwargs)
+        assert connector.robot_api.localize_at.call_args_list[0].args[0] == 2
+        assert connector.robot_api.localize_at.call_args_list[0].args[1] == 4
+        assert abs(connector.robot_api.localize_at.call_args_list[0].args[2]) < 0.1
 
     @pytest.mark.skip(reason="Custom commands not yet implemented")
     def test_command_callback_inorbit_messages(self, connector, callback_kwargs):

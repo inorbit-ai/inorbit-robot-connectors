@@ -351,6 +351,23 @@ class TestGausiumConnector:
             "test_map", "vacuum_zone_2", "Custom Task", True, 3
         )
 
+    def test_command_callback_send_to_named_waypoint(self, connector, callback_kwargs):
+        callback_kwargs["command_name"] = COMMAND_CUSTOM_COMMAND
+        callback_kwargs["args"] = ["send_to_named_waypoint", ["position_name", "waypoint_1"]]
+        connector._inorbit_command_handler(**callback_kwargs)
+        callback_kwargs["options"]["result_function"].assert_called_with("0")
+        connector.robot_api.send_to_named_waypoint.assert_called_once_with("waypoint_1", None)
+        connector.robot_api.send_to_named_waypoint.reset_mock()
+
+        # Test with map name
+        callback_kwargs["args"] = [
+            "send_to_named_waypoint",
+            ["position_name", "waypoint_1", "map_name", "test_map"],
+        ]
+        connector._inorbit_command_handler(**callback_kwargs)
+        callback_kwargs["options"]["result_function"].assert_called_with("0")
+        connector.robot_api.send_to_named_waypoint.assert_called_once_with("waypoint_1", "test_map")
+
     def test_execution_loop(self, connector, robot_info, current_position_data, device_status_data):
         # Setup mock return values based on fixtures
         connector.robot_api.pose = {

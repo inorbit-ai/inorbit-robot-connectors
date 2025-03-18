@@ -170,6 +170,11 @@ class GausiumRobotAPI(ABC):
         """Starts the cleaning task"""
         pass
 
+    @abstractmethod
+    def send_to_named_waypoint(self, **kwargs) -> bool:
+        """Sends the robot to a named waypoint"""
+        pass
+
 
 def flatten(dictionary, parent_key=False, separator="."):
     """
@@ -392,11 +397,29 @@ class GausiumCloudAPI(GausiumRobotAPI):
         Returns:
             bool: True if successful, False otherwise
         """
-        if map_name is None:
-            map_name = self._current_map.map_name if self._current_map else None
-        if map_name is None:
-            raise Exception("No current map found to start cleaning task")
+        map_name = map_name if map_name else self._get_current_map_or_raise().map_name
         return self._start_cleaning_task(map_name, path_name, task_name, loop, loop_count)
+
+    @override
+    def send_to_named_waypoint(self, position_name: str, map_name: str | None = None) -> bool:
+        """Sends the robot to a named waypoint.
+
+        Args:
+            position_name (str): Name of the waypoint to send the robot to
+            map_name (str | None, optional): Name of the map to send the robot to.
+                Defaults to the current map.
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        map_name = map_name if map_name else self._get_current_map_or_raise().map_name
+        return self._navigate_to_named_waypoint(map_name, position_name)
+
+    def _get_current_map_or_raise(self) -> MapData:
+        """Get the current map or raise an exception if it's not set"""
+        if self._current_map is None:
+            raise Exception("No current map found")
+        return self._current_map
 
     # ---------- General APIs ----------#
 
@@ -751,7 +774,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
     # ---------- Navigation Task APIs ----------#
 
     def _navigate_to_named_waypoint(self, map_name: str, position_name: str) -> bool:
-        """Implementation of send_waypoint that handles robot API calls
+        """Implementation of send_to_named_waypoint that handles robot API calls
 
         Args:
             map_name (str): Name of the map
@@ -828,21 +851,6 @@ class GausiumCloudAPI(GausiumRobotAPI):
         res = self._post(self._build_url(url), json=payload)
         response = res.json()
         return response.get("successed", False)
-
-    def _send_to_dock(self, map_name: str, dock_position_name: str = "Dock") -> bool:
-        """Send the robot to the docking station
-
-        Args:
-            map_name (str): Name of the map
-            dock_position_name (str, optional): Name of the docking station waypoint.
-                Defaults to "Dock".
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        return self._navigate_to_named_waypoint(
-            {"map_name": map_name, "position_name": dock_position_name}
-        )
 
     def _pause_navigation_task(self) -> bool:
         """Pause the ongoing navigation task

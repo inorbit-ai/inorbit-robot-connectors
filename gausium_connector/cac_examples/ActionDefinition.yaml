@@ -96,3 +96,49 @@ spec:
   confirmation:
     required: true
   lock: false
+---
+# Send the robot to a named waypoint
+# This could be a dock, in which case the robot will automatically dock
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+    id: dock
+    scope: tag/<account_id>/<tag_id>
+spec:
+  label: Dock
+  group: Gausium actions
+  type: RunScript
+  arguments:
+    - name: filename
+      type: string
+      value: send_to_named_waypoint
+    - name: position_name
+      type: string
+      value: dock_position_name
+  confirmation:
+    required: true
+  lock: false
+---
+# Send the robot to a named waypoint controlling all available arguments
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+    id: send-to-named-waypoint
+    scope: tag/<account_id>/<tag_id>
+spec:
+  label: Send to named waypoint
+  group: Gausium actions
+  type: RunScript
+  arguments:
+    - name: filename
+      type: string
+      value: send_to_named_waypoint
+    - name: position_name
+      type: string
+      value: position_name
+    - name: map_name
+      type: string
+      value: map_name
+  confirmation:
+    required: true
+  lock: false

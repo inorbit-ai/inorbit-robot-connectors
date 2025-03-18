@@ -29,6 +29,7 @@ class CustomScripts(Enum):
     """Supported InOrbit CustomScript actions"""
 
     START_CLEANING_TASK = "start_cleaning_task"
+    SEND_TO_NAMED_WAYPOINT = "send_to_named_waypoint"
 
 
 class CommandMessages(Enum):
@@ -226,6 +227,12 @@ class GausiumConnector(Connector):
                 # Name of the task
                 task_name = script_args.get("task_name", "InOrbit cleaning task action")
                 self.robot_api.start_cleaning_task(map_name, path_name, task_name, loop, loop_count)
+            elif script_name == CustomScripts.SEND_TO_NAMED_WAYPOINT.value:
+                # The most important argument
+                position_name = script_args.get("position_name")
+                # Defaults to the current map
+                map_name = script_args.get("map_name")
+                self.robot_api.send_to_named_waypoint(position_name, map_name)
             else:
                 return options["result_function"](
                     "1", f"Custom command '{script_name}' is not implemented"

@@ -36,6 +36,18 @@ To run the lint and unit tests for a specific Python version, run:
 tox -e py310
 ```
 
+To check for REUSE compliance, run:
+
+```bash
+reuse --root . lint
+```
+
+And to fix REUSE compliance issues, run:
+
+```bash
+reuse annotate --copyright "InOrbit, Inc." --license "MIT" --recursive . --skip-unrecognised
+```
+
 ## Version Bump
 
 > [!NOTE]

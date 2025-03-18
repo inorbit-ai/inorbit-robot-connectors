@@ -165,6 +165,11 @@ class GausiumRobotAPI(ABC):
         """Requests the robot to resume whatever it was doing"""
         pass
 
+    @abstractmethod
+    def start_cleaning_task(self, **kwargs) -> bool:
+        """Starts the cleaning task"""
+        pass
+
 
 def flatten(dictionary, parent_key=False, separator="."):
     """
@@ -364,6 +369,34 @@ class GausiumCloudAPI(GausiumRobotAPI):
         """Requests the robot to resume whatever it was doing"""
         # TODO(b-Tomas): Determine which resume command to use
         raise NotImplementedError("Resume command not implemented")
+
+    @override
+    def start_cleaning_task(
+        self,
+        path_name: str,
+        task_name: str = "",
+        map_name: str | None = None,
+        loop: bool = False,
+        loop_count: int = 0,
+    ) -> bool:
+        """Starts the cleaning task.
+
+        Args:
+            path_name (str): Name of the path to start the cleaning task on
+            task_name (str, optional): Name of the task. Defaults to "".
+            map_name (str | None, optional): Name of the map to start the cleaning task on.
+                Defaults to the current map.
+            loop (bool, optional): Whether to loop the task. Defaults to False.
+            loop_count (int, optional): Number of loops. Defaults to 0.
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if map_name is None:
+            map_name = self._current_map.map_name if self._current_map else None
+        if map_name is None:
+            raise Exception("No current map found to start cleaning task")
+        return self._start_cleaning_task(map_name, path_name, task_name, loop, loop_count)
 
     # ---------- General APIs ----------#
 

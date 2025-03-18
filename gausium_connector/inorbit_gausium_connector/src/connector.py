@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
+from enum import Enum
 import io
 import math
 import os
@@ -23,8 +24,18 @@ from .. import __version__
 from .config.connector_model import ConnectorConfig
 from .robot import create_robot_api
 
-COMMAND_MESSAGE_PAUSE = "inorbit_pause"
-COMMAND_MESSAGE_RESUME = "inorbit_resume"
+
+class CustomScripts(Enum):
+    """Supported InOrbit CustomScript actions"""
+
+    START_CLEANING_TASK = "start_cleaning_task"
+
+
+class CommandMessages(Enum):
+    """Supported InOrbit PublishToTopic actions"""
+
+    PAUSE = "inorbit_pause"
+    RESUME = "inorbit_resume"
 
 
 class GausiumConnector(Connector):
@@ -184,7 +195,7 @@ class GausiumConnector(Connector):
                 return options["result_function"]("1", "Robot is not available")
 
             # Parse command name and arguments
-            # script_name = args[0]
+            script_name = args[0]
             args_raw = list(args[1])
             script_args = {}
             if (
@@ -197,13 +208,28 @@ class GausiumConnector(Connector):
             else:
                 return options["result_function"]("1", "Invalid arguments")
 
-            # if script_name == ...:
-            #     pass
-            # else:
-            #     # Other kind if custom commands may be handled by the edge-sdk (e.g. user_scripts)
-            #     # and not by the connector code itself
-            #     # Do not return any result and leave it to the edge-sdk to handle it
-            #     return
+            # If the command to run is a script (or anything with a dot), ignore it and let the
+            # edge-sdk run it. If the script doesn't exist or can't be run, the edge-sdk will
+            # handle the errors.
+            if "." in script_name:
+                return
+
+            if script_name == CustomScripts.START_CLEANING_TASK.value:
+                # The most important argument
+                path_name = script_args.get("path_name")
+                # Defaults to the current map. Usually not needed
+                map_name = script_args.get("map_name")
+                # Whether to loop the task. Defaults to False
+                loop = script_args.get("loop", False)
+                # Number of loops. Defaults to 0
+                loop_count = script_args.get("loop_count", 0)
+                # Name of the task
+                task_name = script_args.get("task_name", "InOrbit cleaning task action")
+                self.robot_api.start_cleaning_task(map_name, path_name, task_name, loop, loop_count)
+            else:
+                return options["result_function"](
+                    "1", f"Custom command '{script_name}' is not implemented"
+                )
 
             # Return '0' for success
             return options["result_function"]("0")
@@ -232,10 +258,12 @@ class GausiumConnector(Connector):
         # InOrbit messages (PublishToTopic actions)
         elif command_name == COMMAND_MESSAGE:
             message = args[0]
-            if message == COMMAND_MESSAGE_PAUSE:
+            if message == CommandMessages.PAUSE.value:
                 self.robot_api.pause()
-            elif message == COMMAND_MESSAGE_RESUME:
+            elif message == CommandMessages.RESUME.value:
                 self.robot_api.resume()
+            else:
+                return options["result_function"]("1", f"Message '{message}' is not implemented")
 
         else:
             return options["result_function"]("1", f"'{command_name}' is not implemented")

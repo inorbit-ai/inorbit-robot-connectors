@@ -227,16 +227,39 @@ class TestGausiumConnector:
             },
         }
 
-    def test_command_callback_unknown_command(self, connector, callback_kwargs):
-        callback_kwargs["command_name"] = "unknown"
+    def test_command_callback_unknown_commands(self, connector, callback_kwargs, monkeypatch):
+        # Unknown command
+        callback_kwargs["command_name"] = "unknown_command"
         connector._inorbit_command_handler(**callback_kwargs)
         callback_kwargs["options"]["result_function"].assert_called_with(
-            "1", "'unknown' is not implemented"
+            "1", "'unknown_command' is not implemented"
         )
+
+        # Unknown customCommand command
+        callback_kwargs["options"]["result_function"].reset_mock()
         callback_kwargs["command_name"] = "customCommand"
-        callback_kwargs["args"] = ["unknown_command", ["arg1", "arg2"]]
+        callback_kwargs["args"] = ["unknown_custom_command", ["arg1", "arg2"]]
         connector._inorbit_command_handler(**callback_kwargs)
-        callback_kwargs["options"]["result_function"].assert_called_with("0")
+        callback_kwargs["options"]["result_function"].assert_called_with(
+            "1", "Custom command 'unknown_custom_command' is not implemented"
+        )
+
+        # Unknown message command
+        callback_kwargs["options"]["result_function"].reset_mock()
+        callback_kwargs["command_name"] = "message"
+        callback_kwargs["args"] = ["unknown_message", ["arg1", "arg2"]]
+        connector._inorbit_command_handler(**callback_kwargs)
+        callback_kwargs["options"]["result_function"].assert_called_with(
+            "1", "Message 'unknown_message' is not implemented"
+        )
+
+        # Script command
+        callback_kwargs["options"]["result_function"].reset_mock()
+        callback_kwargs["command_name"] = "customCommand"
+        callback_kwargs["args"] = ["script.sh", ["arg1", "arg2"]]
+        # The connector should let the edge-sdk handle this
+        connector._inorbit_command_handler(**callback_kwargs)
+        assert not callback_kwargs["options"]["result_function"].called
 
     def test_command_callback_nav_goal(self, connector, callback_kwargs):
         callback_kwargs["command_name"] = COMMAND_NAV_GOAL
@@ -274,11 +297,6 @@ class TestGausiumConnector:
     def test_command_callback_custom_command(self, connector, callback_kwargs):
         callback_kwargs["command_name"] = COMMAND_CUSTOM_COMMAND
 
-        # Test with valid arguments
-        callback_kwargs["args"] = ["script_name", ["param1", "value1", "param2", "value2"]]
-        connector._inorbit_command_handler(**callback_kwargs)
-        callback_kwargs["options"]["result_function"].assert_called_with("0")
-
         # Test with invalid arguments
         callback_kwargs["args"] = ["script_name", ["not_even_key_value_pairs"]]
         connector._inorbit_command_handler(**callback_kwargs)
@@ -291,6 +309,46 @@ class TestGausiumConnector:
         connector._inorbit_command_handler(**callback_kwargs)
         callback_kwargs["options"]["result_function"].assert_called_with(
             "1", "Robot is not available"
+        )
+
+    def test_command_callback_start_cleaning_task(self, connector, callback_kwargs):
+        callback_kwargs["command_name"] = COMMAND_CUSTOM_COMMAND
+        callback_kwargs["args"] = ["start_cleaning_task", ["path_name", "vacuum_zone_1"]]
+        connector._inorbit_command_handler(**callback_kwargs)
+        # Verify the result function was called with success code
+        callback_kwargs["options"]["result_function"].assert_called_with("0")
+        # Verify the robot API method was called with the correct parameters
+        connector.robot_api.start_cleaning_task.assert_called_once_with(
+            None,  # map_name (defaults to None/current map)
+            "vacuum_zone_1",  # path_name
+            "InOrbit cleaning task action",  # task_name (default)
+            False,  # loop (default)
+            0,  # loop_count (default)
+        )
+
+        # Reset the mock
+        connector.robot_api.start_cleaning_task.reset_mock()
+
+        # Test with additional parameters
+        callback_kwargs["args"] = [
+            "start_cleaning_task",
+            [
+                "path_name",
+                "vacuum_zone_2",
+                "map_name",
+                "test_map",
+                "task_name",
+                "Custom Task",
+                "loop",
+                True,
+                "loop_count",
+                3,
+            ],
+        ]
+        connector._inorbit_command_handler(**callback_kwargs)
+        callback_kwargs["options"]["result_function"].assert_called_with("0")
+        connector.robot_api.start_cleaning_task.assert_called_once_with(
+            "test_map", "vacuum_zone_2", "Custom Task", True, 3
         )
 
     def test_execution_loop(self, connector, robot_info, current_position_data, device_status_data):

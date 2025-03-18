@@ -336,9 +336,11 @@ class TestGausiumConnector:
         assert (
             connector._robot_session.publish_odometry.call_count == 1
         )  # Still just the one call from before
-        assert (
-            connector._robot_session.publish_key_values.call_count == 1
-        )  # Still just the one call from before
+        connector._robot_session.publish_key_values.assert_called_with(
+            {
+                "robot_available": False,
+            }
+        )
 
     def test_is_robot_available(self, connector):
         # Test with robot available

@@ -15,7 +15,7 @@ Build the Docker image:
 Run the Docker container:
 ```sh
 docker run -d --name ${ROBOT_ID}_connector \
-    -v $(pwd)/config/config.yaml:/config/config.yaml \
+    -v $(pwd)/config/config.yaml:/config/fleet.yaml \
     --env-file $(pwd)/config/.env \
     -e ROBOT_ID=$ROBOT_ID \
     gausium_connector

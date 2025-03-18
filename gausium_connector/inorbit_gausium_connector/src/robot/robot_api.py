@@ -266,8 +266,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         self._pose = {
             "x": position_data.get("worldPosition", {}).get("position", {}).get("x"),
             "y": position_data.get("worldPosition", {}).get("position", {}).get("y"),
-            # Extract the yaw from the orientation quaternion
-            "yaw": radians(position_data.get("worldPosition", {}).get("orientation", {}).get("z")),
+            "yaw": radians(position_data.get("angle")),
             "frame_id": self._current_map.map_name if self._current_map else "map",
         }
         self._odometry = {}  # TODO: Get the odometry data
@@ -500,14 +499,6 @@ class GausiumCloudAPI(GausiumRobotAPI):
         if success:
             self._is_initialized = True
         return success
-
-    def _get_current_position(self) -> dict:
-        """Get the current position of the robot
-
-        Returns:
-            dict: The current position data
-        """
-        return self._fetch_position()
 
     # ---------- Map Data APIs ----------#
 

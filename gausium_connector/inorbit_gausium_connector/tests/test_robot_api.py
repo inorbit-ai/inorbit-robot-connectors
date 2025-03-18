@@ -66,9 +66,7 @@ class TestGausiumCloudAPIUpdate:
             assert (
                 mock_robot_api._pose["y"] == current_position_data["worldPosition"]["position"]["y"]
             )
-            assert mock_robot_api._pose["yaw"] == radians(
-                current_position_data["worldPosition"]["orientation"]["z"]
-            )
+            assert mock_robot_api._pose["yaw"] == radians(current_position_data["angle"])
             # The frame_id should be the map name from the device status
             expected_frame_id = device_status_data["data"]["currentMapName"]
             assert mock_robot_api._pose["frame_id"] == expected_frame_id

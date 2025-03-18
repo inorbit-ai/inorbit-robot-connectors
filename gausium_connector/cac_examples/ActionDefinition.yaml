@@ -1,0 +1,98 @@
+# SPDX-FileCopyrightText: 2025 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
+# This file defines example actions that trigger specific behavior on the robot.
+# It is recommended to apply them on a hardware tag scope.
+
+# For InOrbit Actions documentation, see:
+# https://developer.inorbit.ai/docs#configuring-action-definitions
+
+# Run a cleaning task on the current map
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+    id: clean-zone-1
+    scope: tag/<account_id>/<tag_id>
+spec:
+  label: Clean zone 1
+  group: Gausium actions
+  type: RunScript
+  arguments:
+    - name: filename
+      type: string
+      value: start_cleaning_task
+    - name: path_name
+      type: string
+      value: cleaning_zone_1
+  confirmation:
+    required: true
+  lock: false
+  # Example condition to allow the action to be executed only on specific robots
+  condition:
+    rules:
+    - collections:
+      - <tag_id of the gausium hardware>
+      - <tag_id of the map to clean>
+---
+# Run a cleaning task on a path selected by the user
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+    id: clean-zone-custom
+    scope: tag/<account_id>/<tag_id>
+spec:
+  label: Clean zone custom
+  group: Gausium actions
+  type: RunScript
+  arguments:
+    - name: filename
+      type: string
+      value: start_cleaning_task
+    - name: path_name
+      type: string
+      input:
+        control: select
+        values:
+          - cleaning_zone_1
+          - cleaning_zone_2
+  confirmation:
+    required: true
+  lock: false
+---
+# Run a cleaning task controlling all available arguments
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+    id: clean-zone-2
+    scope: tag/<account_id>/<tag_id>
+spec:
+  label: Clean zone 2
+  group: Gausium actions
+  type: RunScript
+  arguments:
+    - name: filename
+      type: string
+      value: start_cleaning_task
+    - name: path_name
+      type: string
+      value: path_name
+    # Defaults to the current map
+    - name: map_name
+      type: string
+      value: map_name
+    # Defaults to False
+    - name: loop
+      type: boolean
+      value: true
+    # Defaults to 0
+    - name: loop_count
+      type: number
+      value: 1
+    # Defaults to "InOrbit cleaning task action"
+    - name: task_name
+      type: string
+      value: task_name
+  confirmation:
+    required: true
+  lock: false

@@ -73,6 +73,11 @@ class GausiumConnector(Connector):
             raise ex
         except Exception as ex:
             self._logger.error(f"Failed to refresh robot data: {ex}")
+            self._robot_session.publish_key_values(
+                {
+                    "robot_available": False,
+                }
+            )
             return
 
         self.publish_pose(**self.robot_api.pose)
@@ -81,6 +86,7 @@ class GausiumConnector(Connector):
             {
                 **self.robot_api.key_values,
                 "connector_version": __version__,
+                "robot_available": self.is_robot_available(),
             }
         )
 

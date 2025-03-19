@@ -5,6 +5,10 @@
 # This is an example of a RobotFootprint resource, defining the shape of the avatar displayed in
 # navigation widgets.
 # It is recommended to apply it on a hardware tag scope.
+
+# For InOrbit RobotFootprint documentation, see:
+# https://developer.inorbit.ai/docs#configuring-robot-footprint
+
 apiVersion: v0.1
 kind: RobotFootprint
 metadata:

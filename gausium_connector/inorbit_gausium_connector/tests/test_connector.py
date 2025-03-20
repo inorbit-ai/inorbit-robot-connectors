@@ -414,6 +414,7 @@ class TestGausiumConnector:
         connector._robot_session.publish_key_values.assert_called_with(
             {
                 "robot_available": False,
+                "connector_last_error": "Test exception",
             }
         )
 

@@ -79,37 +79,45 @@ class GausiumRobotAPI(ABC):
             self.logger.error(f"Error making request: {e}\nArguments: {request_args}")
             raise e
 
-    def _get(self, url: str, session: Session = None, **kwargs) -> Response:
+    def _get(
+        self, url: str, session: Session = None, timeout: int | None = None, **kwargs
+    ) -> Response:
         """Perform a GET request."""
         self.logger.debug(f"GETting {url}: {kwargs}")
         session = session or self.api_session
-        res = session.get(url, timeout=self.api_req_timeout, **kwargs)
+        res = session.get(url, timeout=timeout or self.api_req_timeout, **kwargs)
         self._handle_status(res, kwargs)
         return res
 
-    def _post(self, url: str, session: Session = None, **kwargs) -> Response:
+    def _post(
+        self, url: str, session: Session = None, timeout: int | None = None, **kwargs
+    ) -> Response:
         """Perform a POST request."""
         self.logger.debug(f"POSTing {url}: {kwargs}")
         session = session or self.api_session
-        res = session.post(url, timeout=self.api_req_timeout, **kwargs)
+        res = session.post(url, timeout=timeout or self.api_req_timeout, **kwargs)
         self.logger.debug(f"Response: {res}")
         self._handle_status(res, kwargs)
         return res
 
-    def _delete(self, url: str, session: Session = None, **kwargs) -> Response:
+    def _delete(
+        self, url: str, session: Session = None, timeout: int | None = None, **kwargs
+    ) -> Response:
         """Perform a DELETE request."""
         self.logger.debug(f"DELETEing {url}: {kwargs}")
         session = session or self.api_session
-        res = session.delete(url, timeout=self.api_req_timeout, **kwargs)
+        res = session.delete(url, timeout=timeout or self.api_req_timeout, **kwargs)
         self.logger.debug(f"Response: {res}")
         self._handle_status(res, kwargs)
         return res
 
-    def _put(self, url: str, session: Session = None, **kwargs) -> Response:
+    def _put(
+        self, url: str, session: Session = None, timeout: int | None = None, **kwargs
+    ) -> Response:
         """Perform a PUT request."""
         self.logger.debug(f"PUTing {url}: {kwargs}")
         session = session or self.api_session
-        res = session.put(url, timeout=self.api_req_timeout, **kwargs)
+        res = session.put(url, timeout=timeout or self.api_req_timeout, **kwargs)
         self.logger.debug(f"Response: {res}")
         self._handle_status(res, kwargs)
         return res
@@ -588,7 +596,9 @@ class GausiumCloudAPI(GausiumRobotAPI):
             bytes: PNG image data of the map
         """
         url = f"/gs-robot/data/map_png?map_name={map_name}"
-        res = self._get(self._build_url(url))
+        # NOTE(b-Tomas): The map image is a large file and may take a while to download
+        # so we increase the timeout to 20 seconds
+        res = self._get(self._build_url(url), timeout=max(self.api_req_timeout, 20))
         return res.content
 
     def _get_waypoint_coordinates(self, map_name: str, path_name: str) -> dict:

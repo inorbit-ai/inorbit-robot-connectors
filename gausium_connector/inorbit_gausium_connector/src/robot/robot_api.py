@@ -46,6 +46,7 @@ class GausiumRobotAPI(ABC):
         self,
         base_url: HttpUrl,
         loglevel: str = "INFO",
+        api_req_timeout: int = 10,
     ):
         """Initializes the connection with the Gausium Phantas robot
 
@@ -60,6 +61,7 @@ class GausiumRobotAPI(ABC):
         # Useful for estimating the state of the Connector <> APIs link
         self._last_call_successful: bool | None = None
         self.api_session = Session()
+        self.api_req_timeout = api_req_timeout
 
     @property
     def last_call_successful(self) -> bool:
@@ -77,37 +79,45 @@ class GausiumRobotAPI(ABC):
             self.logger.error(f"Error making request: {e}\nArguments: {request_args}")
             raise e
 
-    def _get(self, url: str, session: Session = None, **kwargs) -> Response:
+    def _get(
+        self, url: str, session: Session = None, timeout: int | None = None, **kwargs
+    ) -> Response:
         """Perform a GET request."""
         self.logger.debug(f"GETting {url}: {kwargs}")
         session = session or self.api_session
-        res = session.get(url, **kwargs)
+        res = session.get(url, timeout=timeout or self.api_req_timeout, **kwargs)
         self._handle_status(res, kwargs)
         return res
 
-    def _post(self, url: str, session: Session = None, **kwargs) -> Response:
+    def _post(
+        self, url: str, session: Session = None, timeout: int | None = None, **kwargs
+    ) -> Response:
         """Perform a POST request."""
         self.logger.debug(f"POSTing {url}: {kwargs}")
         session = session or self.api_session
-        res = session.post(url, **kwargs)
+        res = session.post(url, timeout=timeout or self.api_req_timeout, **kwargs)
         self.logger.debug(f"Response: {res}")
         self._handle_status(res, kwargs)
         return res
 
-    def _delete(self, url: str, session: Session = None, **kwargs) -> Response:
+    def _delete(
+        self, url: str, session: Session = None, timeout: int | None = None, **kwargs
+    ) -> Response:
         """Perform a DELETE request."""
         self.logger.debug(f"DELETEing {url}: {kwargs}")
         session = session or self.api_session
-        res = session.delete(url, **kwargs)
+        res = session.delete(url, timeout=timeout or self.api_req_timeout, **kwargs)
         self.logger.debug(f"Response: {res}")
         self._handle_status(res, kwargs)
         return res
 
-    def _put(self, url: str, session: Session = None, **kwargs) -> Response:
+    def _put(
+        self, url: str, session: Session = None, timeout: int | None = None, **kwargs
+    ) -> Response:
         """Perform a PUT request."""
         self.logger.debug(f"PUTing {url}: {kwargs}")
         session = session or self.api_session
-        res = session.put(url, **kwargs)
+        res = session.put(url, timeout=timeout or self.api_req_timeout, **kwargs)
         self.logger.debug(f"Response: {res}")
         self._handle_status(res, kwargs)
         return res
@@ -238,7 +248,6 @@ class GausiumCloudAPI(GausiumRobotAPI):
         robot_info = self._get_robot_info().get("data", {})
         device_data = self._get_device_status().get("data", {})
         position_data = self._fetch_position()
-
         # Validate the model type of the robot and the API wrapper in use match
         model_type = robot_info.get("modelType")
         if self._allowed_model_types and model_type not in self._allowed_model_types:
@@ -587,7 +596,9 @@ class GausiumCloudAPI(GausiumRobotAPI):
             bytes: PNG image data of the map
         """
         url = f"/gs-robot/data/map_png?map_name={map_name}"
-        res = self._get(self._build_url(url))
+        # NOTE(b-Tomas): The map image is a large file and may take a while to download
+        # so we increase the timeout to 20 seconds
+        res = self._get(self._build_url(url), timeout=max(self.api_req_timeout, 20))
         return res.content
 
     def _get_waypoint_coordinates(self, map_name: str, path_name: str) -> dict:

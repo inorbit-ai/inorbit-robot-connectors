@@ -88,6 +88,7 @@ class GausiumConnector(Connector):
             self._robot_session.publish_key_values(
                 {
                     "robot_available": False,
+                    "connector_last_error": str(ex),
                 }
             )
             return
@@ -116,7 +117,11 @@ class GausiumConnector(Connector):
             self._logger.info(
                 f"Map with frame_id {frame_id} not found in config, attempting to load from robot"
             )
-            map_data = self.robot_api.current_map
+            try:
+                map_data = self.robot_api.current_map
+            except Exception as ex:
+                self._logger.error(f"Failed to load map from robot: {ex}")
+                return
             # HACK(b-Tomas): Create a temporary file with .png extension to store the map image
             # It should be possible to avoid this and work with the in-memory bytes instead
             if map_data and map_data.map_image:

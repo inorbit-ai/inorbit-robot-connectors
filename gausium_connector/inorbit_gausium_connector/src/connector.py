@@ -88,6 +88,7 @@ class GausiumConnector(Connector):
             self._robot_session.publish_key_values(
                 {
                     "robot_available": False,
+                    "connector_last_error": str(ex),
                 }
             )
             return

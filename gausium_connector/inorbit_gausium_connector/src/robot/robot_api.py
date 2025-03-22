@@ -361,7 +361,11 @@ class GausiumCloudAPI(GausiumRobotAPI):
         map_name = self._current_map.map_name if self._current_map else None
         if not map_name:
             raise Exception("No current map found to send waypoint to")
-        return self._navigate_to_coordinates(map_name, x, y, orientation)
+        grid_x, grid_y = self._coordinate_to_grid_units(x, y)
+        self.logger.debug(f"Converted {x}, {y} coordinates to grid units: {grid_x}, {grid_y}")
+        return self._success_or_raise(
+            self._navigate_to_coordinates(map_name, grid_x, grid_y, orientation)
+        )
 
     @override
     def localize_at(self, x: float, y: float, orientation: float) -> bool:
@@ -429,6 +433,32 @@ class GausiumCloudAPI(GausiumRobotAPI):
             raise Exception("No current map found")
         return self._current_map
 
+    def _success_or_raise(self, response: dict) -> bool:
+        """Check if a Gaussian Cloud API call was successful or raise an exception that shows the
+        error message.
+
+        Args:
+            response (dict): The response from the API call. Note it should be a successful
+                response (200 code).
+
+        Returns:
+            bool: True if the API call was successful, raises an exception otherwise
+        """
+        if response.get("successed", False):
+            return response
+        else:
+            error_code = response.get("errorCode")
+            error_msg = response.get("msg")
+            data = response.get("data")
+            human_readable_err = "API call failed"
+            if error_code:
+                human_readable_err += f" with error code {error_code}"
+            if error_msg:
+                human_readable_err += f": {error_msg}"
+            if data:
+                human_readable_err += f", data: {data}"
+            raise Exception(human_readable_err)
+
     # ---------- General APIs ----------#
 
     def _get_robot_info(self) -> dict:
@@ -446,7 +476,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         Returns:
             str: Firmware version string
         """
-        info = self._get_robot_info()
+        info = self._success_or_raise(self._get_robot_info())
         version = info.get("data", {}).get("softwareVersion", "")
         return version
 
@@ -501,7 +531,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         success = response.get("successed", False)
         if success:
             self._is_initialized = False  # Map changed, robot needs to be initialized again
-        return success
+        return response
 
     def _initialize_at_point(
         self, map_name: str, init_point_name: str, with_rotation: bool = True
@@ -536,7 +566,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         success = response.get("successed", False)
         if success:
             self._is_initialized = True
-        return success
+        return self._success_or_raise(response)
 
     def _initialize_at_custom_position(
         self, map_name: str, x: int, y: int, angle: float = 0.0
@@ -563,7 +593,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         success = response.get("successed", False)
         if success:
             self._is_initialized = True
-        return success
+        return self._success_or_raise(response)
 
     # ---------- Map Data APIs ----------#
 
@@ -579,12 +609,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         url = f"/gs-robot/data/task_queues?map_name={map_name}"
         res = self._get(self._build_url(url))
         response = res.json()
-
-        if response.get("successed", False):
-            return response.get("data", [])
-        else:
-            self.logger.error(f"Failed to get task queues: {response.get('msg')}")
-            return []
+        return self._success_or_raise(response)
 
     def _get_map_image(self, map_name: str) -> bytes:
         """Get the image of the specified map
@@ -853,6 +878,25 @@ class GausiumCloudAPI(GausiumRobotAPI):
         res = self._post(self._build_url(url), json=payload)
         response = res.json()
         return response.get("successed", False)
+
+    def _coordinate_to_grid_units(self, x: float, y: float) -> tuple[int, int]:
+        """Convert coordinates to grid units of the current map
+
+        Args:
+            x (float): X coordinate in meters
+            y (float): Y coordinate in meters
+
+        Returns:
+            tuple[int, int]: Grid units of the current map
+        """
+        map_data = self._get_current_map_or_raise()
+        resolution = map_data.resolution
+        origin_x = map_data.origin_x
+        origin_y = map_data.origin_y
+
+        grid_x = int((x - origin_x) / resolution)
+        grid_y = int((y - origin_y) / resolution)
+        return grid_x, grid_y
 
     def _pause_navigation_task(self) -> bool:
         """Pause the ongoing navigation task

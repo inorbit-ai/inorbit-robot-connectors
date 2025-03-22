@@ -158,7 +158,7 @@ class GausiumConnector(Connector):
                     # Create a new map configuration
                     self.config.maps[frame_id] = MapConfig(
                         file=temp_path,
-                        map_id=map_data.map_id,
+                        map_id=map_data.map_name,
                         frame_id=frame_id,
                         origin_x=map_data.origin_x,
                         origin_y=map_data.origin_y,

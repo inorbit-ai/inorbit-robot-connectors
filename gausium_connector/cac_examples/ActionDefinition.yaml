@@ -54,8 +54,10 @@ spec:
       input:
         control: select
         values:
-          - cleaning_zone_1
-          - cleaning_zone_2
+          - label: cleaning_zone_1
+            value: cleaning_zone_1
+          - label: cleaning_zone_2
+            value: cleaning_zone_2
   confirmation:
     required: true
   lock: false

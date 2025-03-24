@@ -266,12 +266,14 @@ class TestGausiumConnector:
         callback_kwargs["args"] = [{"x": "1", "y": "2", "theta": "3.14"}]
         connector._inorbit_command_handler(**callback_kwargs)
         assert connector.robot_api.send_waypoint.call_args_list == [call(1, 2, math.degrees(3.14))]
+        callback_kwargs["options"]["result_function"].assert_called_with("0")
 
     def test_command_callback_initial_pose(self, connector, callback_kwargs):
         callback_kwargs["command_name"] = COMMAND_INITIAL_POSE
         callback_kwargs["args"] = [{"x": "1", "y": "2", "theta": "3.1415"}]
         connector.robot_api.pose = {"x": 0, "y": 0, "yaw": 0}
         connector._inorbit_command_handler(**callback_kwargs)
+        callback_kwargs["options"]["result_function"].assert_called_with("0")
         assert connector.robot_api.localize_at.call_args_list[0].args[0] == 1
         assert connector.robot_api.localize_at.call_args_list[0].args[1] == 2
         assert abs(connector.robot_api.localize_at.call_args_list[0].args[2] - 180) < 0.1
@@ -279,20 +281,31 @@ class TestGausiumConnector:
         callback_kwargs["args"] = [{"x": "1", "y": "2", "theta": "3.1415"}]
         connector.robot_api.pose = {"x": 1, "y": 2, "yaw": 3.1415}
         connector._inorbit_command_handler(**callback_kwargs)
+        callback_kwargs["options"]["result_function"].assert_called_with("0")
         assert connector.robot_api.localize_at.call_args_list[0].args[0] == 2
         assert connector.robot_api.localize_at.call_args_list[0].args[1] == 4
         assert abs(connector.robot_api.localize_at.call_args_list[0].args[2]) < 0.1
 
-    @pytest.mark.skip(reason="Custom commands not yet implemented")
     def test_command_callback_inorbit_messages(self, connector, callback_kwargs):
         callback_kwargs["command_name"] = COMMAND_MESSAGE
-        for message in ["inorbit_pause", "inorbit_resume"]:
-            callback_kwargs["args"] = [message]
-            connector._inorbit_command_handler(**callback_kwargs)
-            # Not implemented yet
-            callback_kwargs["options"]["result_function"].assert_called_with(
-                "1", f"'{COMMAND_MESSAGE}' is not implemented"
-            )
+        # InOrbit pause message
+        callback_kwargs["args"] = ["inorbit_pause"]
+        connector._inorbit_command_handler(**callback_kwargs)
+        connector.robot_api.pause.assert_called_once()
+        callback_kwargs["options"]["result_function"].assert_called_with("0")
+
+        # InOrbit resume message
+        callback_kwargs["args"] = ["inorbit_resume"]
+        connector._inorbit_command_handler(**callback_kwargs)
+        connector.robot_api.resume.assert_called_once()
+        callback_kwargs["options"]["result_function"].assert_called_with("0")
+
+        # Unknown message
+        callback_kwargs["args"] = ["unknown_message"]
+        connector._inorbit_command_handler(**callback_kwargs)
+        callback_kwargs["options"]["result_function"].assert_called_with(
+            "1", "Message 'unknown_message' is not implemented"
+        )
 
     def test_command_callback_custom_command(self, connector, callback_kwargs):
         callback_kwargs["command_name"] = COMMAND_CUSTOM_COMMAND

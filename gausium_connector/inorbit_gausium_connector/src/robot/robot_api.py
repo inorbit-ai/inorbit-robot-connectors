@@ -269,6 +269,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         self._current_map: MapData | None = None
         self._is_initialized: bool = False
         self._allowed_model_types: List[str] = allowed_model_types
+        self._last_pause_command: str | None = None
 
     @override
     def update(self) -> None:
@@ -403,15 +404,40 @@ class GausiumCloudAPI(GausiumRobotAPI):
 
     @override
     def pause(self) -> bool:
-        """Requests the robot to pause whatever it is doing"""
-        # TODO(b-Tomas): Determine which pause command to use
-        raise NotImplementedError("Pause command not implemented")
+        """Requests the robot to pause whatever it is doing.
+        It fetches the state of cleaning and navigation and the pauses whichever is running"""
+        # In firmware version lower than v3-6-6, navigation and cleaning pause commands are the same
+        if not self._is_firmware_post_v3_6_6():
+            return self._pause_task_queue()
+
+        # In firmware version v3-6-6 and higher, navigation and cleaning pause commands are
+        # different
+        if self._is_cleaning_task_finished():
+            self._last_pause_command = "cleaning"
+            return self._pause_cleaning_task()
+        else:
+            self._last_pause_command = "navigation"
+            return self._pause_navigation_task()
 
     @override
     def resume(self) -> bool:
-        """Requests the robot to resume whatever it was doing"""
-        # TODO(b-Tomas): Determine which resume command to use
-        raise NotImplementedError("Resume command not implemented")
+        """Requests the robot to resume a previously paused task"""
+        # In firmware version lower than v3-6-6, navigation and cleaning resume commands are the
+        # same
+        if not self._is_firmware_post_v3_6_6():
+            return self._resume_task_queue()
+
+        # In firmware version v3-6-6 and higher, navigation and cleaning resume commands are
+        # different.
+        # Get the previously paused command to know which one to resume
+        if self._last_pause_command == "cleaning":
+            self._last_pause_command = None
+            return self._resume_cleaning_task()
+        if self._last_pause_command == "navigation":
+            self._last_pause_command = None
+            return self._resume_navigation_task()
+        else:
+            raise Exception("No previously paused command found")
 
     @override
     def start_cleaning_task(

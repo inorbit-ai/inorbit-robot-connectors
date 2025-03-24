@@ -29,7 +29,14 @@ class CustomScripts(Enum):
     """Supported InOrbit CustomScript actions"""
 
     START_CLEANING_TASK = "start_cleaning_task"
+    PAUSE_CLEANING_TASK = "pause_cleaning_task"
+    RESUME_CLEANING_TASK = "resume_cleaning_task"
+    CANCEL_CLEANING_TASK = "cancel_cleaning_task"
+
     SEND_TO_NAMED_WAYPOINT = "send_to_named_waypoint"
+    PAUSE_NAVIGATION_TASK = "pause_navigation_task"
+    RESUME_NAVIGATION_TASK = "resume_navigation_task"
+    CANCEL_NAVIGATION_TASK = "cancel_navigation_task"
 
 
 class CommandMessages(Enum):
@@ -232,12 +239,26 @@ class GausiumConnector(Connector):
                 # Name of the task
                 task_name = script_args.get("task_name", "InOrbit cleaning task action")
                 self.robot_api.start_cleaning_task(map_name, path_name, task_name, loop, loop_count)
+            elif script_name == CustomScripts.PAUSE_CLEANING_TASK.value:
+                self.robot_api.pause_cleaning_task()
+            elif script_name == CustomScripts.RESUME_CLEANING_TASK.value:
+                self.robot_api.resume_cleaning_task()
+            elif script_name == CustomScripts.CANCEL_CLEANING_TASK.value:
+                self.robot_api.cancel_cleaning_task()
+
             elif script_name == CustomScripts.SEND_TO_NAMED_WAYPOINT.value:
                 # The most important argument
                 position_name = script_args.get("position_name")
                 # Defaults to the current map
                 map_name = script_args.get("map_name")
                 self.robot_api.send_to_named_waypoint(position_name, map_name)
+            elif script_name == CustomScripts.PAUSE_NAVIGATION_TASK.value:
+                self.robot_api.pause_navigation_task()
+            elif script_name == CustomScripts.RESUME_NAVIGATION_TASK.value:
+                self.robot_api.resume_navigation_task()
+            elif script_name == CustomScripts.CANCEL_NAVIGATION_TASK.value:
+                self.robot_api.cancel_navigation_task()
+
             else:
                 return options["result_function"](
                     "1", f"Custom command '{script_name}' is not implemented"

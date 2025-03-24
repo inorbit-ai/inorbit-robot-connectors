@@ -368,6 +368,154 @@ class TestGausiumConnector:
         callback_kwargs["options"]["result_function"].assert_called_with("0")
         connector.robot_api.send_to_named_waypoint.assert_called_once_with("waypoint_1", "test_map")
 
+    def test_command_callback_pause_cleaning_task(self, connector, callback_kwargs):
+        # Set up the robot to be available
+        connector.robot_api._last_call_successful = True
+        connector.status = {"online": True}
+
+        # Configure the custom command for pausing cleaning task
+        callback_kwargs["command_name"] = COMMAND_CUSTOM_COMMAND
+        callback_kwargs["args"] = ["pause_cleaning_task", []]
+
+        # Call the handler
+        connector._inorbit_command_handler(**callback_kwargs)
+
+        # Verify the result function was called with success code
+        callback_kwargs["options"]["result_function"].assert_called_with("0")
+
+        # Verify the robot API method was called
+        connector.robot_api.pause_cleaning_task.assert_called_once()
+
+    def test_command_callback_resume_cleaning_task(self, connector, callback_kwargs):
+        # Set up the robot to be available
+        connector.robot_api._last_call_successful = True
+        connector.status = {"online": True}
+
+        # Configure the custom command for resuming cleaning task
+        callback_kwargs["command_name"] = COMMAND_CUSTOM_COMMAND
+        callback_kwargs["args"] = ["resume_cleaning_task", []]
+
+        # Call the handler
+        connector._inorbit_command_handler(**callback_kwargs)
+
+        # Verify the result function was called with success code
+        callback_kwargs["options"]["result_function"].assert_called_with("0")
+
+        # Verify the robot API method was called
+        connector.robot_api.resume_cleaning_task.assert_called_once()
+
+    def test_command_callback_cancel_cleaning_task(self, connector, callback_kwargs):
+        # Set up the robot to be available
+        connector.robot_api._last_call_successful = True
+        connector.status = {"online": True}
+
+        # Configure the custom command for canceling cleaning task
+        callback_kwargs["command_name"] = COMMAND_CUSTOM_COMMAND
+        callback_kwargs["args"] = ["cancel_cleaning_task", []]
+
+        # Call the handler
+        connector._inorbit_command_handler(**callback_kwargs)
+
+        # Verify the result function was called with success code
+        callback_kwargs["options"]["result_function"].assert_called_with("0")
+
+        # Verify the robot API method was called
+        connector.robot_api.cancel_cleaning_task.assert_called_once()
+
+    def test_command_callback_pause_navigation_task(self, connector, callback_kwargs):
+        # Set up the robot to be available
+        connector.robot_api._last_call_successful = True
+        connector.status = {"online": True}
+
+        # Configure the custom command for pausing navigation task
+        callback_kwargs["command_name"] = COMMAND_CUSTOM_COMMAND
+        callback_kwargs["args"] = ["pause_navigation_task", []]
+
+        # Call the handler
+        connector._inorbit_command_handler(**callback_kwargs)
+
+        # Verify the result function was called with success code
+        callback_kwargs["options"]["result_function"].assert_called_with("0")
+
+        # Verify the robot API method was called
+        connector.robot_api.pause_navigation_task.assert_called_once()
+
+    def test_command_callback_resume_navigation_task(self, connector, callback_kwargs):
+        # Set up the robot to be available
+        connector.robot_api._last_call_successful = True
+        connector.status = {"online": True}
+
+        # Configure the custom command for resuming navigation task
+        callback_kwargs["command_name"] = COMMAND_CUSTOM_COMMAND
+        callback_kwargs["args"] = ["resume_navigation_task", []]
+
+        # Call the handler
+        connector._inorbit_command_handler(**callback_kwargs)
+
+        # Verify the result function was called with success code
+        callback_kwargs["options"]["result_function"].assert_called_with("0")
+
+        # Verify the robot API method was called
+        connector.robot_api.resume_navigation_task.assert_called_once()
+
+    def test_command_callback_cancel_navigation_task(self, connector, callback_kwargs):
+        # Set up the robot to be available
+        connector.robot_api._last_call_successful = True
+        connector.status = {"online": True}
+
+        # Configure the custom command for canceling navigation task
+        callback_kwargs["command_name"] = COMMAND_CUSTOM_COMMAND
+        callback_kwargs["args"] = ["cancel_navigation_task", []]
+
+        # Call the handler
+        connector._inorbit_command_handler(**callback_kwargs)
+
+        # Verify the result function was called with success code
+        callback_kwargs["options"]["result_function"].assert_called_with("0")
+
+        # Verify the robot API method was called
+        connector.robot_api.cancel_navigation_task.assert_called_once()
+
+    def test_command_callback_robot_unavailable(self, connector, callback_kwargs):
+        # Set up the robot to be unavailable
+        connector.robot_api._last_call_successful = False
+        connector.status = {"online": False}
+
+        # Test each command with an unavailable robot
+        commands = [
+            "pause_cleaning_task",
+            "resume_cleaning_task",
+            "cancel_cleaning_task",
+            "pause_navigation_task",
+            "resume_navigation_task",
+            "cancel_navigation_task",
+        ]
+
+        for command in commands:
+            # Reset the result function mock
+            callback_kwargs["options"]["result_function"].reset_mock()
+            # Reset the robot API method mock
+            method_name = command
+            robot_api_method = getattr(connector.robot_api, method_name)
+            robot_api_method.reset_mock()
+
+            # Configure the custom command
+            callback_kwargs["command_name"] = COMMAND_CUSTOM_COMMAND
+            callback_kwargs["args"] = [command, []]
+
+            # Call the handler
+            connector._inorbit_command_handler(**callback_kwargs)
+
+            # Verify the result function was called with error code
+            callback_kwargs["options"]["result_function"].assert_called_with(
+                "1", "Robot is not available"
+            )
+
+            # Verify the robot API method was NOT called
+            assert (
+                not robot_api_method.called
+            ), f"Robot API method {method_name} was called when robot was unavailable"
+
     def test_execution_loop(self, connector, robot_info, current_position_data, device_status_data):
         # Setup mock return values based on fixtures
         connector.robot_api.pose = {

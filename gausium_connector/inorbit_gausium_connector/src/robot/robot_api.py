@@ -181,8 +181,38 @@ class GausiumRobotAPI(ABC):
         pass
 
     @abstractmethod
+    def pause_cleaning_task(self) -> bool:
+        """Pauses the cleaning task"""
+        pass
+
+    @abstractmethod
+    def resume_cleaning_task(self) -> bool:
+        """Resumes the cleaning task"""
+        pass
+
+    @abstractmethod
+    def cancel_cleaning_task(self) -> bool:
+        """Cancels the cleaning task"""
+        pass
+
+    @abstractmethod
     def send_to_named_waypoint(self, **kwargs) -> bool:
         """Sends the robot to a named waypoint"""
+        pass
+
+    @abstractmethod
+    def pause_navigation_task(self) -> bool:
+        """Pauses the navigation task"""
+        pass
+
+    @abstractmethod
+    def resume_navigation_task(self) -> bool:
+        """Resumes the navigation task"""
+        pass
+
+    @abstractmethod
+    def cancel_navigation_task(self) -> bool:
+        """Cancels the navigation task"""
         pass
 
 
@@ -409,6 +439,21 @@ class GausiumCloudAPI(GausiumRobotAPI):
         return self._start_cleaning_task(map_name, path_name, task_name, loop, loop_count)
 
     @override
+    def pause_cleaning_task(self) -> bool:
+        """Pauses the cleaning task"""
+        return self._pause_task_queue()
+
+    @override
+    def resume_cleaning_task(self) -> bool:
+        """Resumes the cleaning task"""
+        return self._resume_task_queue()
+
+    @override
+    def cancel_cleaning_task(self) -> bool:
+        """Cancels the cleaning task"""
+        return self._cancel_task_queue()
+
+    @override
     def send_to_named_waypoint(self, position_name: str, map_name: str | None = None) -> bool:
         """Sends the robot to a named waypoint.
 
@@ -422,6 +467,21 @@ class GausiumCloudAPI(GausiumRobotAPI):
         """
         map_name = map_name if map_name else self._get_current_map_or_raise().map_name
         return self._navigate_to_named_waypoint(map_name, position_name)
+
+    @override
+    def pause_navigation_task(self) -> bool:
+        """Pauses the navigation task"""
+        return self._pause_navigation_task()
+
+    @override
+    def resume_navigation_task(self) -> bool:
+        """Resumes the navigation task"""
+        return self._resume_navigation_task()
+
+    @override
+    def cancel_navigation_task(self) -> bool:
+        """Cancels the navigation task"""
+        return self._cancel_navigation_task()
 
     def _get_current_map_or_raise(self) -> MapData:
         """Get the current map or raise an exception if it's not set"""

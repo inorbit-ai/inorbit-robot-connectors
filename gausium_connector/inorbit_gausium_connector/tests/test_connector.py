@@ -121,7 +121,7 @@ class TestGausiumConnector:
         # Now using the actual property values from mock_map_data
         mock_map_config.assert_called_once_with(
             file=mock_temp_path,
-            map_id="robot_map",
+            map_id="test_map_name",
             frame_id="new_map",
             origin_x=mock_map_data.origin_x,
             origin_y=mock_map_data.origin_y,

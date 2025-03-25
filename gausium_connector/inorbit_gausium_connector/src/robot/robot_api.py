@@ -441,7 +441,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         """
         res = self._get(self._build_url("/gs-robot/info"))
         return res.json()
-    
+
     def _get_robot_status(self) -> dict:
         """Fetch the robot status
 

@@ -17,7 +17,9 @@ class TestGausiumCloudAPIUpdate:
     """Tests for the GausiumCloudAPI.update() method."""
 
     @pytest.fixture
-    def mock_robot_api(self, robot_info, device_status_data, current_position_data, robot_status_data):
+    def mock_robot_api(
+        self, robot_info, device_status_data, current_position_data, robot_status_data
+    ):
         """Create a mock GausiumCloudAPI instance with validation enabled."""
         api = GausiumCloudAPI(
             base_url=HttpUrl("http://example.com/"),

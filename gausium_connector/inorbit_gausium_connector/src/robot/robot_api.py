@@ -248,6 +248,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         robot_info = self._get_robot_info().get("data", {})
         device_data = self._get_device_status().get("data", {})
         position_data = self._fetch_position()
+        robot_status_data = self._get_robot_status().get("data", {})
         # Validate the model type of the robot and the API wrapper in use match
         model_type = robot_info.get("modelType")
         if self._allowed_model_types and model_type not in self._allowed_model_types:
@@ -281,6 +282,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
             **flatten(position_data),
             **flatten(robot_info),
             **flatten(device_data),
+            **flatten(robot_status_data),
         }
         self._pose = {
             "x": position_data.get("worldPosition", {}).get("position", {}).get("x"),
@@ -340,10 +342,10 @@ class GausiumCloudAPI(GausiumRobotAPI):
         """Get the current map.
         If the map is not loaded, the update() method will load it.
         If the map image isn't loaded, it will be lazily fetched from the robot."""
-        if self._current_map is None:
-            self.update()
-        if self._current_map and self._current_map.map_image is None:
-            self._current_map.map_image = self._get_map_image(self._current_map.map_name)
+        # if self._current_map is None:
+        #     self.update()
+        # if self._current_map and self._current_map.map_image is None:
+        #     self._current_map.map_image = self._get_map_image(self._current_map.map_name)
         return self._current_map
 
     @override
@@ -438,6 +440,16 @@ class GausiumCloudAPI(GausiumRobotAPI):
             dict: The robot info response
         """
         res = self._get(self._build_url("/gs-robot/info"))
+        return res.json()
+    
+    def _get_robot_status(self) -> dict:
+        """Fetch the robot status
+
+        Returns:
+            dict: The robot status data
+        """
+        url = "/gs-robot/real_time_data/robot_status"
+        res = self._get(self._build_url(url))
         return res.json()
 
     def _get_firmware_version(self) -> str:

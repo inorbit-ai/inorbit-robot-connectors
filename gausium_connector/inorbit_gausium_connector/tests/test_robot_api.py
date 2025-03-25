@@ -17,7 +17,7 @@ class TestGausiumCloudAPIUpdate:
     """Tests for the GausiumCloudAPI.update() method."""
 
     @pytest.fixture
-    def mock_robot_api(self, robot_info, device_status_data, current_position_data):
+    def mock_robot_api(self, robot_info, device_status_data, current_position_data, robot_status_data):
         """Create a mock GausiumCloudAPI instance with validation enabled."""
         api = GausiumCloudAPI(
             base_url=HttpUrl("http://example.com/"),
@@ -34,6 +34,7 @@ class TestGausiumCloudAPIUpdate:
         api._get_robot_info = Mock(return_value=robot_info)
         api._get_device_status = Mock(return_value=device_status_data)
         api._fetch_position = Mock(return_value=current_position_data)
+        api._get_robot_status = Mock(return_value=robot_status_data)
 
         return api
 
@@ -90,9 +91,7 @@ class TestGausiumCloudAPIUpdate:
             assert robot_info["data"]["modelType"] in error_msg
             assert "Invalid Model" in error_msg
 
-    def test_no_validation_when_allowed_model_types_empty(
-        self, mock_robot_api, robot_info, device_status_data, current_position_data
-    ):
+    def test_no_validation_when_allowed_model_types_empty(self, mock_robot_api, robot_info):
         """Test that no validation occurs when allowed_model_types is empty."""
         # Set allowed_model_types to empty list
         mock_robot_api._allowed_model_types = []
@@ -108,7 +107,7 @@ class TestGausiumCloudAPIUpdate:
             mock_robot_api.update()
 
     def test_explicit_ignore_model_type_validation(
-        self, robot_info, device_status_data, current_position_data
+        self, robot_info, device_status_data, current_position_data, robot_status_data
     ):
         """Test that validation can be explicitly bypassed using empty allowed_model_types."""
         # Create API with empty allowed_model_types list (which effectively ignores validation)
@@ -132,6 +131,7 @@ class TestGausiumCloudAPIUpdate:
             patch.object(api, "_get_robot_info", return_value=invalid_robot_info),
             patch.object(api, "_get_device_status", return_value=device_status_data),
             patch.object(api, "_fetch_position", return_value=current_position_data),
+            patch.object(api, "_get_robot_status", return_value=robot_status_data),
         ):
             # This should not raise an exception despite the invalid model type
             api.update()

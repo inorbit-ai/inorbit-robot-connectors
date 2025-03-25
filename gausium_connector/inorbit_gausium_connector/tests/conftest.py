@@ -574,7 +574,7 @@ def robot_status_data():
                         "gridWidth": 6592,
                         "originX": -87.25,
                         "originY": -87.450000000000003,
-                        "resolution": 0.05000000074505806
+                        "resolution": 0.05000000074505806,
                     },
                     "md5": "08d548bda1da0ea213176badad49ed1d",
                     "name": "T2B1",
@@ -582,12 +582,12 @@ def robot_status_data():
                     "pgmFileName": "map.pgm",
                     "pngFileName": "map.png",
                     "updatedAt": 1742293152,
-                    "yamlFileName": "map.yaml"
+                    "yamlFileName": "map.yaml",
                 },
                 "workType": "IDLE",
-                "workTypeId": 10
+                "workTypeId": 10,
             },
-            "statusData": {}
+            "statusData": {},
         },
         "errorCode": "",
         "msg": "successed",

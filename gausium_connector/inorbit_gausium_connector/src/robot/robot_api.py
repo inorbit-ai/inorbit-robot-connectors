@@ -954,7 +954,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         if self._is_firmware_post_v3_6_6():
             # For v3-6-6 and higher
             url = "/gs-robot/cmd/quick/navigate?type=2"
-            payload = {"destination": {"gridPosition": {"x": x, "y": y}, "angle": angle}}
+            payload = {"destination": {"gridPosition": {"x": x, "y": y, "angle": angle}}}
         else:
             # For pre v3-6-6
             url = "/gs-robot/cmd/start_task_queue"

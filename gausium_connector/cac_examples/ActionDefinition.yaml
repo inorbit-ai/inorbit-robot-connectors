@@ -28,6 +28,8 @@ spec:
   confirmation:
     required: true
   lock: false
+  description: Runs a cleaning task on the current map
+  group: Cleaning tasks
   # Example condition to allow the action to be executed only on specific robots
   condition:
     rules:
@@ -61,6 +63,8 @@ spec:
   confirmation:
     required: true
   lock: false
+  description: Runs a cleaning task on a path selected by the user
+  group: Cleaning tasks
 ---
 # Run a cleaning task controlling all available arguments
 apiVersion: v0.1
@@ -98,7 +102,69 @@ spec:
   confirmation:
     required: true
   lock: false
+  description: Runs a very specific cleaning task
+  group: Cleaning tasks
 ---
+# Pause the current cleaning task
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+    id: pause-cleaning
+    scope: tag/<account_id>/<tag_id>
+spec:
+  label: Pause Cleaning Task
+  group: Cleaning tasks
+  type: RunScript
+  arguments:
+    - name: filename
+      type: string
+      value: pause_cleaning_task
+  confirmation:
+    required: true
+  lock: false
+  description: Pauses a currently running cleaning task
+---
+# Resume a paused cleaning task
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+    id: resume-cleaning
+    scope: tag/<account_id>/<tag_id>
+spec:
+  label: Resume Cleaning Task
+  group: Cleaning tasks
+  type: RunScript
+  arguments:
+    - name: filename
+      type: string
+      value: resume_cleaning_task
+  confirmation:
+    required: true
+  lock: false
+  description: Resumes a previously paused cleaning task
+---
+# Cancel the current cleaning task
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+    id: cancel-cleaning
+    scope: tag/<account_id>/<tag_id>
+spec:
+  label: Cancel Cleaning Task
+  group: Cleaning tasks
+  type: RunScript
+  arguments:
+    - name: filename
+      type: string
+      value: cancel_cleaning_task
+  confirmation:
+    required: true
+  lock: false
+  description: Cancels a currently running cleaning task
+---
+
+### Navigation tasks
+
 # Send the robot to a named waypoint
 # This could be a dock, in which case the robot will automatically dock
 apiVersion: v0.1
@@ -108,7 +174,7 @@ metadata:
     scope: tag/<account_id>/<tag_id>
 spec:
   label: Dock
-  group: Gausium actions
+  group: Navigation tasks
   type: RunScript
   arguments:
     - name: filename
@@ -120,6 +186,7 @@ spec:
   confirmation:
     required: true
   lock: false
+  description: Sends the robot to the charging dock
 ---
 # Send the robot to a named waypoint controlling all available arguments
 apiVersion: v0.1
@@ -129,7 +196,7 @@ metadata:
     scope: tag/<account_id>/<tag_id>
 spec:
   label: Send to named waypoint
-  group: Gausium actions
+  group: Navigation tasks
   type: RunScript
   arguments:
     - name: filename
@@ -144,3 +211,61 @@ spec:
   confirmation:
     required: true
   lock: false
+  description: Sends the robot to a named waypoint
+---
+# Pause the current navigation task
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+    id: pause-navigation
+    scope: tag/<account_id>/<tag_id>
+spec:
+  label: Pause Navigation Task
+  group: Navigation tasks
+  type: RunScript
+  arguments:
+    - name: filename
+      type: string
+      value: pause_navigation_task
+  confirmation:
+    required: true
+  lock: false
+  description: Pauses a currently running navigation task
+---
+# Resume a paused navigation task
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+    id: resume-navigation
+    scope: tag/<account_id>/<tag_id>
+spec:
+  label: Resume Navigation Task
+  group: Navigation tasks
+  type: RunScript
+  arguments:
+    - name: filename
+      type: string
+      value: resume_navigation_task
+  confirmation:
+    required: true
+  lock: false
+  description: Resumes a previously paused navigation task
+---
+# Cancel the current navigation task
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+    id: cancel-navigation
+    scope: tag/<account_id>/<tag_id>
+spec:
+  label: Cancel Navigation Task
+  group: Navigation tasks
+  type: RunScript
+  arguments:
+    - name: filename
+      type: string
+      value: cancel_navigation_task
+  confirmation:
+    required: true
+  lock: false
+  description: Cancels a currently running navigation task

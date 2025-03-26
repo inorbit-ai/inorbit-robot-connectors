@@ -181,8 +181,38 @@ class GausiumRobotAPI(ABC):
         pass
 
     @abstractmethod
+    def pause_cleaning_task(self) -> bool:
+        """Pauses the cleaning task"""
+        pass
+
+    @abstractmethod
+    def resume_cleaning_task(self) -> bool:
+        """Resumes the cleaning task"""
+        pass
+
+    @abstractmethod
+    def cancel_cleaning_task(self) -> bool:
+        """Cancels the cleaning task"""
+        pass
+
+    @abstractmethod
     def send_to_named_waypoint(self, **kwargs) -> bool:
         """Sends the robot to a named waypoint"""
+        pass
+
+    @abstractmethod
+    def pause_navigation_task(self) -> bool:
+        """Pauses the navigation task"""
+        pass
+
+    @abstractmethod
+    def resume_navigation_task(self) -> bool:
+        """Resumes the navigation task"""
+        pass
+
+    @abstractmethod
+    def cancel_navigation_task(self) -> bool:
+        """Cancels the navigation task"""
         pass
 
 
@@ -239,6 +269,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         self._current_map: MapData | None = None
         self._is_initialized: bool = False
         self._allowed_model_types: List[str] = allowed_model_types
+        self._last_pause_command: str | None = None
 
     @override
     def update(self) -> None:
@@ -248,6 +279,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         robot_info = self._get_robot_info().get("data", {})
         device_data = self._get_device_status().get("data", {})
         position_data = self._fetch_position()
+        robot_status_data = self._get_robot_status().get("data", {})
         # Validate the model type of the robot and the API wrapper in use match
         model_type = robot_info.get("modelType")
         if self._allowed_model_types and model_type not in self._allowed_model_types:
@@ -281,6 +313,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
             **flatten(position_data),
             **flatten(robot_info),
             **flatten(device_data),
+            **flatten(robot_status_data),
         }
         self._pose = {
             "x": position_data.get("worldPosition", {}).get("position", {}).get("x"),
@@ -340,10 +373,10 @@ class GausiumCloudAPI(GausiumRobotAPI):
         """Get the current map.
         If the map is not loaded, the update() method will load it.
         If the map image isn't loaded, it will be lazily fetched from the robot."""
-        if self._current_map is None:
-            self.update()
-        if self._current_map and self._current_map.map_image is None:
-            self._current_map.map_image = self._get_map_image(self._current_map.map_name)
+        # if self._current_map is None:
+        #     self.update()
+        # if self._current_map and self._current_map.map_image is None:
+        #     self._current_map.map_image = self._get_map_image(self._current_map.map_name)
         return self._current_map
 
     @override
@@ -377,15 +410,40 @@ class GausiumCloudAPI(GausiumRobotAPI):
 
     @override
     def pause(self) -> bool:
-        """Requests the robot to pause whatever it is doing"""
-        # TODO(b-Tomas): Determine which pause command to use
-        raise NotImplementedError("Pause command not implemented")
+        """Requests the robot to pause whatever it is doing.
+        It fetches the state of cleaning and navigation and the pauses whichever is running"""
+        # In firmware version lower than v3-6-6, navigation and cleaning pause commands are the same
+        if not self._is_firmware_post_v3_6_6():
+            return self._pause_task_queue()
+
+        # In firmware version v3-6-6 and higher, navigation and cleaning pause commands are
+        # different
+        if self._is_cleaning_task_finished():
+            self._last_pause_command = "cleaning"
+            return self._pause_cleaning_task()
+        else:
+            self._last_pause_command = "navigation"
+            return self._pause_navigation_task()
 
     @override
     def resume(self) -> bool:
-        """Requests the robot to resume whatever it was doing"""
-        # TODO(b-Tomas): Determine which resume command to use
-        raise NotImplementedError("Resume command not implemented")
+        """Requests the robot to resume a previously paused task"""
+        # In firmware version lower than v3-6-6, navigation and cleaning resume commands are the
+        # same
+        if not self._is_firmware_post_v3_6_6():
+            return self._resume_task_queue()
+
+        # In firmware version v3-6-6 and higher, navigation and cleaning resume commands are
+        # different.
+        # Get the previously paused command to know which one to resume
+        if self._last_pause_command == "cleaning":
+            self._last_pause_command = None
+            return self._resume_cleaning_task()
+        if self._last_pause_command == "navigation":
+            self._last_pause_command = None
+            return self._resume_navigation_task()
+        else:
+            raise Exception("No previously paused command found")
 
     @override
     def start_cleaning_task(
@@ -413,6 +471,21 @@ class GausiumCloudAPI(GausiumRobotAPI):
         return self._start_cleaning_task(map_name, path_name, task_name, loop, loop_count)
 
     @override
+    def pause_cleaning_task(self) -> bool:
+        """Pauses the cleaning task"""
+        return self._pause_task_queue()
+
+    @override
+    def resume_cleaning_task(self) -> bool:
+        """Resumes the cleaning task"""
+        return self._resume_task_queue()
+
+    @override
+    def cancel_cleaning_task(self) -> bool:
+        """Cancels the cleaning task"""
+        return self._cancel_task_queue()
+
+    @override
     def send_to_named_waypoint(self, position_name: str, map_name: str | None = None) -> bool:
         """Sends the robot to a named waypoint.
 
@@ -426,6 +499,21 @@ class GausiumCloudAPI(GausiumRobotAPI):
         """
         map_name = map_name if map_name else self._get_current_map_or_raise().map_name
         return self._navigate_to_named_waypoint(map_name, position_name)
+
+    @override
+    def pause_navigation_task(self) -> bool:
+        """Pauses the navigation task"""
+        return self._pause_navigation_task()
+
+    @override
+    def resume_navigation_task(self) -> bool:
+        """Resumes the navigation task"""
+        return self._resume_navigation_task()
+
+    @override
+    def cancel_navigation_task(self) -> bool:
+        """Cancels the navigation task"""
+        return self._cancel_navigation_task()
 
     def _get_current_map_or_raise(self) -> MapData:
         """Get the current map or raise an exception if it's not set"""
@@ -468,6 +556,16 @@ class GausiumCloudAPI(GausiumRobotAPI):
             dict: The robot info response
         """
         res = self._get(self._build_url("/gs-robot/info"))
+        return res.json()
+
+    def _get_robot_status(self) -> dict:
+        """Fetch the robot status
+
+        Returns:
+            dict: The robot status data
+        """
+        url = "/gs-robot/real_time_data/robot_status"
+        res = self._get(self._build_url(url))
         return res.json()
 
     def _get_firmware_version(self) -> str:

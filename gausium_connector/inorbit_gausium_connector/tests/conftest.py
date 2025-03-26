@@ -551,3 +551,45 @@ def initialize_customized_request_body():
 def initialize_customized_response():
     # Sample response from /gs-robot/cmd/initialize_customized endpoint
     return {"data": "", "errorCode": "", "msg": "successed", "successed": True}
+
+
+@pytest.fixture
+def robot_status_data():
+    # Sample response from /gs-robot/real_time_data/robot_status endpoint
+    return {
+        "data": {
+            "robotStatus": {
+                "map": {
+                    "DIYPngName": "",
+                    "beautyPngFileName": "",
+                    "createdAt": "2022-10-05 10:53:14",
+                    "customAreasFileName": "custom_area.json",
+                    "dataFileName": "map.data",
+                    "extendDataFileName": "map.exdata",
+                    "heatPngFileName": "",
+                    "id": "9993b3a8-aadb-46e0-9b66-980cf6be5b95",
+                    "lethalPngName": "lethal.png",
+                    "mapInfo": {
+                        "gridHeight": 2112,
+                        "gridWidth": 6592,
+                        "originX": -87.25,
+                        "originY": -87.450000000000003,
+                        "resolution": 0.05000000074505806,
+                    },
+                    "md5": "08d548bda1da0ea213176badad49ed1d",
+                    "name": "T2B1",
+                    "obstacleFileName": "map.obstacle",
+                    "pgmFileName": "map.pgm",
+                    "pngFileName": "map.png",
+                    "updatedAt": 1742293152,
+                    "yamlFileName": "map.yaml",
+                },
+                "workType": "IDLE",
+                "workTypeId": 10,
+            },
+            "statusData": {},
+        },
+        "errorCode": "",
+        "msg": "successed",
+        "successed": True,
+    }

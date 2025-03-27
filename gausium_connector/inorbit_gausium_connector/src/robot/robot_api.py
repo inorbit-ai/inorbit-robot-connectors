@@ -373,10 +373,10 @@ class GausiumCloudAPI(GausiumRobotAPI):
         """Get the current map.
         If the map is not loaded, the update() method will load it.
         If the map image isn't loaded, it will be lazily fetched from the robot."""
-        # if self._current_map is None:
-        #     self.update()
-        # if self._current_map and self._current_map.map_image is None:
-        #     self._current_map.map_image = self._get_map_image(self._current_map.map_name)
+        if self._current_map is None:
+            self.update()
+        if self._current_map and self._current_map.map_image is None:
+            self._current_map.map_image = self._get_map_image(self._current_map.map_name)
         return self._current_map
 
     @override

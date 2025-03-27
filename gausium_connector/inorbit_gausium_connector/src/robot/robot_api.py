@@ -751,8 +751,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         }
 
         res = self._post(self._build_url(url), json=payload)
-        response = res.json()
-        return response.get("successed", False)
+        return self._success_or_raise(res.json())
 
     def _pause_task_queue(self) -> bool:
         """Pause the ongoing cleaning task
@@ -762,8 +761,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         """
         url = "/gs-robot/cmd/pause_task_queue"
         res = self._get(self._build_url(url))
-        response = res.json()
-        return response.get("successed", False)
+        return self._success_or_raise(res.json())
 
     def _pause_task(self) -> bool:
         """Pause the ongoing cleaning task. Suitable for pausing a task on a currently loaded map
@@ -778,8 +776,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
 
         url = "/gs-robot/cmd/pause_task"
         res = self._get(self._build_url(url))
-        response = res.json()
-        return response.get("successed", False)
+        return self._success_or_raise(res.json())
 
     def _pause_multi_map_cleaning_task(self) -> bool:
         """Pause a cleaning task that spans multiple maps (v3-6-6 and higher)
@@ -795,8 +792,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
 
         url = "/gs-robot/cmd/pause_multi_task"
         res = self._get(self._build_url(url))
-        response = res.json()
-        return response.get("successed", False)
+        return self._success_or_raise(res.json())
 
     def _resume_task_queue(self) -> bool:
         """Resume the paused cleaning task.
@@ -810,8 +806,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         url = "/gs-robot/cmd/resume_task_queue"
 
         res = self._get(self._build_url(url))
-        response = res.json()
-        return response.get("successed", False)
+        return self._success_or_raise(res.json())
 
     def _resume_task(self) -> bool:
         """Resume the paused cleaning task. Suitable for resuming a task on a currently loaded map
@@ -865,12 +860,8 @@ class GausiumCloudAPI(GausiumRobotAPI):
         """
         url = "/gs-robot/cmd/is_task_queue_finished"
         res = self._get(self._build_url(url))
-        response = res.json()
-
-        if response.get("successed", False):
-            # Response has "data" field that contains "True" or "False" as a string
-            return response.get("data") == "True"
-        return False
+        # Response has "data" field that contains "True" or "False" as a string
+        return self._success_or_raise(res.json()).lower() == "true"
 
     # ---------- Navigation Task APIs ----------#
 
@@ -912,8 +903,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
             }
             res = self._post(self._build_url(url), json=payload)
 
-        response = res.json()
-        return response.get("successed", False)
+        return self._success_or_raise(res.json())
 
     def _navigate_to_coordinates(self, map_name: str, x: int, y: int, angle: float = 0.0) -> bool:
         """Navigate the robot to specific coordinates
@@ -984,8 +974,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
             url = "/gs-robot/cmd/pause_task_queue"
 
         res = self._get(self._build_url(url))
-        response = res.json()
-        return response.get("successed", False)
+        return self._success_or_raise(res.json())
 
     def _resume_navigation_task(self) -> bool:
         """Resume the paused navigation task
@@ -999,8 +988,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
             url = "/gs-robot/cmd/resume_task_queue"
 
         res = self._get(self._build_url(url))
-        response = res.json()
-        return response.get("successed", False)
+        return self._success_or_raise(res.json())
 
     def _cancel_navigation_task(self) -> bool:
         """Cancel the ongoing navigation task
@@ -1014,8 +1002,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
             url = "/gs-robot/cmd/stop_task_queue"
 
         res = self._get(self._build_url(url))
-        response = res.json()
-        return response.get("successed", False)
+        return self._success_or_raise(res.json())
 
     def _cancel_cross_map_navigation(self) -> bool:
         """Cancel an ongoing navigation task across maps (for pre v3-6-6)
@@ -1028,8 +1015,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         else:
             url = "/gs-robot/cmd/stop_cross_task"
             res = self._get(self._build_url(url))
-            response = res.json()
-            return response.get("successed", False)
+            return self._success_or_raise(res.json())
 
     def _is_navigation_task_finished(self) -> bool:
         """Check if the navigation task is finished
@@ -1044,13 +1030,8 @@ class GausiumCloudAPI(GausiumRobotAPI):
             url = "/gs-robot/cmd/is_task_queue_finished"
 
         res = self._get(self._build_url(url))
-        response = res.json()
-
-        if response.get("successed", False):
-            # Response has "data" field that contains "True"/"False" or "true"/"false"
-            data = response.get("data", "").lower()
-            return data == "true" or data == "True"
-        return False
+        # Response has "data" field that contains "True"/"False" or "true"/"false"
+        return self._success_or_raise(res.json()).lower() == "true"
 
     # ---------- Miscellaneous APIs ----------#
 

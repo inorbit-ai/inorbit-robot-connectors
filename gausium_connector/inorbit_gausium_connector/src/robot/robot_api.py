@@ -2,7 +2,6 @@
 #
 # SPDX-License-Identifier: MIT
 
-import collections.abc
 import logging
 from abc import ABC, abstractmethod
 from math import radians
@@ -216,32 +215,6 @@ class GausiumRobotAPI(ABC):
         pass
 
 
-def flatten(dictionary, parent_key=False, separator="."):
-    """
-    Turn a nested dictionary into a flattened dictionary
-
-    Args:
-        dictionary: The dictionary to flatten.
-        parent_key: The string to prepend to dictionary's keys.
-        separator: The string used to separate flattened keys.
-
-    Returns:
-        A flattened dictionary.
-    """
-
-    items = []
-    for key, value in dictionary.items():
-        new_key = str(parent_key) + separator + key if parent_key else key
-        if isinstance(value, collections.abc.MutableMapping):
-            items.extend(flatten(value, new_key, separator).items())
-        elif isinstance(value, list):
-            for k, v in enumerate(value):
-                items.extend(flatten({str(k): v}, new_key).items())
-        else:
-            items.append((new_key, value))
-    return dict(items)
-
-
 class GausiumCloudAPI(GausiumRobotAPI):
     """Gausium cloud API wrapper."""
 
@@ -309,11 +282,14 @@ class GausiumCloudAPI(GausiumRobotAPI):
             )
 
         # Update publishable data
+        # The dictionaries are unpacked into key-value pairs. Deep nested dictionaries are
+        # published as such, requiring the corresponding datasources to be defined as json
+        # type, or derived to access nested values.
         self._key_values = {
-            **flatten(position_data),
-            **flatten(robot_info),
-            **flatten(device_data),
-            **flatten(robot_status_data),
+            **position_data,
+            **robot_info,
+            **device_data,
+            **robot_status_data,
         }
         self._pose = {
             "x": position_data.get("worldPosition", {}).get("position", {}).get("x"),

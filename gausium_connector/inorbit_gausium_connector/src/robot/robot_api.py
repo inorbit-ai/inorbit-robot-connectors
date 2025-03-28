@@ -176,22 +176,22 @@ class GausiumRobotAPI(ABC):
         pass
 
     @abstractmethod
-    def start_cleaning_task(self, **kwargs) -> bool:
+    def start_task_queue(self, **kwargs) -> bool:
         """Starts the cleaning task"""
         pass
 
     @abstractmethod
-    def pause_cleaning_task(self) -> bool:
+    def pause_task_queue(self) -> bool:
         """Pauses the cleaning task"""
         pass
 
     @abstractmethod
-    def resume_cleaning_task(self) -> bool:
+    def resume_task_queue(self) -> bool:
         """Resumes the cleaning task"""
         pass
 
     @abstractmethod
-    def cancel_cleaning_task(self) -> bool:
+    def cancel_task_queue(self) -> bool:
         """Cancels the cleaning task"""
         pass
 
@@ -438,10 +438,9 @@ class GausiumCloudAPI(GausiumRobotAPI):
             raise Exception("No previously paused command found")
 
     @override
-    def start_cleaning_task(
+    def start_task_queue(
         self,
-        path_name: str,
-        task_name: str = "",
+        task_queue_name: str,
         map_name: str | None = None,
         loop: bool = False,
         loop_count: int = 0,
@@ -449,8 +448,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         """Starts the cleaning task.
 
         Args:
-            path_name (str): Name of the path to start the cleaning task on
-            task_name (str, optional): Name of the task. Defaults to "".
+            task_queue_name (str): Name of the task queue to start the cleaning task on
             map_name (str | None, optional): Name of the map to start the cleaning task on.
                 Defaults to the current map.
             loop (bool, optional): Whether to loop the task. Defaults to False.
@@ -460,22 +458,22 @@ class GausiumCloudAPI(GausiumRobotAPI):
             bool: True if successful, False otherwise
         """
         map_name = map_name if map_name else self._get_current_map_or_raise().map_name
-        return self._start_cleaning_task(map_name, path_name, task_name, loop, loop_count)
+        return self._start_cleaning_task(map_name, task_queue_name, loop, loop_count)
 
     @override
-    def pause_cleaning_task(self) -> bool:
+    def pause_task_queue(self) -> bool:
         """Pauses the cleaning task"""
         return self._pause_task_queue()
 
     @override
-    def resume_cleaning_task(self) -> bool:
+    def resume_task_queue(self) -> bool:
         """Resumes the cleaning task"""
         return self._resume_task_queue()
 
     @override
-    def cancel_cleaning_task(self) -> bool:
+    def cancel_task_queue(self) -> bool:
         """Cancels the cleaning task"""
-        return self._cancel_task_queue()
+        return self._cancel_cleaning_task()
 
     @override
     def send_to_named_waypoint(self, position_name: str, map_name: str | None = None) -> bool:
@@ -727,18 +725,16 @@ class GausiumCloudAPI(GausiumRobotAPI):
     def _start_cleaning_task(
         self,
         map_name: str,
-        path_name: str,
-        task_name: str = "",
+        task_queue_name: str,
         loop: bool = False,
         loop_count: int = 0,
     ) -> bool:
         """Start a cleaning task
 
         Args:
-            map_name (str): Name of the map
-            path_name (str): Name of the path
-            task_name (str, optional): Name of the task. Defaults to "".
-            loop (bool, optional): Whether to loop the task. Defaults to False.
+            map_name (str): Name of the map the task queue is associated with.
+            task_queue_name (str): Name of the task queue to run.
+            loop (bool, optional): Whether to loop the task queue. Defaults to False.
             loop_count (int, optional): Number of loops. Defaults to 0.
 
         Returns:
@@ -746,16 +742,10 @@ class GausiumCloudAPI(GausiumRobotAPI):
         """
         url = "/gs-robot/cmd/start_task_queue"
         payload = {
-            "name": task_name,
+            "name": task_queue_name,
             "loop": loop,
             "loop_count": loop_count,
             "map_name": map_name,
-            "tasks": [
-                {
-                    "name": "PlayPathTask",
-                    "start_param": {"map_name": map_name, "path_name": path_name},
-                }
-            ],
         }
 
         res = self._post(self._build_url(url), json=payload)

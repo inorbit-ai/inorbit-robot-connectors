@@ -28,10 +28,10 @@ from .robot import create_robot_api
 class CustomScripts(Enum):
     """Supported InOrbit CustomScript actions"""
 
-    START_CLEANING_TASK = "start_cleaning_task"
-    PAUSE_CLEANING_TASK = "pause_cleaning_task"
-    RESUME_CLEANING_TASK = "resume_cleaning_task"
-    CANCEL_CLEANING_TASK = "cancel_cleaning_task"
+    START_TASK_QUEUE = "start_task_queue"
+    PAUSE_TASK_QUEUE = "pause_task_queue"
+    RESUME_TASK_QUEUE = "resume_task_queue"
+    CANCEL_TASK_QUEUE = "cancel_task_queue"
 
     SEND_TO_NAMED_WAYPOINT = "send_to_named_waypoint"
     PAUSE_NAVIGATION_TASK = "pause_navigation_task"
@@ -227,24 +227,22 @@ class GausiumConnector(Connector):
             if "." in script_name:
                 return
 
-            if script_name == CustomScripts.START_CLEANING_TASK.value:
+            if script_name == CustomScripts.START_TASK_QUEUE.value:
                 # The most important argument
-                path_name = script_args.get("path_name")
+                task_queue_name = script_args.get("task_queue_name")
                 # Defaults to the current map. Usually not needed
                 map_name = script_args.get("map_name")
                 # Whether to loop the task. Defaults to False
                 loop = script_args.get("loop", False)
                 # Number of loops. Defaults to 0
                 loop_count = script_args.get("loop_count", 0)
-                # Name of the task
-                task_name = script_args.get("task_name", "InOrbit cleaning task action")
-                self.robot_api.start_cleaning_task(map_name, path_name, task_name, loop, loop_count)
-            elif script_name == CustomScripts.PAUSE_CLEANING_TASK.value:
-                self.robot_api.pause_cleaning_task()
-            elif script_name == CustomScripts.RESUME_CLEANING_TASK.value:
-                self.robot_api.resume_cleaning_task()
-            elif script_name == CustomScripts.CANCEL_CLEANING_TASK.value:
-                self.robot_api.cancel_cleaning_task()
+                self.robot_api.start_task_queue(task_queue_name, map_name, loop, loop_count)
+            elif script_name == CustomScripts.PAUSE_TASK_QUEUE.value:
+                self.robot_api.pause_task_queue()
+            elif script_name == CustomScripts.RESUME_TASK_QUEUE.value:
+                self.robot_api.resume_task_queue()
+            elif script_name == CustomScripts.CANCEL_TASK_QUEUE.value:
+                self.robot_api.cancel_task_queue()
 
             elif script_name == CustomScripts.SEND_TO_NAMED_WAYPOINT.value:
                 # The most important argument

@@ -274,9 +274,7 @@ class GausiumConnector(Connector):
             y = float(pose["y"])
             orientation = math.degrees(float(pose["theta"]))
             self.robot_api.send_waypoint(x, y, orientation)
-
-            # Return '0' for success
-            return options["result_function"]("0")
+            return
 
         # Pose initalization
         elif command_name == COMMAND_INITIAL_POSE:
@@ -290,9 +288,7 @@ class GausiumConnector(Connector):
             new_orientation = ((new_orientation + math.pi) % (2 * math.pi)) - math.pi
             new_orientation = math.degrees(new_orientation)
             self.robot_api.localize_at(new_x, new_y, new_orientation)
-
-            # Return '0' for success
-            return options["result_function"]("0")
+            return
 
         # InOrbit messages (PublishToTopic actions)
         elif command_name == COMMAND_MESSAGE:
@@ -303,9 +299,7 @@ class GausiumConnector(Connector):
                 self.robot_api.resume()
             else:
                 return options["result_function"]("1", f"Message '{message}' is not implemented")
-
-            # Return '0' for success
-            return options["result_function"]("0")
+            return
 
         else:
             return options["result_function"]("1", f"'{command_name}' is not implemented")

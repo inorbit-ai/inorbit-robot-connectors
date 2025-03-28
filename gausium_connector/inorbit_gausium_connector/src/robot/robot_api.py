@@ -274,7 +274,10 @@ class GausiumCloudAPI(GausiumRobotAPI):
             raise ModelTypeMismatchError(model_type, self._allowed_model_types)
 
         # Update the firmware version
-        self._firmware_version = robot_info.get("softwareVersion")
+        software_version = robot_info.get("softwareVersion")
+        if software_version:
+            # Extract version number (e.g., from "GS-ES50-OS1604-PRO800-OTA_V2-19-6" get "2-19-6")
+            self._firmware_version = software_version.split("V")[-1]
 
         # Update current device status
         self._device_status = device_data
@@ -387,9 +390,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
             raise Exception("No current map found to send waypoint to")
         grid_x, grid_y = self._coordinate_to_grid_units(x, y)
         self.logger.debug(f"Converted {x}, {y} coordinates to grid units: {grid_x}, {grid_y}")
-        return self._success_or_raise(
-            self._navigate_to_coordinates(map_name, grid_x, grid_y, orientation)
-        )
+        return self._navigate_to_coordinates(map_name, grid_x, grid_y, orientation)
 
     @override
     def localize_at(self, x: float, y: float, orientation: float) -> bool:
@@ -559,40 +560,32 @@ class GausiumCloudAPI(GausiumRobotAPI):
         res = self._get(self._build_url(url))
         return res.json()
 
-    def _get_firmware_version(self) -> str:
-        """Get the firmware version of the robot
-
-        Returns:
-            str: Firmware version string
-        """
-        info = self._success_or_raise(self._get_robot_info())
-        version = info.get("data", {}).get("softwareVersion", "")
-        return version
-
     def _is_firmware_post_v3_6_6(self) -> bool:
         """Check if the firmware version is v3-6-6 or higher
 
         Returns:
             bool: True if firmware is v3-6-6 or higher, False otherwise
         """
-        version = self._get_firmware_version()
+        version = self.firmware_version
         if not version:
-            return False
+            self.logger.warning("No firmware version found. Assuming firmware is post v3-6-6.")
+            return True
 
-        # Extract version number (e.g., from "GS-ES50-OS1604-PRO800-OTA_V2-19-6" get "2-19-6")
-        if "V" in version:
-            version_parts = version.split("V")[-1].split("-")
-            if len(version_parts) >= 3:
-                major = int(version_parts[0])
-                minor = int(version_parts[1])
-                patch = int(version_parts[2])
+        # Extract version number parts
+        version_parts = version.split("-")
+        if len(version_parts) >= 3:
+            major = int(version_parts[0])
+            minor = int(version_parts[1])
+            patch = int(version_parts[2])
 
-                # Compare with v3-6-6
-                if major > 3:
-                    return True
-                elif major == 3 and minor >= 6 and patch >= 6:
-                    return True
-        return False
+            # Compare with v3-6-6
+            if major < 3:
+                return False
+            elif major == 3 and minor < 6:
+                return False
+            elif major == 3 and minor == 6 and patch < 6:
+                return False
+        return True
 
     # ---------- Localization APIs ----------#
 
@@ -955,8 +948,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
             }
 
         res = self._post(self._build_url(url), json=payload)
-        response = res.json()
-        return response.get("successed", False)
+        return self._success_or_raise(res.json())
 
     def _coordinate_to_grid_units(self, x: float, y: float) -> tuple[int, int]:
         """Convert coordinates to grid units of the current map

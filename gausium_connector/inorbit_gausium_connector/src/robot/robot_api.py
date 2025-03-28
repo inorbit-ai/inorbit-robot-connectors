@@ -4,6 +4,7 @@
 
 import logging
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
 from math import radians
 from typing import List, Optional, override
 from urllib.parse import urljoin
@@ -243,16 +244,30 @@ class GausiumCloudAPI(GausiumRobotAPI):
         self._is_initialized: bool = False
         self._allowed_model_types: List[str] = allowed_model_types
         self._last_pause_command: str | None = None
+        # ThreadPoolExecutor to use on concurrent API calls
+        self._thread_executor = ThreadPoolExecutor(max_workers=4)
+
+    def __del__(self):
+        """Clean up resources when the object is destroyed."""
+        if hasattr(self, "_executor"):
+            self._thread_executor.shutdown(wait=False)
 
     @override
     def update(self) -> None:
         """Update the robot's status data"""
 
-        # Fetch fresh data from the robot
-        robot_info = self._get_robot_info().get("data", {})
-        device_data = self._get_device_status().get("data", {})
-        position_data = self._fetch_position()
-        robot_status_data = self._get_robot_status().get("data", {})
+        # Fetch fresh data from the robot concurrently
+        robot_info_future = self._thread_executor.submit(self._get_robot_info)
+        device_status_future = self._thread_executor.submit(self._get_device_status)
+        position_future = self._thread_executor.submit(self._fetch_position)
+        robot_status_future = self._thread_executor.submit(self._get_robot_status)
+
+        # Get results as they complete
+        robot_info = robot_info_future.result().get("data", {})
+        device_data = device_status_future.result().get("data", {})
+        position_data = position_future.result()
+        robot_status_data = robot_status_future.result().get("data", {})
+
         # Validate the model type of the robot and the API wrapper in use match
         model_type = robot_info.get("modelType")
         if self._allowed_model_types and model_type not in self._allowed_model_types:

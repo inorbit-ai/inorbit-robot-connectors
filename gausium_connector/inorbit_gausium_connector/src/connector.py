@@ -273,7 +273,9 @@ class GausiumConnector(Connector):
                 y = float(pose["y"])
                 orientation = math.degrees(float(pose["theta"]))
                 self.robot_api.send_waypoint(x, y, orientation)
-                return
+
+                # Return '0' for success
+                return options["result_function"]("0")
 
             # Pose initalization
             elif command_name == COMMAND_INITIAL_POSE:
@@ -287,13 +289,15 @@ class GausiumConnector(Connector):
                 new_orientation = ((new_orientation + math.pi) % (2 * math.pi)) - math.pi
                 new_orientation = math.degrees(new_orientation)
                 self.robot_api.localize_at(new_x, new_y, new_orientation)
-                return
+
+                # Return '0' for success
+                return options["result_function"]("0")
 
         except Exception as e:
             # HACK(b-Tomas): If navGoal or initalPose fail, the edge-sdk crashes because it
             # attempts to use args[0] (a pose) as the filename for the command result.
-            # Converting it to a string prevents the connector from crashing, also makes the
-            # action succeed, which is misleading.
+            # Converting it to a string prevents the connector from crashing, but the command
+            # also appears successful, which is misleading.
             # TODO(b-Tomas): Fix this in the edge-sdk, and then remove this hack.
             args[0] = command_name
             raise e
@@ -307,7 +311,9 @@ class GausiumConnector(Connector):
                 self.robot_api.resume()
             else:
                 return options["result_function"]("1", f"Message '{message}' is not implemented")
-            return
+
+            # Return '0' for success
+            return options["result_function"]("0")
 
         else:
             return options["result_function"]("1", f"'{command_name}' is not implemented")

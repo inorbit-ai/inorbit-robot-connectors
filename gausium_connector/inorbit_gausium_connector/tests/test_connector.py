@@ -324,34 +324,34 @@ class TestGausiumConnector:
             "1", "Robot is not available"
         )
 
-    def test_command_callback_start_cleaning_task(self, connector, callback_kwargs):
+    def test_command_callback_start_task_queue(self, connector, callback_kwargs):
         callback_kwargs["command_name"] = COMMAND_CUSTOM_COMMAND
-        callback_kwargs["args"] = ["start_cleaning_task", ["path_name", "vacuum_zone_1"]]
+        callback_kwargs["args"] = [
+            "start_task_queue",
+            ["task_queue_name", "vacuum_zone_corridor_123"],
+        ]
         connector._inorbit_command_handler(**callback_kwargs)
         # Verify the result function was called with success code
         callback_kwargs["options"]["result_function"].assert_called_with("0")
         # Verify the robot API method was called with the correct parameters
-        connector.robot_api.start_cleaning_task.assert_called_once_with(
+        connector.robot_api.start_task_queue.assert_called_once_with(
+            "vacuum_zone_corridor_123",  # task_queue_name
             None,  # map_name (defaults to None/current map)
-            "vacuum_zone_1",  # path_name
-            "InOrbit cleaning task action",  # task_name (default)
             False,  # loop (default)
             0,  # loop_count (default)
         )
 
         # Reset the mock
-        connector.robot_api.start_cleaning_task.reset_mock()
+        connector.robot_api.start_task_queue.reset_mock()
 
         # Test with additional parameters
         callback_kwargs["args"] = [
-            "start_cleaning_task",
+            "start_task_queue",
             [
-                "path_name",
-                "vacuum_zone_2",
+                "task_queue_name",
+                "vacuum_zone_corridor_123",
                 "map_name",
                 "test_map",
-                "task_name",
-                "Custom Task",
                 "loop",
                 True,
                 "loop_count",
@@ -360,8 +360,11 @@ class TestGausiumConnector:
         ]
         connector._inorbit_command_handler(**callback_kwargs)
         callback_kwargs["options"]["result_function"].assert_called_with("0")
-        connector.robot_api.start_cleaning_task.assert_called_once_with(
-            "test_map", "vacuum_zone_2", "Custom Task", True, 3
+        connector.robot_api.start_task_queue.assert_called_once_with(
+            "vacuum_zone_corridor_123",
+            "test_map",
+            True,
+            3,
         )
 
     def test_command_callback_send_to_named_waypoint(self, connector, callback_kwargs):
@@ -381,14 +384,14 @@ class TestGausiumConnector:
         callback_kwargs["options"]["result_function"].assert_called_with("0")
         connector.robot_api.send_to_named_waypoint.assert_called_once_with("waypoint_1", "test_map")
 
-    def test_command_callback_pause_cleaning_task(self, connector, callback_kwargs):
+    def test_command_callback_pause_task_queue(self, connector, callback_kwargs):
         # Set up the robot to be available
         connector.robot_api._last_call_successful = True
         connector.status = {"online": True}
 
         # Configure the custom command for pausing cleaning task
         callback_kwargs["command_name"] = COMMAND_CUSTOM_COMMAND
-        callback_kwargs["args"] = ["pause_cleaning_task", []]
+        callback_kwargs["args"] = ["pause_task_queue", []]
 
         # Call the handler
         connector._inorbit_command_handler(**callback_kwargs)
@@ -397,16 +400,16 @@ class TestGausiumConnector:
         callback_kwargs["options"]["result_function"].assert_called_with("0")
 
         # Verify the robot API method was called
-        connector.robot_api.pause_cleaning_task.assert_called_once()
+        connector.robot_api.pause_task_queue.assert_called_once()
 
-    def test_command_callback_resume_cleaning_task(self, connector, callback_kwargs):
+    def test_command_callback_resume_task_queue(self, connector, callback_kwargs):
         # Set up the robot to be available
         connector.robot_api._last_call_successful = True
         connector.status = {"online": True}
 
         # Configure the custom command for resuming cleaning task
         callback_kwargs["command_name"] = COMMAND_CUSTOM_COMMAND
-        callback_kwargs["args"] = ["resume_cleaning_task", []]
+        callback_kwargs["args"] = ["resume_task_queue", []]
 
         # Call the handler
         connector._inorbit_command_handler(**callback_kwargs)
@@ -415,16 +418,16 @@ class TestGausiumConnector:
         callback_kwargs["options"]["result_function"].assert_called_with("0")
 
         # Verify the robot API method was called
-        connector.robot_api.resume_cleaning_task.assert_called_once()
+        connector.robot_api.resume_task_queue.assert_called_once()
 
-    def test_command_callback_cancel_cleaning_task(self, connector, callback_kwargs):
+    def test_command_callback_cancel_task_queue(self, connector, callback_kwargs):
         # Set up the robot to be available
         connector.robot_api._last_call_successful = True
         connector.status = {"online": True}
 
         # Configure the custom command for canceling cleaning task
         callback_kwargs["command_name"] = COMMAND_CUSTOM_COMMAND
-        callback_kwargs["args"] = ["cancel_cleaning_task", []]
+        callback_kwargs["args"] = ["cancel_task_queue", []]
 
         # Call the handler
         connector._inorbit_command_handler(**callback_kwargs)
@@ -433,7 +436,7 @@ class TestGausiumConnector:
         callback_kwargs["options"]["result_function"].assert_called_with("0")
 
         # Verify the robot API method was called
-        connector.robot_api.cancel_cleaning_task.assert_called_once()
+        connector.robot_api.cancel_task_queue.assert_called_once()
 
     def test_command_callback_pause_navigation_task(self, connector, callback_kwargs):
         # Set up the robot to be available
@@ -496,9 +499,9 @@ class TestGausiumConnector:
 
         # Test each command with an unavailable robot
         commands = [
-            "pause_cleaning_task",
-            "resume_cleaning_task",
-            "cancel_cleaning_task",
+            "pause_task_queue",
+            "resume_task_queue",
+            "cancel_task_queue",
             "pause_navigation_task",
             "resume_navigation_task",
             "cancel_navigation_task",

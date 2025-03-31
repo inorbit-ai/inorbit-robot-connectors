@@ -24,6 +24,13 @@ my-example-robot:
     # (Optional) If true, the connector will not validate the model type of the robot
     # against the connector type.
     # ignore_model_type_validation: false
+  
+  # (Optional) Camera configuration. Multiple cameras can be configured
+  # cameras:
+  #   - video_url: rtsp://username:password@192.168.1.256:554/cam/realmonitor?channel=1&subtype=0
+  #     rate: 2 # Frames per second (optional)
+  #     scaling: 0.3 # Percentage of the original image size (optional)
+  #     quality: 60 # JPEG quality (0-100) (optional)
 
   # (Optional) Map configuration.
   # Each entry represents a map that will be published to InOrbit. If not set, the connector

@@ -10,6 +10,7 @@ from pydantic import HttpUrl
 from inorbit_gausium_connector.src.robot.robot_api import (
     GausiumCloudAPI,
     ModelTypeMismatchError,
+    MapData,
 )
 
 
@@ -362,3 +363,83 @@ class TestGausiumCloudAPIPauseResume:
             # Resume navigation
             mock_robot_api.resume()
             assert mock_robot_api._last_pause_command is None
+
+
+class TestGausiumCloudAPICoordinateConversion:
+    """Tests for the GausiumCloudAPI coordinate conversion methods."""
+
+    @pytest.fixture
+    def mock_robot_api(self, map_data):
+        """Create a mock GausiumCloudAPI instance for testing coordinate conversion."""
+        api = GausiumCloudAPI(
+            base_url=HttpUrl("http://example.com/"),
+            allowed_model_types=[],  # No validation
+            loglevel="DEBUG",
+        )
+
+        # Mock components to prevent actual HTTP requests
+        api.logger = Mock()
+        api.api_session = Mock()
+        api._get_current_map_or_raise = Mock(return_value=map_data)
+
+        return api
+
+    @pytest.fixture
+    def map_data(self):
+        """Create a MapData instance with known values for testing."""
+
+        return MapData(
+            map_name="test_map",
+            map_id="test_map_id",
+            origin_x=-10.0,
+            origin_y=-5.0,
+            resolution=0.05,
+        )
+
+    def test_coordinate_to_grid_units(self, mock_robot_api, map_data):
+        """Test coordinate conversion with standard values."""
+        # Test case 1: Origin point should convert to (0,0) in grid units
+        grid_x, grid_y = mock_robot_api._coordinate_to_grid_units(-10.0, -5.0)
+        assert grid_x == 0
+        assert grid_y == 0
+
+        # Test case 2: 1 meter in each direction from origin
+        grid_x, grid_y = mock_robot_api._coordinate_to_grid_units(-9.0, -4.0)
+        assert grid_x == 20  # ((-9) - (-10)) / 0.05 = 20
+        assert grid_y == 20  # ((-4) - (-5)) / 0.05 = 20
+
+        # Test case 3: Arbitrary point
+        grid_x, grid_y = mock_robot_api._coordinate_to_grid_units(5.0, 7.5)
+        assert grid_x == 300  # (5 - (-10)) / 0.05 = 300
+        assert grid_y == 250  # (7.5 - (-5)) / 0.05 = 250
+
+    def test_coordinate_to_grid_units_rounding(self, mock_robot_api, map_data):
+        """Test that coordinate conversion properly rounds to integers."""
+        # Test with fractional results that should be rounded to nearest integer
+        grid_x, grid_y = mock_robot_api._coordinate_to_grid_units(-9.974, -4.987)
+        assert grid_x == 1  # ((-9.974) - (-10)) / 0.05 = 0.52 → 1 (rounded to nearest)
+        assert grid_y == 0  # ((-4.987) - (-5)) / 0.05 = 0.26 → 0 (rounded to nearest)
+
+    def test_coordinate_to_grid_units_map_not_available(self, mock_robot_api):
+        """Test behavior when current map is not available."""
+        # Mock _get_current_map_or_raise to raise an exception
+        with patch.object(
+            mock_robot_api,
+            "_get_current_map_or_raise",
+            side_effect=Exception("No current map found"),
+        ):
+            # Attempt coordinate conversion should raise the same exception
+            with pytest.raises(Exception) as excinfo:
+                mock_robot_api._coordinate_to_grid_units(0.0, 0.0)
+
+            assert "No current map found" in str(excinfo.value)
+
+    def test_coordinate_to_grid_units_zero_resolution(self, mock_robot_api, map_data):
+        """Test behavior when map resolution is zero (should raise ZeroDivisionError)."""
+        # Modify map_data to have zero resolution
+        map_data.resolution = 0.0
+
+        with patch.object(mock_robot_api, "_get_current_map_or_raise", return_value=map_data):
+            # Attempting coordinate conversion with zero resolution should raise ZeroDivisionError
+            with pytest.raises(ZeroDivisionError):
+                mock_robot_api._coordinate_to_grid_units(0.0, 0.0)

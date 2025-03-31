@@ -955,8 +955,8 @@ class GausiumCloudAPI(GausiumRobotAPI):
         origin_x = map_data.origin_x
         origin_y = map_data.origin_y
 
-        grid_x = int((x - origin_x) / resolution)
-        grid_y = int((y - origin_y) / resolution)
+        grid_x = round((x - origin_x) / resolution)
+        grid_y = round((y - origin_y) / resolution)
         return grid_x, grid_y
 
     def _pause_navigation_task(self) -> bool:

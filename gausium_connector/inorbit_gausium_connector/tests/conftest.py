@@ -554,7 +554,7 @@ def initialize_customized_response():
 
 
 @pytest.fixture
-def robot_status_data():
+def robot_status_data_idle():
     # Sample response from /gs-robot/real_time_data/robot_status endpoint
     return {
         "data": {
@@ -588,6 +588,425 @@ def robot_status_data():
                 "workTypeId": 10,
             },
             "statusData": {},
+        },
+        "errorCode": "",
+        "msg": "successed",
+        "successed": True,
+    }
+
+
+@pytest.fixture
+def robot_status_data_task():
+    # Sample response from /gs-robot/real_time_data/robot_status endpoint
+    # while executing a task
+    return {
+        "data": {
+            "robotStatus": {
+                "map": {
+                    "DIYPngName": "",
+                    "beautyPngFileName": "",
+                    "createdAt": "2022-10-05 10:53:14",
+                    "customAreasFileName": "custom_area.json",
+                    "dataFileName": "map.data",
+                    "extendDataFileName": "map.exdata",
+                    "heatPngFileName": "",
+                    "id": "9993b3a8-aadb-46e0-9b66-980cf6be5b95",
+                    "lethalPngName": "lethal.png",
+                    "mapInfo": {
+                        "gridHeight": 2112,
+                        "gridWidth": 6592,
+                        "originX": -87.25,
+                        "originY": -87.450000000000003,
+                        "resolution": 0.05000000074505806,
+                    },
+                    "md5": "08d548bda1da0ea213176badad49ed1d",
+                    "name": "T2B1",
+                    "obstacleFileName": "map.obstacle",
+                    "pgmFileName": "map.pgm",
+                    "pngFileName": "map.png",
+                    "updatedAt": 1742293152,
+                    "yamlFileName": "map.yaml",
+                },
+                "workType": "EXECUTE_TASK",
+                "workTypeId": 8,
+            },
+            "statusData": {
+                "completeRate": 0,
+                "duration": 16.856204137000002,
+                "finished_task_count": 0,
+                "mapName": "T2B1",
+                "startTime": 1743169867,
+                "status": "STARTED",
+                "task": {
+                    "current_data": None,
+                    "name": "PlayDynamicPathTask",
+                    "start_param": {"map_name": "T2B1", "path_name": "zone_ishop_changi"},
+                    "status": "STARTED",
+                },
+                "taskQueue": {
+                    "coverage_area": 0,
+                    "estimate_time": 0.3383296782746979,
+                    "last_time": 1743169721,
+                    "length": 974.38947343113,
+                    "loop": False,
+                    "loop_count": 1,
+                    "map_id": "9993b3a8-aadb-46e0-9b66-980cf6be5b95",
+                    "map_name": "T2B1",
+                    "modify_time": 1682039521,
+                    "name": "vacuum_zone_corridor_south",
+                    "picture_url": "",
+                    "task_queue_id": "30e28ca5-7343-4e21-9734-ebb426884a10",
+                    "task_queue_type": 0,
+                    "tasks": [
+                        {
+                            "name": "PlayDynamicPathTask",
+                            "start_param": {"map_name": "T2B1", "path_name": "zone_ishop_changi"},
+                        },
+                        {
+                            "name": "PlayDynamicPathTask",
+                            "start_param": {"map_name": "T2B1", "path_name": "zone_cave_south"},
+                        },
+                        {
+                            "name": "PlayAreaPathTask",
+                            "start_param": {"map_name": "T2B1", "path_name": "zone_corridor"},
+                        },
+                        {
+                            "name": "PlayAreaPathTask",
+                            "start_param": {"map_name": "T2B1", "path_name": "zone_tpg"},
+                        },
+                        {
+                            "name": "NavigationTask",
+                            "start_param": {"map_name": "T2B1", "position_name": "charger_v40_sc"},
+                        },
+                    ],
+                    "total_area": 292.38250000000005,
+                    "used_count": 1003,
+                    "work_mode": {
+                        "id": "6ab81cbcde624fca8082140d71f38fe1",
+                        "name": "vacuum",
+                        "type": 1,
+                    },
+                },
+                "taskSegments": [
+                    {
+                        "cleaningMode": "custom_cleaning",
+                        "data": [
+                            {"x": 951, "y": 1267},
+                            {"x": 952, "y": 1267},
+                            {"x": 953, "y": 1267},
+                        ],
+                        "endIndex": 1199,
+                        "endPercent": 0,
+                        "fileName": "979151a5-fea2-4279-a690-b02a984e7c2d.csv",
+                        "groupPathName": "__AREA_PATH_0",
+                        "id": "zone_ishop_changi|__AREA_PATH_0|0-1199",
+                        "name": "zone_ishop_changi|__AREA_PATH_0|0-1199",
+                        "pathName": "zone_ishop_changi",
+                        "sample": 1,
+                        "startIndex": 0,
+                        "startPercent": 0,
+                        "status": "UNFILLED",
+                        "type": 2,
+                    },
+                    {
+                        "cleaningMode": "custom_cleaning",
+                        "data": [
+                            {"x": 957, "y": 1272},
+                            {"x": 958, "y": 1272},
+                            {"x": 957, "y": 1273},
+                        ],
+                        "endIndex": 1154,
+                        "endPercent": 0,
+                        "fileName": "979151a5-fea2-4279-a690-b02a984e7c2d.csv",
+                        "groupPathName": "__AREA_PATH_1",
+                        "id": "zone_ishop_changi|__AREA_PATH_1|0-1154",
+                        "name": "zone_ishop_changi|__AREA_PATH_1|0-1154",
+                        "pathName": "zone_ishop_changi",
+                        "sample": 1,
+                        "startIndex": 0,
+                        "startPercent": 0,
+                        "status": "UNFILLED",
+                        "type": 2,
+                    },
+                ],
+            },
+        },
+        "errorCode": "",
+        "msg": "successed",
+        "successed": True,
+    }
+
+
+@pytest.fixture
+def robot_status_data_task_paused():
+    # Sample response from /gs-robot/real_time_data/robot_status endpoint
+    # while the robot is paused executing a task
+    return {
+        "data": {
+            "robotStatus": {
+                "map": {
+                    "DIYPngName": "",
+                    "beautyPngFileName": "",
+                    "createdAt": "2022-10-05 10:53:14",
+                    "customAreasFileName": "custom_area.json",
+                    "dataFileName": "map.data",
+                    "extendDataFileName": "map.exdata",
+                    "heatPngFileName": "",
+                    "id": "9993b3a8-aadb-46e0-9b66-980cf6be5b95",
+                    "lethalPngName": "lethal.png",
+                    "mapInfo": {
+                        "gridHeight": 2112,
+                        "gridWidth": 6592,
+                        "originX": -87.25,
+                        "originY": -87.450000000000003,
+                        "resolution": 0.05000000074505806,
+                    },
+                    "md5": "08d548bda1da0ea213176badad49ed1d",
+                    "name": "T2B1",
+                    "obstacleFileName": "map.obstacle",
+                    "pgmFileName": "map.pgm",
+                    "pngFileName": "map.png",
+                    "updatedAt": 1742293152,
+                    "yamlFileName": "map.yaml",
+                },
+                "workType": "EXECUTE_TASK",
+                "workTypeId": 8,
+            },
+            "statusData": {
+                "completeRate": 0,
+                "duration": 0,
+                "finished_task_count": 0,
+                "mapName": "T2B1",
+                "startTime": 1743168077,
+                "status": "PAUSED",
+                "task": {
+                    "current_data": None,
+                    "name": "PlayDynamicPathTask",
+                    "start_param": {"map_name": "T2B1", "path_name": "zone_ishop_changi"},
+                    "status": "PAUSED",
+                },
+                "taskQueue": {
+                    "coverage_area": 0,
+                    "estimate_time": 0.3383296782746979,
+                    "last_time": 1743152401,
+                    "length": 974.38947343113,
+                    "loop": False,
+                    "loop_count": 1,
+                    "map_id": "9993b3a8-aadb-46e0-9b66-980cf6be5b95",
+                    "map_name": "T2B1",
+                    "modify_time": 1682039521,
+                    "name": "vacuum_zone_corridor_south",
+                    "picture_url": "",
+                    "task_queue_id": "6da46020-be41-4f82-9b16-e20e45b5afff",
+                    "task_queue_type": 0,
+                    "tasks": [
+                        {
+                            "name": "PlayDynamicPathTask",
+                            "start_param": {"map_name": "T2B1", "path_name": "zone_ishop_changi"},
+                        },
+                        {
+                            "name": "PlayDynamicPathTask",
+                            "start_param": {"map_name": "T2B1", "path_name": "zone_cave_south"},
+                        },
+                        {
+                            "name": "PlayAreaPathTask",
+                            "start_param": {"map_name": "T2B1", "path_name": "zone_corridor"},
+                        },
+                        {
+                            "name": "PlayAreaPathTask",
+                            "start_param": {"map_name": "T2B1", "path_name": "zone_tpg"},
+                        },
+                        {
+                            "name": "NavigationTask",
+                            "start_param": {"map_name": "T2B1", "position_name": "charger_v40_sc"},
+                        },
+                    ],
+                    "total_area": 292.38250000000005,
+                    "used_count": 1000,
+                    "work_mode": {
+                        "id": "6ab81cbcde624fca8082140d71f38fe1",
+                        "name": "vacuum",
+                        "type": 1,
+                    },
+                },
+                "taskSegments": [
+                    {
+                        "cleaningMode": "custom_cleaning",
+                        "data": [
+                            {"x": 951, "y": 1267},
+                            {"x": 952, "y": 1267},
+                            {"x": 953, "y": 1267},
+                        ],
+                        "endIndex": 1199,
+                        "endPercent": 0,
+                        "fileName": "979151a5-fea2-4279-a690-b02a984e7c2d.csv",
+                        "groupPathName": "__AREA_PATH_0",
+                        "id": "zone_ishop_changi|__AREA_PATH_0|0-1199",
+                        "name": "zone_ishop_changi|__AREA_PATH_0|0-1199",
+                        "pathName": "zone_ishop_changi",
+                        "sample": 1,
+                        "startIndex": 0,
+                        "startPercent": 0,
+                        "status": "UNFILLED",
+                        "type": 2,
+                    },
+                    {
+                        "cleaningMode": "custom_cleaning",
+                        "data": [
+                            {"x": 957, "y": 1272},
+                            {"x": 958, "y": 1272},
+                            {"x": 957, "y": 1273},
+                        ],
+                        "endIndex": 1154,
+                        "endPercent": 0,
+                        "fileName": "979151a5-fea2-4279-a690-b02a984e7c2d.csv",
+                        "groupPathName": "__AREA_PATH_1",
+                        "id": "zone_ishop_changi|__AREA_PATH_1|0-1154",
+                        "name": "zone_ishop_changi|__AREA_PATH_1|0-1154",
+                        "pathName": "zone_ishop_changi",
+                        "sample": 1,
+                        "startIndex": 0,
+                        "startPercent": 0,
+                        "status": "UNFILLED",
+                        "type": 2,
+                    },
+                ],
+            },
+        },
+        "errorCode": "",
+        "msg": "successed",
+        "successed": True,
+    }
+
+
+@pytest.fixture
+def robot_status_data_navigating_to_coords():
+    # Sample response from /gs-robot/real_time_data/robot_status endpoint
+    # while the robot is navigating to a set of coordinates
+    return {
+        "data": {
+            "robotStatus": {
+                "map": {
+                    "DIYPngName": "",
+                    "beautyPngFileName": "",
+                    "createdAt": "2022-10-05 10:53:14",
+                    "customAreasFileName": "custom_area.json",
+                    "dataFileName": "map.data",
+                    "extendDataFileName": "map.exdata",
+                    "heatPngFileName": "",
+                    "id": "9993b3a8-aadb-46e0-9b66-980cf6be5b95",
+                    "lethalPngName": "lethal.png",
+                    "mapInfo": {
+                        "gridHeight": 2112,
+                        "gridWidth": 6592,
+                        "originX": -87.25,
+                        "originY": -87.450000000000003,
+                        "resolution": 0.05000000074505806,
+                    },
+                    "md5": "9bae43746322de7aedea0888cce34538",
+                    "name": "T2B1",
+                    "obstacleFileName": "map.obstacle",
+                    "pgmFileName": "map.pgm",
+                    "pngFileName": "map.png",
+                    "updatedAt": 1736827398,
+                    "yamlFileName": "map.yaml",
+                },
+                "workType": "NAVIGATING",
+                "workTypeId": 5,
+            },
+            "statusData": {
+                "status": "STARTED",
+                "targetPos": {
+                    "angle": 0,
+                    "canInit": True,
+                    "canInitialize": True,
+                    "createdAt": "",
+                    "gridX": 0,
+                    "gridY": 0,
+                    "id": 0,
+                    "loraAddress": "",
+                    "mapId": "9993b3a8-aadb-46e0-9b66-980cf6be5b95",
+                    "mapName": "T2B1",
+                    "name": "NO_GOAL",
+                    "navHidden": False,
+                    "pointFunction": 0,
+                    "type": 2,
+                    "worldPose": {
+                        "orientation": {
+                            "w": 0.99940351451809839,
+                            "x": 0,
+                            "y": 0,
+                            "z": -0.034534260798128248,
+                        },
+                        "position": {"x": 45.525001978501678, "y": -8.5249988239258556, "z": 0},
+                    },
+                },
+            },
+        },
+        "errorCode": "",
+        "msg": "successed",
+        "successed": True,
+    }
+
+
+@pytest.fixture
+def robot_status_data_navigating_to_waypoint():
+    # Sample response from /gs-robot/real_time_data/robot_status endpoint
+    # while the robot is navigating to a named waypoint
+    return {
+        "data": {
+            "robotStatus": {
+                "map": {
+                    "DIYPngName": "",
+                    "beautyPngFileName": "",
+                    "createdAt": "2022-10-05 10:53:14",
+                    "customAreasFileName": "custom_area.json",
+                    "dataFileName": "map.data",
+                    "extendDataFileName": "map.exdata",
+                    "heatPngFileName": "",
+                    "id": "9993b3a8-aadb-46e0-9b66-980cf6be5b95",
+                    "lethalPngName": "lethal.png",
+                    "mapInfo": {
+                        "gridHeight": 2112,
+                        "gridWidth": 6592,
+                        "originX": -87.25,
+                        "originY": -87.450000000000003,
+                        "resolution": 0.05000000074505806,
+                    },
+                    "md5": "08d548bda1da0ea213176badad49ed1d",
+                    "name": "T2B1",
+                    "obstacleFileName": "map.obstacle",
+                    "pgmFileName": "map.pgm",
+                    "pngFileName": "map.png",
+                    "updatedAt": 1742293152,
+                    "yamlFileName": "map.yaml",
+                },
+                "workType": "NAVIGATING",
+                "workTypeId": 5,
+            },
+            "statusData": {
+                "status": "STARTED",
+                "targetPos": {
+                    "angle": 0,
+                    "canInit": False,
+                    "canInitialize": False,
+                    "createdAt": "2025-03-18 18:18:10",
+                    "gridX": 823,
+                    "gridY": 836,
+                    "id": 0,
+                    "loraAddress": "",
+                    "mapId": "9993b3a8-aadb-46e0-9b66-980cf6be5b95",
+                    "mapName": "T2B1",
+                    "name": "inorbit_test_1",
+                    "navHidden": False,
+                    "pointFunction": 0,
+                    "type": 2,
+                    "worldPose": {
+                        "orientation": {"w": 1, "x": 0, "y": 0, "z": 0},
+                        "position": {"x": -46.074999386444688, "y": -45.624999376758936, "z": 0},
+                    },
+                },
+            },
         },
         "errorCode": "",
         "msg": "successed",

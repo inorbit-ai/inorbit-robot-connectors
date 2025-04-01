@@ -17,6 +17,7 @@ from inorbit_edge.robot import (
     COMMAND_MESSAGE,
     COMMAND_NAV_GOAL,
 )
+from inorbit_gausium_connector.src.mission import MissionTracking
 from inorbit_gausium_connector.src.robot.robot_api import ModelTypeMismatchError
 from PIL import Image
 
@@ -67,6 +68,7 @@ class GausiumConnector(Connector):
             ignore_model_type_validation=config.connector_config.ignore_model_type_validation,
         )
         self.status = {}
+        self.mission_tracking = MissionTracking(self.publish_mission_tracking)
 
     def _connect(self) -> None:
         """Connect to the robot services.
@@ -102,13 +104,19 @@ class GausiumConnector(Connector):
 
         self.publish_pose(**self.robot_api.pose)
         self._robot_session.publish_odometry(**self.robot_api.odometry)
+        robot_key_values = self.robot_api.key_values
         self._robot_session.publish_key_values(
             {
-                **self.robot_api.key_values,
+                **robot_key_values,
                 "connector_version": __version__,
                 "robot_available": self.is_robot_available(),
             }
         )
+
+        # Update mission tracking data
+        robot_status = robot_key_values.get("robotStatus", {})
+        status_data = robot_key_values.get("statusData", {})
+        self.mission_tracking.mission_update(robot_status, status_data)
 
     @override
     def publish_map(self, frame_id: str, is_update: bool = False) -> None:
@@ -327,3 +335,7 @@ class GausiumConnector(Connector):
         # If the last call was successful and the robot is online, return True
         # If unable to determine if the robot is online from the status data, assume it is
         return self.robot_api._last_call_successful and self.status.get("online", True)
+
+    def publish_mission_tracking(self, report: dict) -> None:
+        """Publish a mission tracking report to InOrbit."""
+        self._robot_session.publish_key_values({"mission_tracking": report}, is_event=True)

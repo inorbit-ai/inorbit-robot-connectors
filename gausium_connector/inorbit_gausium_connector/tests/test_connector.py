@@ -49,6 +49,7 @@ class TestGausiumConnector:
 
         # Mock API and session
         connector.robot_api = MagicMock()
+        connector.mission_tracking = MagicMock()
         connector._robot_session = MagicMock()
 
         # Explicitly set the logger to our mock
@@ -532,7 +533,14 @@ class TestGausiumConnector:
                 not robot_api_method.called
             ), f"Robot API method {method_name} was called when robot was unavailable"
 
-    def test_execution_loop(self, connector, robot_info, current_position_data, device_status_data):
+    def test_execution_loop(
+        self,
+        connector,
+        robot_info,
+        current_position_data,
+        device_status_data,
+        robot_status_data_task,
+    ):
         # Setup mock return values based on fixtures
         connector.robot_api.pose = {
             "x": current_position_data["worldPosition"]["position"]["x"],
@@ -545,6 +553,8 @@ class TestGausiumConnector:
             "battery_percentage": device_status_data["data"]["battery"],
             "model": robot_info["data"]["modelType"],
             "uptime": 1000,
+            "robotStatus": robot_status_data_task["data"]["robotStatus"],
+            "statusData": robot_status_data_task["data"]["statusData"],
         }
 
         # Mock the publish_pose method
@@ -562,6 +572,10 @@ class TestGausiumConnector:
             **connector.robot_api.odometry
         )
         connector._robot_session.publish_key_values.assert_called_once()
+        connector.mission_tracking.mission_update.assert_called_once_with(
+            connector.robot_api.key_values["robotStatus"],
+            connector.robot_api.key_values["statusData"],
+        )
 
         # Test execution loop with exception
         connector.robot_api.update.reset_mock()

@@ -443,3 +443,53 @@ class TestGausiumCloudAPICoordinateConversion:
             # Attempting coordinate conversion with zero resolution should raise ZeroDivisionError
             with pytest.raises(ZeroDivisionError):
                 mock_robot_api._coordinate_to_grid_units(0.0, 0.0)
+
+    def test_grid_units_to_coordinate(self, mock_robot_api, map_data):
+        """Test grid units to coordinate conversion with standard values."""
+        # Test case 1: Origin point (0,0) in grid units should convert to origin coordinates
+        coord_x, coord_y = mock_robot_api._grid_units_to_coordinate(0, 0)
+        assert coord_x == -10.0
+        assert coord_y == -5.0
+
+        # Test case 2: 20 grid units in each direction (1 meter with 0.05 resolution)
+        coord_x, coord_y = mock_robot_api._grid_units_to_coordinate(20, 20)
+        assert coord_x == -9.0  # 20 * 0.05 + (-10) = -9.0
+        assert coord_y == -4.0  # 20 * 0.05 + (-5) = -4.0
+
+        # Test case 3: Arbitrary grid point
+        coord_x, coord_y = mock_robot_api._grid_units_to_coordinate(300, 250)
+        assert coord_x == 5.0  # 300 * 0.05 + (-10) = 5.0
+        assert coord_y == 7.5  # 250 * 0.05 + (-5) = 7.5
+
+    def test_grid_units_to_coordinate_map_not_available(self, mock_robot_api):
+        """Test behavior when current map is not available."""
+        # Mock _get_current_map_or_raise to raise an exception
+        with patch.object(
+            mock_robot_api,
+            "_get_current_map_or_raise",
+            side_effect=Exception("No current map found"),
+        ):
+            # Attempt coordinate conversion should raise the same exception
+            with pytest.raises(Exception) as excinfo:
+                mock_robot_api._grid_units_to_coordinate(0, 0)
+
+            assert "No current map found" in str(excinfo.value)
+
+    def test_grid_units_to_coordinate_consistency(self, mock_robot_api, map_data):
+        """Test that coordinate conversion is consistent in both directions."""
+        # Convert from coordinates to grid units
+        test_coords = [
+            (-10.0, -5.0),  # Origin
+            (-9.0, -4.0),  # 1m from origin
+            (5.0, 7.5),  # Random point
+        ]
+
+        for x, y in test_coords:
+            # Convert coordinates -> grid units
+            grid_x, grid_y = mock_robot_api._coordinate_to_grid_units(x, y)
+            # Convert back grid units -> coordinates
+            coord_x, coord_y = mock_robot_api._grid_units_to_coordinate(grid_x, grid_y)
+
+            # Check that we get back the original coordinates (within floating point precision)
+            assert abs(coord_x - x) < 1e-10
+            assert abs(coord_y - y) < 1e-10

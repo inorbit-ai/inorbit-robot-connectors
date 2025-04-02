@@ -959,6 +959,25 @@ class GausiumCloudAPI(GausiumRobotAPI):
         grid_y = round((y - origin_y) / resolution)
         return grid_x, grid_y
 
+    def _grid_units_to_coordinate(self, x: int, y: int) -> tuple[float, float]:
+        """Convert grid units to coordinates of the current map
+
+        Args:
+            x (int): X coordinate in grid units
+            y (int): Y coordinate in grid units
+
+        Returns:
+            tuple[float, float]: Coordinates of the current map
+        """
+        map_data = self._get_current_map_or_raise()
+        resolution = map_data.resolution
+        origin_x = map_data.origin_x
+        origin_y = map_data.origin_y
+
+        coordinate_x = x * resolution + origin_x
+        coordinate_y = y * resolution + origin_y
+        return coordinate_x, coordinate_y
+
     def _pause_navigation_task(self) -> bool:
         """Pause the ongoing navigation task
 

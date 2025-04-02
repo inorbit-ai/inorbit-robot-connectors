@@ -6,7 +6,7 @@ import logging
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from math import radians
-from typing import List, Optional, override
+from typing import List, Optional, Tuple, override
 from urllib.parse import urljoin
 
 from pydantic import BaseModel, HttpUrl
@@ -37,6 +37,14 @@ class MapData(BaseModel):
     # Lazy loaded map image
     # NOTE: Maybe not a great solution, since some maps may be quite large
     map_image: Optional[bytes] = None
+
+
+class PathData(BaseModel):
+    """Data class to hold gausium path information."""
+
+    path_points: List[Tuple[float, float]]
+    path_id: str = "0"
+    frame_id: str
 
 
 class GausiumRobotAPI(ABC):
@@ -145,6 +153,12 @@ class GausiumRobotAPI(ABC):
 
     @property
     @abstractmethod
+    def path(self) -> PathData:
+        """Get the current path of the robot"""
+        pass
+
+    @property
+    @abstractmethod
     def key_values(self) -> dict:
         """Get the key values of the robot"""
         pass
@@ -237,6 +251,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         super().__init__(base_url, loglevel)
         self._pose: dict | None = None
         self._odometry: dict | None = None
+        self._path: PathData | None = None
         self._key_values: dict | None = None
         self._firmware_version: str | None = None
         self._device_status: dict | None = None
@@ -309,13 +324,52 @@ class GausiumCloudAPI(GausiumRobotAPI):
             **device_data,
             **robot_status_data,
         }
+        frame_id = self._current_map.map_name if self._current_map else "map"
         self._pose = {
             "x": position_data.get("worldPosition", {}).get("position", {}).get("x"),
             "y": position_data.get("worldPosition", {}).get("position", {}).get("y"),
             "yaw": radians(position_data.get("angle")),
-            "frame_id": self._current_map.map_name if self._current_map else "map",
+            "frame_id": frame_id,
         }
         self._odometry = {}  # TODO: Get the odometry data
+        self._path = self._path_from_robot_status(robot_status_data, frame_id)
+
+    def _path_from_robot_status(self, robot_status_data: dict, frame_id: str) -> PathData:
+        """Get the path of the robot from the robot status data"""
+
+        work_type = robot_status_data.get("robotStatus", {}).get("workType")
+        path_points = []
+
+        # If navigating, publish one path segment connecting the current pose to the target pose
+        if work_type == "NAVIGATING":
+            target_pose = (
+                robot_status_data.get("statusData", {})
+                .get("targetPos", {})
+                .get("worldPose", {})
+                .get("position", {})
+            )
+            if not target_pose.get("x") or not target_pose.get("y"):
+                self.logger.warning("No target pose found for path while navigating")
+                path_points = []
+            else:
+                path_points = [
+                    (self.pose["x"], self.pose["y"]),
+                    (target_pose["x"], target_pose["y"]),
+                ]
+
+        # If executing a task, publish the "taskSegments"
+        elif work_type == "EXECUTE_TASK":
+            task_segments = robot_status_data.get("statusData", {}).get("taskSegments", [])
+            for segment in task_segments:
+                data = segment.get("data", [])
+                path_points.extend(
+                    [self._grid_units_to_coordinate(point["x"], point["y"]) for point in data]
+                )
+
+        return PathData(
+            path_points=path_points,
+            frame_id=frame_id,
+        )
 
     @property
     @override
@@ -332,6 +386,14 @@ class GausiumCloudAPI(GausiumRobotAPI):
         if self._odometry is None:
             self.update()
         return self._odometry
+
+    @property
+    @override
+    def path(self) -> PathData:
+        """Get the current path of the robot"""
+        if self._path is None:
+            self.update()
+        return self._path
 
     @property
     @override

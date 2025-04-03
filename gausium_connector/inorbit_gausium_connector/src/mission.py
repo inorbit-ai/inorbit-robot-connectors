@@ -2,31 +2,11 @@
 #
 # SPDX-License-Identifier: MIT
 
-from enum import Enum
 import time
 from typing import Callable
 
-
-class MissionStatus(Enum):
-    """
-    Values for mission Status.
-    """
-
-    ok = "OK"
-    warn = "warn"
-    error = "error"
-
-
-class MissionState(Enum):
-    """
-    Values for mission States.
-    """
-
-    completed = "completed"
-    in_progress = "in-progress"
-    paused = "paused"
-    abandoned = "abandoned"
-    starting = "starting"
+from inorbit_gausium_connector.src.constants import MissionState, MissionStatus
+from inorbit_gausium_connector.src.robot.constants import TaskState
 
 
 class MissionTracking:
@@ -88,7 +68,8 @@ class MissionTracking:
             "state": MissionTracking.gausium_task_state_to_inorbit_state(
                 status_data.get("status")
             ).value,
-            "inProgress": status_data.get("status") in ["STARTED", "PAUSED"],
+            "inProgress": status_data.get("status")
+            in [TaskState.STARTED.value, TaskState.PAUSED.value],
             "label": task_queue.get("name"),
             "startTs": status_data.get("startTime"),
             "completedPercent": progress,
@@ -120,9 +101,9 @@ class MissionTracking:
     @staticmethod
     def gausium_task_state_to_inorbit_state(state: str) -> MissionState:
         """Translate Gausium task state to InOrbit mission state"""
-        if state == "STARTED":
+        if state == TaskState.STARTED.value:
             return MissionState.in_progress
-        elif state == "PAUSED":
+        elif state == TaskState.PAUSED.value:
             return MissionState.paused
         print(f"Unknown task state: {state}")
         return MissionState.completed

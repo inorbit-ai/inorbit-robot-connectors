@@ -640,7 +640,7 @@ def robot_status_data_task():
                 "task": {
                     "current_data": None,
                     "name": "PlayDynamicPathTask",
-                    "start_param": {"map_name": "T2B1", "path_name": "zone_ishop_changi"},
+                    "start_param": {"map_name": "T2B1", "path_name": "zone_ishop"},
                     "status": "STARTED",
                 },
                 "taskQueue": {
@@ -660,7 +660,7 @@ def robot_status_data_task():
                     "tasks": [
                         {
                             "name": "PlayDynamicPathTask",
-                            "start_param": {"map_name": "T2B1", "path_name": "zone_ishop_changi"},
+                            "start_param": {"map_name": "T2B1", "path_name": "zone_ishop"},
                         },
                         {
                             "name": "PlayDynamicPathTask",
@@ -699,9 +699,9 @@ def robot_status_data_task():
                         "endPercent": 0,
                         "fileName": "979151a5-fea2-4279-a690-b02a984e7c2d.csv",
                         "groupPathName": "__AREA_PATH_0",
-                        "id": "zone_ishop_changi|__AREA_PATH_0|0-1199",
-                        "name": "zone_ishop_changi|__AREA_PATH_0|0-1199",
-                        "pathName": "zone_ishop_changi",
+                        "id": "zone_ishop|__AREA_PATH_0|0-1199",
+                        "name": "zone_ishop|__AREA_PATH_0|0-1199",
+                        "pathName": "zone_ishop",
                         "sample": 1,
                         "startIndex": 0,
                         "startPercent": 0,
@@ -719,9 +719,9 @@ def robot_status_data_task():
                         "endPercent": 0,
                         "fileName": "979151a5-fea2-4279-a690-b02a984e7c2d.csv",
                         "groupPathName": "__AREA_PATH_1",
-                        "id": "zone_ishop_changi|__AREA_PATH_1|0-1154",
-                        "name": "zone_ishop_changi|__AREA_PATH_1|0-1154",
-                        "pathName": "zone_ishop_changi",
+                        "id": "zone_ishop|__AREA_PATH_1|0-1154",
+                        "name": "zone_ishop|__AREA_PATH_1|0-1154",
+                        "pathName": "zone_ishop",
                         "sample": 1,
                         "startIndex": 0,
                         "startPercent": 0,
@@ -782,7 +782,7 @@ def robot_status_data_task_paused():
                 "task": {
                     "current_data": None,
                     "name": "PlayDynamicPathTask",
-                    "start_param": {"map_name": "T2B1", "path_name": "zone_ishop_changi"},
+                    "start_param": {"map_name": "T2B1", "path_name": "zone_ishop"},
                     "status": "PAUSED",
                 },
                 "taskQueue": {
@@ -802,7 +802,7 @@ def robot_status_data_task_paused():
                     "tasks": [
                         {
                             "name": "PlayDynamicPathTask",
-                            "start_param": {"map_name": "T2B1", "path_name": "zone_ishop_changi"},
+                            "start_param": {"map_name": "T2B1", "path_name": "zone_ishop"},
                         },
                         {
                             "name": "PlayDynamicPathTask",
@@ -841,9 +841,9 @@ def robot_status_data_task_paused():
                         "endPercent": 0,
                         "fileName": "979151a5-fea2-4279-a690-b02a984e7c2d.csv",
                         "groupPathName": "__AREA_PATH_0",
-                        "id": "zone_ishop_changi|__AREA_PATH_0|0-1199",
-                        "name": "zone_ishop_changi|__AREA_PATH_0|0-1199",
-                        "pathName": "zone_ishop_changi",
+                        "id": "zone_ishop|__AREA_PATH_0|0-1199",
+                        "name": "zone_ishop|__AREA_PATH_0|0-1199",
+                        "pathName": "zone_ishop",
                         "sample": 1,
                         "startIndex": 0,
                         "startPercent": 0,
@@ -861,9 +861,9 @@ def robot_status_data_task_paused():
                         "endPercent": 0,
                         "fileName": "979151a5-fea2-4279-a690-b02a984e7c2d.csv",
                         "groupPathName": "__AREA_PATH_1",
-                        "id": "zone_ishop_changi|__AREA_PATH_1|0-1154",
-                        "name": "zone_ishop_changi|__AREA_PATH_1|0-1154",
-                        "pathName": "zone_ishop_changi",
+                        "id": "zone_ishop|__AREA_PATH_1|0-1154",
+                        "name": "zone_ishop|__AREA_PATH_1|0-1154",
+                        "pathName": "zone_ishop",
                         "sample": 1,
                         "startIndex": 0,
                         "startPercent": 0,

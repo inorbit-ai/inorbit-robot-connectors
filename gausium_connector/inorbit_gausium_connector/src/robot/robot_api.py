@@ -13,6 +13,8 @@ from pydantic import BaseModel, HttpUrl
 from requests import Response, Session
 from requests.exceptions import HTTPError
 
+from inorbit_gausium_connector.src.robot.constants import WorkType
+
 
 class ModelTypeMismatchError(Exception):
     """Exception raised when the model type of the robot and the API wrapper in use do not match."""
@@ -341,7 +343,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         path_points = []
 
         # If navigating, publish one path segment connecting the current pose to the target pose
-        if work_type == "NAVIGATING":
+        if work_type == WorkType.NAVIGATING.value:
             target_pose = (
                 robot_status_data.get("statusData", {})
                 .get("targetPos", {})
@@ -358,7 +360,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
                 ]
 
         # If executing a task, publish the "taskSegments"
-        elif work_type == "EXECUTE_TASK":
+        elif work_type == WorkType.EXECUTE_TASK.value:
             task_segments = robot_status_data.get("statusData", {}).get("taskSegments", [])
             for segment in task_segments:
                 data = segment.get("data", [])

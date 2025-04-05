@@ -6,7 +6,7 @@ import time
 from typing import Callable
 
 from inorbit_gausium_connector.src.constants import MissionState, MissionStatus
-from inorbit_gausium_connector.src.robot.constants import TaskState
+from inorbit_gausium_connector.src.robot.constants import TaskState, WorkType
 
 
 class MissionTracking:
@@ -29,7 +29,7 @@ class MissionTracking:
         report = None
 
         # If the robot is executing a mission, build a new report
-        if work_type == "EXECUTE_TASK":
+        if work_type == WorkType.EXECUTE_TASK.value:
             report = self.build_report_from_robot_data(robot_status, status_data)
             # If the mission ID has changed, complete the previous mission first
             if self._last_report and report.get("missionId") != self._last_report.get("missionId"):
@@ -55,7 +55,7 @@ class MissionTracking:
 
         work_type = robot_status.get("workType")
         task_queue = status_data.get("taskQueue")
-        if work_type != "EXECUTE_TASK" or not task_queue:
+        if work_type != WorkType.EXECUTE_TASK.value or not task_queue:
             return {}
 
         tasks = task_queue.get("tasks", [])

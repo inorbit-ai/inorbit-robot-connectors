@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: 2025 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
+# Recommended Mission Tracking configuration for Gausium robots.
+# It is recommended to apply them on a hardware tag scope.
+
+# For InOrbit Mission Tracking documentation, see:
+# https://developer.inorbit.ai/docs#configuring-mission-tracking
+
+apiVersion: v0.1
+kind: DataSourceDefinition
+metadata:
+  id: mission_tracking
+  scope: tag/<account_id>/<tag_id>
+spec:
+  label: Mission tracking
+  source:
+    keyValue:
+      key: mission_tracking
+  timeline: {}
+  type: json
+---
+kind: MissionTracking
+apiVersion: v0.1
+metadata: 
+  scope: tag/<account_id>/<tag_id>
+  id: all
+spec:
+  processingType:
+  - api
+  autoClosePreviousMission: true
+  attributes:
+    mission_tracking:
+      type: missionApi

@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
+
 from enum import Enum
 
 
@@ -10,3 +11,10 @@ class WorkType(Enum):
 
     NAVIGATING = "NAVIGATING"
     EXECUTE_TASK = "EXECUTE_TASK"
+
+
+class TaskState(Enum):
+    """Enum to hold possible task states."""
+
+    STARTED = "STARTED"
+    PAUSED = "PAUSED"

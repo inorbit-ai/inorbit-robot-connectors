@@ -112,6 +112,8 @@ class GausiumConnector(Connector):
                 "robot_available": self.is_robot_available(),
             }
         )
+        if self.robot_api.path:
+            self._robot_session.publish_path(**self.robot_api.path.model_dump())
 
         # Update mission tracking data
         robot_status = robot_key_values.get("robotStatus", {})

@@ -109,6 +109,8 @@ class GausiumConnector(Connector):
                 "robot_available": self.is_robot_available(),
             }
         )
+        if self.robot_api.path:
+            self._robot_session.publish_path(**self.robot_api.path.model_dump())
 
     @override
     def publish_map(self, frame_id: str, is_update: bool = False) -> None:

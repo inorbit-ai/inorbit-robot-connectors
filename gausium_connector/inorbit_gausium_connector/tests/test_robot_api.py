@@ -14,12 +14,26 @@ from inorbit_gausium_connector.src.robot.robot_api import (
 )
 
 
+@pytest.fixture
+def map_data():
+    """Create a MapData instance with known values for testing."""
+
+    return MapData(
+        map_name="test_map",
+        map_id="test_map_id",
+        origin_x=-10.0,
+        origin_y=-5.0,
+        resolution=0.05,
+        map_image=None,  # No image needed for these tests
+    )
+
+
 class TestGausiumCloudAPIUpdate:
     """Tests for the GausiumCloudAPI.update() method."""
 
     @pytest.fixture
     def mock_robot_api(
-        self, robot_info, device_status_data, current_position_data, robot_status_data
+        self, robot_info, device_status_data, current_position_data, robot_status_data_idle
     ):
         """Create a mock GausiumCloudAPI instance with validation enabled."""
         api = GausiumCloudAPI(
@@ -37,7 +51,7 @@ class TestGausiumCloudAPIUpdate:
         api._get_robot_info = Mock(return_value=robot_info)
         api._get_device_status = Mock(return_value=device_status_data)
         api._fetch_position = Mock(return_value=current_position_data)
-        api._get_robot_status = Mock(return_value=robot_status_data)
+        api._get_robot_status = Mock(return_value=robot_status_data_idle)
 
         return api
 
@@ -110,7 +124,7 @@ class TestGausiumCloudAPIUpdate:
             mock_robot_api.update()
 
     def test_explicit_ignore_model_type_validation(
-        self, robot_info, device_status_data, current_position_data, robot_status_data
+        self, robot_info, device_status_data, current_position_data, robot_status_data_idle
     ):
         """Test that validation can be explicitly bypassed using empty allowed_model_types."""
         # Create API with empty allowed_model_types list (which effectively ignores validation)
@@ -134,7 +148,7 @@ class TestGausiumCloudAPIUpdate:
             patch.object(api, "_get_robot_info", return_value=invalid_robot_info),
             patch.object(api, "_get_device_status", return_value=device_status_data),
             patch.object(api, "_fetch_position", return_value=current_position_data),
-            patch.object(api, "_get_robot_status", return_value=robot_status_data),
+            patch.object(api, "_get_robot_status", return_value=robot_status_data_idle),
         ):
             # This should not raise an exception despite the invalid model type
             api.update()
@@ -384,18 +398,6 @@ class TestGausiumCloudAPICoordinateConversion:
 
         return api
 
-    @pytest.fixture
-    def map_data(self):
-        """Create a MapData instance with known values for testing."""
-
-        return MapData(
-            map_name="test_map",
-            map_id="test_map_id",
-            origin_x=-10.0,
-            origin_y=-5.0,
-            resolution=0.05,
-        )
-
     def test_coordinate_to_grid_units(self, mock_robot_api, map_data):
         """Test coordinate conversion with standard values."""
         # Test case 1: Origin point should convert to (0,0) in grid units
@@ -443,3 +445,154 @@ class TestGausiumCloudAPICoordinateConversion:
             # Attempting coordinate conversion with zero resolution should raise ZeroDivisionError
             with pytest.raises(ZeroDivisionError):
                 mock_robot_api._coordinate_to_grid_units(0.0, 0.0)
+
+    def test_grid_units_to_coordinate(self, mock_robot_api, map_data):
+        """Test grid units to coordinate conversion with standard values."""
+        # Test case 1: Origin point (0,0) in grid units should convert to origin coordinates
+        coord_x, coord_y = mock_robot_api._grid_units_to_coordinate(0, 0)
+        assert coord_x == -10.0
+        assert coord_y == -5.0
+
+        # Test case 2: 20 grid units in each direction (1 meter with 0.05 resolution)
+        coord_x, coord_y = mock_robot_api._grid_units_to_coordinate(20, 20)
+        assert coord_x == -9.0  # 20 * 0.05 + (-10) = -9.0
+        assert coord_y == -4.0  # 20 * 0.05 + (-5) = -4.0
+
+        # Test case 3: Arbitrary grid point
+        coord_x, coord_y = mock_robot_api._grid_units_to_coordinate(300, 250)
+        assert coord_x == 5.0  # 300 * 0.05 + (-10) = 5.0
+        assert coord_y == 7.5  # 250 * 0.05 + (-5) = 7.5
+
+    def test_grid_units_to_coordinate_map_not_available(self, mock_robot_api):
+        """Test behavior when current map is not available."""
+        # Mock _get_current_map_or_raise to raise an exception
+        with patch.object(
+            mock_robot_api,
+            "_get_current_map_or_raise",
+            side_effect=Exception("No current map found"),
+        ):
+            # Attempt coordinate conversion should raise the same exception
+            with pytest.raises(Exception) as excinfo:
+                mock_robot_api._grid_units_to_coordinate(0, 0)
+
+            assert "No current map found" in str(excinfo.value)
+
+    def test_grid_units_to_coordinate_consistency(self, mock_robot_api, map_data):
+        """Test that coordinate conversion is consistent in both directions."""
+        # Convert from coordinates to grid units
+        test_coords = [
+            (-10.0, -5.0),  # Origin
+            (-9.0, -4.0),  # 1m from origin
+            (5.0, 7.5),  # Random point
+        ]
+
+        for x, y in test_coords:
+            # Convert coordinates -> grid units
+            grid_x, grid_y = mock_robot_api._coordinate_to_grid_units(x, y)
+            # Convert back grid units -> coordinates
+            coord_x, coord_y = mock_robot_api._grid_units_to_coordinate(grid_x, grid_y)
+
+            # Check that we get back the original coordinates (within floating point precision)
+            assert abs(coord_x - x) < 1e-10
+            assert abs(coord_y - y) < 1e-10
+
+
+class TestGausiumCloudAPIPaths:
+    """Tests for the GausiumCloudAPI path generation functionality."""
+
+    @pytest.fixture
+    def mock_robot_api(self, map_data):
+        """Create a mock GausiumCloudAPI instance for testing path generation."""
+        api = GausiumCloudAPI(
+            base_url=HttpUrl("http://example.com/"),
+            allowed_model_types=[],  # No validation
+            loglevel="DEBUG",
+        )
+        api.logger = Mock()
+
+        # Set up current map data for coordinate conversions
+        api._get_current_map_or_raise = Mock(return_value=map_data)
+        api._current_map_data = map_data
+
+        # Mock the pose property which is used in path generation
+        api._pose = {"x": 1.0, "y": 2.0, "yaw": 0.0}
+
+        # Mock coordinate conversion to return predictable values
+        api._grid_units_to_coordinate = lambda x, y: (x / 10, y / 10)
+
+        return api
+
+    def test_path_from_task(self, mock_robot_api, robot_status_data_task):
+        """Test path generation when robot is running a task."""
+
+        # Call the method to extract path
+        path = mock_robot_api._path_from_robot_status(
+            robot_status_data_task.get("data"), frame_id="test_map"
+        )
+
+        # Verify path is extracted correctly
+        assert path is not None
+        assert path.frame_id == "test_map"
+        assert path.path_id == "0"
+        assert len(path.path_points) == 6
+        assert path.path_points == [
+            (95.1, 126.7),
+            (95.2, 126.7),
+            (95.3, 126.7),
+            (95.7, 127.2),
+            (95.8, 127.2),
+            (95.7, 127.3),
+        ]
+
+    def test_path_from_navigation_to_coords(
+        self, mock_robot_api, robot_status_data_navigating_to_coords
+    ):
+        """Test path generation when robot is navigating to coordinates."""
+        # Call the method to extract path
+        path = mock_robot_api._path_from_robot_status(
+            robot_status_data_navigating_to_coords.get("data"), frame_id="test_map"
+        )
+
+        # Verify path is extracted correctly
+        assert path is not None
+        assert path.frame_id == "test_map"
+        assert path.path_id == "0"
+        assert len(path.path_points) == 2
+        # First point should be the current position
+        assert path.path_points[0] == (1.0, 2.0)
+        # Second point should be the target position
+        assert path.path_points[1] == (45.525001978501678, -8.5249988239258556)
+
+    def test_path_from_navigation_to_waypoint(
+        self, mock_robot_api, robot_status_data_navigating_to_waypoint
+    ):
+        """Test path generation when robot is navigating to a waypoint.
+        This is the same as navigating to coordinates from the path generation perspective."""
+
+        # Call the method to extract path
+        path = mock_robot_api._path_from_robot_status(
+            robot_status_data_navigating_to_waypoint.get("data"), frame_id="test_map"
+        )
+
+        # Verify path is extracted correctly
+        assert path is not None
+        assert path.frame_id == "test_map"
+        assert path.path_id == "0"
+        assert len(path.path_points) == 2
+        # Path should connect current position to target
+        assert path.path_points[0] == (1.0, 2.0)
+        assert path.path_points[1] == (-46.074999386444688, -45.624999376758936)
+
+    def test_path_from_idle(self, mock_robot_api, robot_status_data_idle):
+        """Test path generation when robot has no path (idle status)."""
+
+        # Call the method with idle status (which should have no path)
+        path = mock_robot_api._path_from_robot_status(
+            robot_status_data_idle.get("data"), frame_id="test_map"
+        )
+
+        # Since the robot is idle, it should have no path
+        assert path is not None
+        assert path.frame_id == "test_map"
+        assert path.path_id == "0"
+        assert len(path.path_points) == 0

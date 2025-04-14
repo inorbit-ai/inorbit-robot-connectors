@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
+import asyncio
 from enum import Enum
 import io
 import math
@@ -70,24 +71,32 @@ class GausiumConnector(Connector):
         self.status = {}
         self.mission_tracking = MissionTracking(self.publish_mission_tracking)
 
-    def _connect(self) -> None:
+    @override
+    async def _connect(self) -> None:
         """Connect to the robot services.
 
-        This method should always call super.
+        It starts the API polling loops.
         """
-        super()._connect()
+        self._logger.info("Starting API polling")
+        ...
 
-    def _execution_loop(self) -> None:
+    @override
+    async def _disconnect(self) -> None:
+        """Disconnect from the robot services."""
+        self._logger.info("Stopping API polling")
+        # await self._robot.stop()
+
+    @override
+    async def _execution_loop(self) -> None:
         """The main execution loop for the connector.
 
-        This is where the meat of your connector is implemented. It is good practice to
-        handle things like action requests in a threaded manner so that the connector
-        does not block the execution loop.
+        It publishes the last updated robot data to InOrbit.
         """
 
         # Update the robot data
         # If case of a model type mismatch, raise an exception so that the connector is stopped.
         # Otherwise, log the error and continue.
+        await asyncio.sleep(10)
         try:
             self.robot_api.update()
         except ModelTypeMismatchError as ex:
@@ -191,23 +200,16 @@ class GausiumConnector(Connector):
                 return
             self.publish_map(frame_id, is_update)
 
-    def _inorbit_command_handler(self, command_name, args, options):
-        """Callback method for command messages.
+    @override
+    async def _inorbit_command_handler(self, command_name, args, options):
+        """Callback method for command messages. This method is called when a command
+        is received from InOrbit.
 
-        The callback signature is `callback(command_name, args, options)`
-
-        Arguments:
-            command_name -- identifies the specific command to be executed
-            args -- is an ordered list with each argument as an entry. Each
-                element of the array can be a string or an object, depending on
-                the definition of the action.
-            options -- is a dictionary that includes:
-                - `result_function` can be called to report command execution result.
-                It has the following signature: `result_function(return_code)`.
-                - `progress_function` can be used to report command output and has
-                the following signature: `progress_function(output, error)`.
-                - `metadata` is reserved for the future and will contains additional
-                information about the received command request.
+        Args:
+            command_name (str): The name of the command
+            args (list): The list of arguments
+            options (dict): The dictionary of options.
+                It contains the `result_function` explained above.
         """
         self._logger.info(f"Received '{command_name}'!. {args}")
 

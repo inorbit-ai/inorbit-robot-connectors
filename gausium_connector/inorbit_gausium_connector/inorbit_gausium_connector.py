@@ -4,6 +4,7 @@
 
 import argparse
 import logging
+import signal
 import sys
 
 from dotenv import find_dotenv
@@ -22,6 +23,7 @@ from inorbit_gausium_connector.src.config.connector_model import default_config 
 from inorbit_gausium_connector.src.config.connector_model import load_and_validate  # noqa: E402
 from inorbit_gausium_connector.src.config.utils import write_yaml  # noqa: E402
 from inorbit_gausium_connector.src.connector import GausiumConnector  # noqa: E402
+from inorbit_gausium_connector import __version__  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger(__name__)
@@ -73,9 +75,12 @@ def start():
         exit(1)
 
     connector = GausiumConnector(robot_id, config)
-    try:
-        connector.start()
-        connector.join()
-    except KeyboardInterrupt:
-        LOGGER.info("Received SIGINT, stopping connector")
-        connector.stop()
+    LOGGER.info(f"Starting Gausium connector v{__version__}")
+    connector.start()
+
+    # Register a signal handler for graceful shutdown
+    # When a keyboard interrupt is received (Ctrl+C), the connector will be stopped
+    signal.signal(signal.SIGINT, lambda sig, frame: connector.stop())
+
+    # Wait for the connector to finish
+    connector.join()

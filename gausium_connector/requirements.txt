@@ -4,7 +4,7 @@
 
 inorbit-connector==1.0.0
 inorbit-edge>=1.16.2
-requests>=2.20,<3.0
+httpx~=0.28
 pytz>=2022.7
 ruamel.yaml>=0.18,<0.19
 pydantic>=2.6,<3.0

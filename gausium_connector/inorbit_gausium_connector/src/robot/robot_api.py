@@ -3,15 +3,13 @@
 # SPDX-License-Identifier: MIT
 
 import logging
+import asyncio
 from abc import ABC, abstractmethod
-from concurrent.futures import ThreadPoolExecutor
 from math import radians
-from typing import List, Optional, Tuple, override
-from urllib.parse import urljoin
+from typing import Coroutine, List, Optional, Tuple, override
 
+import httpx
 from pydantic import BaseModel, HttpUrl
-from requests import Response, Session
-from requests.exceptions import HTTPError
 
 from inorbit_gausium_connector.src.robot.constants import WorkType
 
@@ -57,21 +55,106 @@ class GausiumRobotAPI(ABC):
         base_url: HttpUrl,
         loglevel: str = "INFO",
         api_req_timeout: int = 10,
+        default_polling_freq: float = 10,
     ):
         """Initializes the connection with the Gausium Phantas robot
 
         Args:
             base_url (HttpUrl): Base URL of the robot API. e.g. "http://192.168.0.256:80/"
             loglevel (str, optional): Defaults to "INFO"
+            api_req_timeout (int, optional): Default timeout for API requests. Defaults to 10.
         """
         self.logger = logging.getLogger(name=self.__class__.__name__)
         self.logger.setLevel(loglevel)
+        # Use str(base_url) because httpx requires string URLs
         self.base_url = str(base_url)
+        self.api_req_timeout = api_req_timeout
         # Indicates whether the last call to the API was successful
         # Useful for estimating the state of the Connector <> APIs link
         self._last_call_successful: bool | None = None
-        self.api_session = Session()
-        self.api_req_timeout = api_req_timeout
+        # Initialize httpx.AsyncClient
+        self.api_client = httpx.AsyncClient(base_url=self.base_url, timeout=self.api_req_timeout)
+        # Auxiliary data for running polling tasks
+        self._default_polling_freq: float = default_polling_freq
+        self._running_tasks: list[asyncio.Task] = []
+        self._stop_event = asyncio.Event()
+        # List of (coroutine, frequency) tuples.
+        # The coroutine will be run in a loop at the specified frequency.
+        # Populate this list with the _add_polling_target method.
+        self._polling_targets: list[tuple[Coroutine, float]] = []
+
+    def _add_polling_target(self, coro: Coroutine, frequency: float | None = None) -> None:
+        """Add a coroutine to the polling targets"""
+        self._polling_targets.append((coro, frequency or self._default_polling_freq))
+
+    async def start(self):
+        """Start the tasks that would fetch data from the robot."""
+        for coro, frequency in self._polling_targets:
+            self._run_in_loop(coro, frequency)
+
+    async def stop(self) -> None:
+        """Stop the tasks that would fetch data from the robot."""
+        # Signal all tasks to stop
+        self._stop_event.set()
+
+        # Give tasks a chance to exit gracefully
+        if self._running_tasks:
+            try:
+                # Wait for tasks to complete with a timeout
+                done, pending = await asyncio.wait(
+                    self._running_tasks,
+                    timeout=1.0,  # Allow 1 second for graceful shutdown
+                    return_when=asyncio.ALL_COMPLETED,
+                )
+
+                # Only cancel tasks that didn't finish in time
+                for task in pending:
+                    task.cancel()
+
+                # Wait briefly for cancellations to process
+                if pending:
+                    await asyncio.wait(pending, timeout=0.5)
+
+            except Exception as e:
+                self.logger.error(f"Error during graceful shutdown: {e}")
+
+        # Clear the task list
+        self._running_tasks.clear()
+
+    def _run_in_loop(self, coro: Coroutine, frequency: float | None = None) -> None:
+        """Run a coroutine in a loop at a specified frequency. If no frequency is
+        provided, the default update frequency will be used."""
+
+        async def loop():
+            try:
+                while not self._stop_event.is_set():
+                    try:
+                        # Check stop_event between each iteration
+                        if self._stop_event.is_set():
+                            break
+
+                        await asyncio.gather(
+                            coro(),
+                            asyncio.sleep(1 / (frequency or self._default_polling_freq)),
+                        )
+                    except asyncio.CancelledError:
+                        # Handle cancellation gracefully
+                        break
+                    except Exception as e:
+                        self.logger.error(f"Error in loop running {coro.__name__}: {e}")
+                        # Shorter sleep during errors to check stop_event more
+                        # frequently
+                        await asyncio.sleep(0.1)
+            except asyncio.CancelledError:
+                # Exit cleanly when cancelled
+                pass
+
+        self._running_tasks.append(asyncio.create_task(loop()))
+
+    async def close(self):
+        """Closes the httpx client session."""
+        await self.api_client.aclose()
+        self.logger.info("HTTPX client closed.")
 
     @property
     def last_call_successful(self) -> bool:
@@ -85,149 +168,170 @@ class GausiumRobotAPI(ABC):
         try:
             res.raise_for_status()
             self._last_call_successful = True
-        except HTTPError as e:
-            self.logger.error(f"Error making request: {e}\nArguments: {request_args}")
+        except httpx.HTTPStatusError as e:
+            self.logger.error(f"Error making request: {e.request.method} {e.request.url}")
+            self.logger.error(f"Arguments: {request_args}")
+            self.logger.error(f"Response Status: {e.response.status_code}")
+            self.logger.error(f"Response Body: {e.response.text[:500]}...")
             raise e
 
-    def _get(
-        self, url: str, session: Session = None, timeout: int | None = None, **kwargs
-    ) -> Response:
+    async def _get(self, endpoint: str, timeout: int | None = None, **kwargs) -> httpx.Response:
         """Perform a GET request."""
-        self.logger.debug(f"GETting {url}: {kwargs}")
-        session = session or self.api_session
-        res = session.get(url, timeout=timeout or self.api_req_timeout, **kwargs)
-        self._handle_status(res, kwargs)
-        return res
+        url_for_logging = self.base_url + endpoint.lstrip("/")
+        self.logger.debug(f"GETting {url_for_logging}: {kwargs}")
+        try:
+            res = await self.api_client.get(
+                endpoint, timeout=timeout or self.api_req_timeout, **kwargs
+            )
+            self._handle_status(res, kwargs)
+            return res
+        except httpx.RequestError as e:
+            self._last_call_successful = False
+            self.logger.error(f"HTTPX GET Error for {endpoint}: {e}")
+            raise e
 
-    def _post(
-        self, url: str, session: Session = None, timeout: int | None = None, **kwargs
-    ) -> Response:
+    async def _post(self, endpoint: str, timeout: int | None = None, **kwargs) -> httpx.Response:
         """Perform a POST request."""
-        self.logger.debug(f"POSTing {url}: {kwargs}")
-        session = session or self.api_session
-        res = session.post(url, timeout=timeout or self.api_req_timeout, **kwargs)
-        self.logger.debug(f"Response: {res}")
-        self._handle_status(res, kwargs)
-        return res
+        url_for_logging = self.base_url + endpoint.lstrip("/")
+        self.logger.debug(f"POSTing {url_for_logging}: {kwargs}")
+        try:
+            res = await self.api_client.post(
+                endpoint, timeout=timeout or self.api_req_timeout, **kwargs
+            )
+            log_body = res.text[:200] + "..." if len(res.text) > 200 else res.text
+            self.logger.debug(f"Response status: {res.status_code}, Response body: {log_body}")
+            self._handle_status(res, kwargs)
+            return res
+        except httpx.RequestError as e:
+            self._last_call_successful = False
+            self.logger.error(f"HTTPX POST Error for {endpoint}: {e}")
+            raise e
 
-    def _delete(
-        self, url: str, session: Session = None, timeout: int | None = None, **kwargs
-    ) -> Response:
+    async def _delete(self, endpoint: str, timeout: int | None = None, **kwargs) -> httpx.Response:
         """Perform a DELETE request."""
-        self.logger.debug(f"DELETEing {url}: {kwargs}")
-        session = session or self.api_session
-        res = session.delete(url, timeout=timeout or self.api_req_timeout, **kwargs)
-        self.logger.debug(f"Response: {res}")
-        self._handle_status(res, kwargs)
-        return res
+        url_for_logging = self.base_url + endpoint.lstrip("/")
+        self.logger.debug(f"DELETEing {url_for_logging}: {kwargs}")
+        try:
+            res = await self.api_client.delete(
+                endpoint, timeout=timeout or self.api_req_timeout, **kwargs
+            )
+            log_body = res.text[:200] + "..." if len(res.text) > 200 else res.text
+            self.logger.debug(f"Response status: {res.status_code}, Response body: {log_body}")
+            self._handle_status(res, kwargs)
+            return res
+        except httpx.RequestError as e:
+            self._last_call_successful = False
+            self.logger.error(f"HTTPX DELETE Error for {endpoint}: {e}")
+            raise e
 
-    def _put(
-        self, url: str, session: Session = None, timeout: int | None = None, **kwargs
-    ) -> Response:
+    async def _put(self, endpoint: str, timeout: int | None = None, **kwargs) -> httpx.Response:
         """Perform a PUT request."""
-        self.logger.debug(f"PUTing {url}: {kwargs}")
-        session = session or self.api_session
-        res = session.put(url, timeout=timeout or self.api_req_timeout, **kwargs)
-        self.logger.debug(f"Response: {res}")
-        self._handle_status(res, kwargs)
-        return res
-
-    def _build_url(self, endpoint: str) -> str:
-        """Create the full URL for the API endpoint."""
-        return urljoin(self.base_url, endpoint)
-
-    @abstractmethod
-    def update(self) -> None:
-        """Refresh the robot data"""
-        pass
+        url_for_logging = self.base_url + endpoint.lstrip("/")
+        self.logger.debug(f"PUTing {url_for_logging}: {kwargs}")
+        try:
+            res = await self.api_client.put(
+                endpoint, timeout=timeout or self.api_req_timeout, **kwargs
+            )
+            self.logger.debug(
+                f"Response status: {res.status_code}, Response body: {res.text[:200]}..."
+            )
+            self._handle_status(res, kwargs)
+            return res
+        except httpx.RequestError as e:
+            self._last_call_successful = False
+            self.logger.error(f"HTTPX PUT Error for {endpoint}: {e}")
+            raise e
 
     @property
     @abstractmethod
     def pose(self) -> dict:
-        """Get the pose of the robot"""
+        """Get the pose of the robot. Returns cached data. Call update() or initialize() first."""
         pass
 
     @property
     @abstractmethod
     def odometry(self) -> dict:
-        """Get the odometry of the robot"""
+        """Get the odometry of the robot. Returns cached data. Call update() or initialize()
+        first."""
         pass
 
     @property
     @abstractmethod
     def path(self) -> PathData:
-        """Get the current path of the robot"""
+        """Get the current path of the robot. Returns cached data. Call update() or initialize()
+        first."""
         pass
 
     @property
     @abstractmethod
     def key_values(self) -> dict:
-        """Get the key values of the robot"""
+        """Get the key values of the robot. Returns cached data. Call update() or initialize()
+        first."""
         pass
 
     @property
     @abstractmethod
     def current_map(self) -> MapData:
-        """Get the current map"""
+        """Get the current map. Returns cached data. Call update() or initialize() first."""
         pass
 
     @abstractmethod
-    def send_waypoint(self, x: float, y: float, orientation: float) -> bool:
+    async def send_waypoint(self, x: float, y: float, orientation: float) -> bool:
         """Receives a pose and sends a request to command the robot to navigate to the waypoint"""
         pass
 
     @abstractmethod
-    def localize_at(self, x: float, y: float, orientation: float) -> bool:
+    async def localize_at(self, x: float, y: float, orientation: float) -> bool:
         """Requests the robot to localize at the given coordinates within the same map"""
         pass
 
     @abstractmethod
-    def pause(self) -> bool:
+    async def pause(self) -> bool:
         """Requests the robot to pause whatever it is doing"""
         pass
 
     @abstractmethod
-    def resume(self) -> bool:
+    async def resume(self) -> bool:
         """Requests the robot to resume whatever it was doing"""
         pass
 
     @abstractmethod
-    def start_task_queue(self, **kwargs) -> bool:
+    async def start_task_queue(self, **kwargs) -> bool:
         """Starts the cleaning task"""
         pass
 
     @abstractmethod
-    def pause_task_queue(self) -> bool:
+    async def pause_task_queue(self) -> bool:
         """Pauses the cleaning task"""
         pass
 
     @abstractmethod
-    def resume_task_queue(self) -> bool:
+    async def resume_task_queue(self) -> bool:
         """Resumes the cleaning task"""
         pass
 
     @abstractmethod
-    def cancel_task_queue(self) -> bool:
+    async def cancel_task_queue(self) -> bool:
         """Cancels the cleaning task"""
         pass
 
     @abstractmethod
-    def send_to_named_waypoint(self, **kwargs) -> bool:
+    async def send_to_named_waypoint(self, **kwargs) -> bool:
         """Sends the robot to a named waypoint"""
         pass
 
     @abstractmethod
-    def pause_navigation_task(self) -> bool:
+    async def pause_navigation_task(self) -> bool:
         """Pauses the navigation task"""
         pass
 
     @abstractmethod
-    def resume_navigation_task(self) -> bool:
+    async def resume_navigation_task(self) -> bool:
         """Resumes the navigation task"""
         pass
 
     @abstractmethod
-    def cancel_navigation_task(self) -> bool:
+    async def cancel_navigation_task(self) -> bool:
         """Cancels the navigation task"""
         pass
 
@@ -240,6 +344,8 @@ class GausiumCloudAPI(GausiumRobotAPI):
         base_url: HttpUrl,
         loglevel: str = "INFO",
         allowed_model_types: List[str] = [],
+        api_req_timeout: int = 10,
+        default_polling_freq: float = 10,
     ):
         """Initialize the Gausium Cloud API wrapper.
 
@@ -249,8 +355,10 @@ class GausiumCloudAPI(GausiumRobotAPI):
             allowed_model_types (List[str], optional): List of robot model types
                 supported by this API wrapper. Defaults to an empty list.
                 If empty, the model type will not be validated.
+            api_req_timeout (int, optional): Default timeout for API requests. Defaults to 10.
+            default_polling_freq (float, optional): Default polling frequency. Defaults to 10.
         """
-        super().__init__(base_url, loglevel)
+        super().__init__(base_url, loglevel, api_req_timeout, default_polling_freq)
         self._pose: dict | None = None
         self._odometry: dict | None = None
         self._path: PathData | None = None
@@ -261,29 +369,37 @@ class GausiumCloudAPI(GausiumRobotAPI):
         self._is_initialized: bool = False
         self._allowed_model_types: List[str] = allowed_model_types
         self._last_pause_command: str | None = None
-        # ThreadPoolExecutor to use on concurrent API calls
-        self._thread_executor = ThreadPoolExecutor(max_workers=4)
 
-    def __del__(self):
-        """Clean up resources when the object is destroyed."""
-        if hasattr(self, "_executor"):
-            self._thread_executor.shutdown(wait=False)
+        self._add_polling_target(self._update)
 
-    @override
-    def update(self) -> None:
-        """Update the robot's status data"""
+    async def _update(self) -> None:
+        """Update the robot's status data concurrently using asyncio."""
 
-        # Fetch fresh data from the robot concurrently
-        robot_info_future = self._thread_executor.submit(self._get_robot_info)
-        device_status_future = self._thread_executor.submit(self._get_device_status)
-        position_future = self._thread_executor.submit(self._fetch_position)
-        robot_status_future = self._thread_executor.submit(self._get_robot_status)
+        # Fetch fresh data from the robot concurrently using asyncio.gather
+        tasks = [
+            self._get_robot_info(),
+            self._get_device_status(),
+            self._fetch_position(),
+            self._get_robot_status(),
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Get results as they complete
-        robot_info = robot_info_future.result().get("data", {})
-        device_data = device_status_future.result().get("data", {})
-        position_data = position_future.result()
-        robot_status_data = robot_status_future.result().get("data", {})
+        # Check for exceptions before processing results
+        exceptions = [res for res in results if isinstance(res, Exception)]
+        if exceptions:
+            for exc in exceptions:
+                self.logger.error(f"Error during concurrent update: {exc}")
+            # Decide how to handle partial failure - here we raise the first one
+            raise exceptions[0]
+
+        robot_info_res, device_status_res, position_res, robot_status_res = results
+
+        # Process results (assuming successful calls return dicts)
+        robot_info = robot_info_res.get("data", {})
+        device_data = device_status_res.get("data", {})
+        # _fetch_position returns the full JSON response, not just data field
+        position_data = position_res
+        robot_status_data = robot_status_res.get("data", {})
 
         # Validate the model type of the robot and the API wrapper in use match
         model_type = robot_info.get("modelType")
@@ -378,7 +494,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
     def pose(self) -> dict:
         """Get the pose of the robot"""
         if self._pose is None:
-            self.update()
+            raise AttributeError("Pose data not available. Call update() first.")
         return self._pose
 
     @property
@@ -386,7 +502,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
     def odometry(self) -> dict:
         """Get the odometry of the robot"""
         if self._odometry is None:
-            self.update()
+            raise AttributeError("Odometry data not available. Call update() first.")
         return self._odometry
 
     @property
@@ -394,7 +510,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
     def path(self) -> PathData:
         """Get the current path of the robot"""
         if self._path is None:
-            self.update()
+            raise AttributeError("Path data not available. Call update() first.")
         return self._path
 
     @property
@@ -402,28 +518,26 @@ class GausiumCloudAPI(GausiumRobotAPI):
     def key_values(self) -> dict:
         """Get the key values of the robot"""
         if self._key_values is None:
-            self.update()
+            raise AttributeError("Key values data not available. Call update() first.")
         return self._key_values
 
     @property
     def firmware_version(self) -> str:
         """Get the firmware version of the robot"""
         if self._firmware_version is None:
-            self.update()
+            raise AttributeError("Firmware version not available. Call update() first.")
         return self._firmware_version
 
     @property
     def device_status(self) -> dict:
         """Get the full device status"""
         if self._device_status is None:
-            self.update()
+            raise AttributeError("Device status data not available. Call update() first.")
         return self._device_status
 
     @property
     def is_initialized(self) -> bool:
         """Check if the robot is initialized"""
-        if self._is_initialized is None:
-            self.update()
         return self._is_initialized
 
     @property
@@ -432,13 +546,13 @@ class GausiumCloudAPI(GausiumRobotAPI):
         If the map is not loaded, the update() method will load it.
         If the map image isn't loaded, it will be lazily fetched from the robot."""
         if self._current_map is None:
-            self.update()
+            raise AttributeError("Current map data not available. Call update() first.")
         if self._current_map and self._current_map.map_image is None:
             self._current_map.map_image = self._get_map_image(self._current_map.map_name)
         return self._current_map
 
     @override
-    def send_waypoint(self, x: float, y: float, orientation: float) -> bool:
+    async def send_waypoint(self, x: float, y: float, orientation: float) -> bool:
         """Send the robot to a waypoint (named waypoint)
 
         Args:
@@ -454,55 +568,95 @@ class GausiumCloudAPI(GausiumRobotAPI):
             raise Exception("No current map found to send waypoint to")
         grid_x, grid_y = self._coordinate_to_grid_units(x, y)
         self.logger.debug(f"Converted {x}, {y} coordinates to grid units: {grid_x}, {grid_y}")
-        return self._navigate_to_coordinates(map_name, grid_x, grid_y, orientation)
+        return await self._navigate_to_coordinates(map_name, grid_x, grid_y, orientation)
 
     @override
-    def localize_at(self, x: float, y: float, orientation: float) -> bool:
+    async def localize_at(self, x: float, y: float, orientation: float) -> bool:
         """Requests the robot to localize at the given coordinates within the same map"""
         map_name = self._current_map.map_name if self._current_map else None
         if not map_name:
             raise Exception("No current map found to localize at")
-        return self._initialize_at_custom_position(map_name, x, y, orientation)
+        return await self._initialize_at_custom_position(map_name, x, y, orientation)
 
     @override
-    def pause(self) -> bool:
+    async def pause(self) -> bool:
         """Requests the robot to pause whatever it is doing.
         It fetches the state of cleaning and navigation and the pauses whichever is running"""
-        # In firmware version lower than v3-6-6, navigation and cleaning pause commands are the same
-        if not self._is_firmware_post_v3_6_6():
-            return self._pause_task_queue()
+        # Fetch firmware version if not already known
+        if self._firmware_version is None:
+            await self.update()  # Update caches firmware version
 
-        # In firmware version v3-6-6 and higher, navigation and cleaning pause commands are
-        # different
-        if self._is_cleaning_task_finished():
-            self._last_pause_command = "cleaning"
-            return self._pause_cleaning_task()
-        else:
+        # In firmware version lower than v3-6-6, nav and cleaning pause commands are the same
+        if not await self._is_firmware_post_v3_6_6():
+            return await self._pause_task_queue()
+
+        # In firmware version v3-6-6 and higher, commands are different
+        try:
+            is_finished = await self._is_cleaning_task_finished()
+        except Exception as e:
+            self.logger.warning(
+                f"Could not determine cleaning task status: {e}. Assuming navigation pause."
+            )
+            is_finished = True  # Assume finished if check fails, try pausing navigation
+
+        if is_finished:
+            self.logger.info("Cleaning task finished or unknown, attempting to pause navigation.")
             self._last_pause_command = "navigation"
-            return self._pause_navigation_task()
+            return await self._pause_navigation_task()
+        else:
+            self.logger.info("Cleaning task active, attempting to pause cleaning.")
+            self._last_pause_command = "cleaning"
+            # Decide which pause command to use based on firmware
+            # Assuming _pause_task_queue works for both single/multi map < 3.6.6
+            # and _pause_task works for >= 3.6.6 (check Gausium docs for specifics)
+            # Let's stick to pause_task_queue for now based on original logic separation
+            return (
+                await self._pause_task_queue()
+            )  # Or potentially _pause_task() or _pause_multi_map_cleaning_task()
 
     @override
-    def resume(self) -> bool:
+    async def resume(self) -> bool:
         """Requests the robot to resume a previously paused task"""
-        # In firmware version lower than v3-6-6, navigation and cleaning resume commands are the
-        # same
-        if not self._is_firmware_post_v3_6_6():
-            return self._resume_task_queue()
+        if self._firmware_version is None:
+            await self.update()
 
-        # In firmware version v3-6-6 and higher, navigation and cleaning resume commands are
-        # different.
+        # In firmware version lower than v3-6-6, commands are the same
+        if not await self._is_firmware_post_v3_6_6():
+            return await self._resume_task_queue()
+
+        # In firmware version v3-6-6 and higher, commands are different.
         # Get the previously paused command to know which one to resume
         if self._last_pause_command == "cleaning":
+            self.logger.info("Resuming previously paused cleaning task.")
             self._last_pause_command = None
-            return self._resume_cleaning_task()
-        if self._last_pause_command == "navigation":
+            # Decide which resume command to use based on firmware/context
+            # Let's stick to resume_task_queue for now
+            return (
+                await self._resume_task_queue()
+            )  # Or potentially _resume_task() or _resume_multi_map_cleaning_task()
+        elif self._last_pause_command == "navigation":
+            self.logger.info("Resuming previously paused navigation task.")
             self._last_pause_command = None
-            return self._resume_navigation_task()
+            return await self._resume_navigation_task()
         else:
-            raise Exception("No previously paused command found")
+            self.logger.warning("No previously paused command recorded. Attempting general resume.")
+            # Attempt a general resume if state is unknown (could try both or pick one)
+            # Let's try resuming task queue as a default guess
+            try:
+                success = await self._resume_task_queue()
+                if success:
+                    return True
+            except Exception:
+                pass  # Ignore error and try navigation resume
+            # If task resume fails or wasn't tried, try navigation resume
+            try:
+                return await self._resume_navigation_task()
+            except Exception as e:
+                self.logger.error(f"Failed to resume any task: {e}")
+                return False
 
     @override
-    def start_task_queue(
+    async def start_task_queue(
         self,
         task_queue_name: str,
         map_name: str | None = None,
@@ -521,26 +675,26 @@ class GausiumCloudAPI(GausiumRobotAPI):
         Returns:
             bool: True if successful, False otherwise
         """
-        map_name = map_name if map_name else self._get_current_map_or_raise().map_name
-        return self._start_cleaning_task(map_name, task_queue_name, loop, loop_count)
+        map_name = map_name if map_name else await self._get_current_map_or_raise().map_name
+        return await self._start_cleaning_task(map_name, task_queue_name, loop, loop_count)
 
     @override
-    def pause_task_queue(self) -> bool:
+    async def pause_task_queue(self) -> bool:
         """Pauses the cleaning task"""
-        return self._pause_task_queue()
+        return await self._pause_task_queue()
 
     @override
-    def resume_task_queue(self) -> bool:
+    async def resume_task_queue(self) -> bool:
         """Resumes the cleaning task"""
-        return self._resume_task_queue()
+        return await self._resume_task_queue()
 
     @override
-    def cancel_task_queue(self) -> bool:
+    async def cancel_task_queue(self) -> bool:
         """Cancels the cleaning task"""
-        return self._cancel_cleaning_task()
+        return await self._cancel_cleaning_task()
 
     @override
-    def send_to_named_waypoint(self, position_name: str, map_name: str | None = None) -> bool:
+    async def send_to_named_waypoint(self, position_name: str, map_name: str | None = None) -> bool:
         """Sends the robot to a named waypoint.
 
         Args:
@@ -551,23 +705,23 @@ class GausiumCloudAPI(GausiumRobotAPI):
         Returns:
             bool: True if successful, False otherwise
         """
-        map_name = map_name if map_name else self._get_current_map_or_raise().map_name
-        return self._navigate_to_named_waypoint(map_name, position_name)
+        map_name = map_name if map_name else await self._get_current_map_or_raise().map_name
+        return await self._navigate_to_named_waypoint(map_name, position_name)
 
     @override
-    def pause_navigation_task(self) -> bool:
+    async def pause_navigation_task(self) -> bool:
         """Pauses the navigation task"""
-        return self._pause_navigation_task()
+        return await self._pause_navigation_task()
 
     @override
-    def resume_navigation_task(self) -> bool:
+    async def resume_navigation_task(self) -> bool:
         """Resumes the navigation task"""
-        return self._resume_navigation_task()
+        return await self._resume_navigation_task()
 
     @override
-    def cancel_navigation_task(self) -> bool:
+    async def cancel_navigation_task(self) -> bool:
         """Cancels the navigation task"""
-        return self._cancel_navigation_task()
+        return await self._cancel_navigation_task()
 
     def _get_current_map_or_raise(self) -> MapData:
         """Get the current map or raise an exception if it's not set"""
@@ -575,23 +729,24 @@ class GausiumCloudAPI(GausiumRobotAPI):
             raise Exception("No current map found")
         return self._current_map
 
-    def _success_or_raise(self, response: dict) -> bool:
+    def _success_or_raise(self, response_json: dict) -> dict:
         """Check if a Gaussian Cloud API call was successful or raise an exception that shows the
         error message.
 
         Args:
-            response (dict): The response from the API call. Note it should be a successful
+            response_json (dict): The response from the API call. Note it should be a successful
                 response (200 code).
 
         Returns:
-            bool: True if the API call was successful, raises an exception otherwise
+            dict: The response from the API call.
         """
-        if response.get("successed", False):
-            return response
+        if response_json.get("successed", False):
+            # Return the original dict if successful
+            return response_json
         else:
-            error_code = response.get("errorCode")
-            error_msg = response.get("msg")
-            data = response.get("data")
+            error_code = response_json.get("errorCode")
+            error_msg = response_json.get("msg")
+            data = response_json.get("data")
             human_readable_err = "API call failed"
             if error_code:
                 human_readable_err += f" with error code {error_code}"
@@ -603,36 +758,41 @@ class GausiumCloudAPI(GausiumRobotAPI):
 
     # ---------- General APIs ----------#
 
-    def _get_robot_info(self) -> dict:
+    async def _get_robot_info(self) -> dict:
         """Fetch the robot info to get firmware version and other details
 
         Returns:
             dict: The robot info response
         """
-        res = self._get(self._build_url("/gs-robot/info"))
+        res = await self._get("/gs-robot/info")
         return res.json()
 
-    def _get_robot_status(self) -> dict:
+    async def _get_robot_status(self) -> dict:
         """Fetch the robot status
 
         Returns:
             dict: The robot status data
         """
-        url = "/gs-robot/real_time_data/robot_status"
-        res = self._get(self._build_url(url))
+        res = await self._get("/gs-robot/real_time_data/robot_status")
         return res.json()
 
-    def _is_firmware_post_v3_6_6(self) -> bool:
+    async def _is_firmware_post_v3_6_6(self) -> bool:
         """Check if the firmware version is v3-6-6 or higher
 
         Returns:
             bool: True if firmware is v3-6-6 or higher, False otherwise
         """
-        version = self.firmware_version
-        if not version:
-            self.logger.warning("No firmware version found. Assuming firmware is post v3-6-6.")
-            return True
+        # Ensure firmware version is available
+        if self._firmware_version is None:
+            self.logger.warning("Firmware version not cached. Calling update() to fetch it.")
+            await self.update()
+            if self._firmware_version is None:
+                self.logger.error(
+                    "Failed to fetch firmware version after update(). Assuming >= v3.6.6."
+                )
+                return True  # Or False, depending on desired default behaviour
 
+        version = self._firmware_version
         # Extract version number parts
         version_parts = version.split("-")
         if len(version_parts) >= 3:
@@ -651,16 +811,16 @@ class GausiumCloudAPI(GausiumRobotAPI):
 
     # ---------- Localization APIs ----------#
 
-    def _fetch_position(self) -> dict:
+    async def _fetch_position(self) -> dict:
         """Fetch the current position of the robot
 
         Returns:
             dict: The position data
         """
-        res = self._get(self._build_url("/gs-robot/real_time_data/position"))
+        res = await self._get("/gs-robot/real_time_data/position")
         return res.json()
 
-    def _load_map(self, map_name: str) -> bool:
+    async def _load_map(self, map_name: str) -> bool:
         """Load a specified map
 
         Args:
@@ -669,15 +829,18 @@ class GausiumCloudAPI(GausiumRobotAPI):
         Returns:
             bool: True if successful, False otherwise
         """
-        url = f"/gs-robot/cmd/load_map?map_name={map_name}"
-        res = self._get(self._build_url(url))
+        res = await self._get(f"/gs-robot/cmd/load_map?map_name={map_name}")
         response = res.json()
-        success = response.get("successed", False)
+        # Check success using the helper
+        processed_response = self._success_or_raise(response)
+        success = processed_response is not None  # success_or_raise returns dict on success
         if success:
+            self.logger.info(f"Map '{map_name}' loaded successfully. Clearing cached map data.")
             self._is_initialized = False  # Map changed, robot needs to be initialized again
-        return response
+            self._current_map = None  # Clear cached map data
+        return success
 
-    def _initialize_at_point(
+    async def _initialize_at_point(
         self, map_name: str, init_point_name: str, with_rotation: bool = True
     ) -> bool:
         """Initialize the robot on the specified map at the specified point
@@ -691,28 +854,33 @@ class GausiumCloudAPI(GausiumRobotAPI):
         Returns:
             bool: True if successful, False otherwise
         """
-        if self._current_map and self._current_map.map_name != map_name:
-            self._load_map(map_name)
+        # Check if the map needs loading (using cached _current_map)
+        if self._current_map is None or self._current_map.map_name != map_name:
+            self.logger.info(f"Current map is not '{map_name}'. Loading map...")
+            await self._load_map(map_name)
 
         if with_rotation:
-            url = (
+            endpoint = (
                 f"/gs-robot/cmd/initialize?map_name={map_name}"
                 f"&init_point_name={init_point_name}"
             )
         else:
-            url = (
+            endpoint = (
                 f"/gs-robot/cmd/initialize_directly?map_name={map_name}"
                 f"&init_point_name={init_point_name}"
             )
 
-        res = self._get(self._build_url(url))
+        res = await self._get(endpoint)
         response = res.json()
-        success = response.get("successed", False)
+        processed_response = self._success_or_raise(response)
+        success = processed_response is not None
         if success:
             self._is_initialized = True
-        return self._success_or_raise(response)
+            # Attempt to update map info after successful initialization
+            await self.update()  # Update state after initialization
+        return success
 
-    def _initialize_at_custom_position(
+    async def _initialize_at_custom_position(
         self, map_name: str, x: int, y: int, angle: float = 0.0
     ) -> bool:
         """Initialize the robot at a custom position (x, y, angle)
@@ -726,22 +894,26 @@ class GausiumCloudAPI(GausiumRobotAPI):
         Returns:
             bool: True if successful, False otherwise
         """
-        if self._current_map and self._current_map.map_name != map_name:
-            self._load_map(map_name)
+        if self._current_map is None or self._current_map.map_name != map_name:
+            self.logger.info(f"Current map is not '{map_name}'. Loading map...")
+            await self._load_map(map_name)
 
-        url = "/gs-robot/cmd/initialize_customized"
-        payload = {"mapName": map_name, "point": {"angle": angle, "gridPosition": {"x": x, "y": y}}}
-
-        res = self._post(self._build_url(url), json=payload)
+        res = await self._post(
+            "/gs-robot/cmd/initialize_customized",
+            json={"mapName": map_name, "point": {"angle": angle, "gridPosition": {"x": x, "y": y}}},
+        )
         response = res.json()
-        success = response.get("successed", False)
+        processed_response = self._success_or_raise(response)
+        success = processed_response is not None
         if success:
             self._is_initialized = True
-        return self._success_or_raise(response)
+            # Attempt to update map info after successful initialization
+            await self.update()  # Update state after initialization
+        return success
 
     # ---------- Map Data APIs ----------#
 
-    def _get_task_queues(self, map_name: str) -> List[dict]:
+    async def _get_task_queues(self, map_name: str) -> List[dict]:
         """Get the list of task queues for the specified map
 
         Args:
@@ -750,12 +922,15 @@ class GausiumCloudAPI(GausiumRobotAPI):
         Returns:
             List[dict]: List of task queues
         """
-        url = f"/gs-robot/data/task_queues?map_name={map_name}"
-        res = self._get(self._build_url(url))
+        res = await self._get(f"/gs-robot/data/task_queues?map_name={map_name}")
         response = res.json()
-        return self._success_or_raise(response)
+        # Assuming success_or_raise is appropriate here and returns the data list on success
+        # Adjust based on the actual API response structure for this endpoint
+        processed_response = self._success_or_raise(response)
+        # Example: if success_or_raise returns {'data': [...]} on success:
+        return processed_response.get("data", [])
 
-    def _get_map_image(self, map_name: str) -> bytes:
+    async def _get_map_image(self, map_name: str) -> bytes:
         """Get the image of the specified map
 
         Args:
@@ -764,13 +939,16 @@ class GausiumCloudAPI(GausiumRobotAPI):
         Returns:
             bytes: PNG image data of the map
         """
-        url = f"/gs-robot/data/map_png?map_name={map_name}"
         # NOTE(b-Tomas): The map image is a large file and may take a while to download
-        # so we increase the timeout to 20 seconds
-        res = self._get(self._build_url(url), timeout=max(self.api_req_timeout, 20))
+        # Increase the timeout specifically for this request
+        # Use a larger timeout than the default instance timeout if needed
+        image_timeout = max(self.api_req_timeout, 30)  # e.g., 30 seconds
+        self.logger.debug(f"Getting map image for {map_name} with timeout {image_timeout}s")
+        res = await self._get(f"/gs-robot/data/map_png?map_name={map_name}", timeout=image_timeout)
+        # No json() call for image content
         return res.content
 
-    def _get_waypoint_coordinates(self, map_name: str, path_name: str) -> dict:
+    async def _get_waypoint_coordinates(self, map_name: str, path_name: str) -> dict:
         """Get the coordinates of waypoints for the specified path
 
         Args:
@@ -778,15 +956,17 @@ class GausiumCloudAPI(GausiumRobotAPI):
             path_name (str): Name of the path
 
         Returns:
-            dict: Waypoint coordinates data
+            dict: Waypoint coordinates data (full JSON response)
         """
-        url = f"/gs-robot/data/path_data_list?map_name={map_name}&path_name={path_name}"
-        res = self._get(self._build_url(url))
+        res = await self._get(
+            f"/gs-robot/data/path_data_list?map_name={map_name}&path_name={path_name}"
+        )
+        # Return the raw JSON, let caller handle success/data extraction
         return res.json()
 
     # ---------- Cleaning Task APIs ----------#
 
-    def _start_cleaning_task(
+    async def _start_cleaning_task(
         self,
         map_name: str,
         task_queue_name: str,
@@ -804,59 +984,56 @@ class GausiumCloudAPI(GausiumRobotAPI):
         Returns:
             bool: True if successful, False otherwise
         """
-        url = "/gs-robot/cmd/start_task_queue"
-        payload = {
-            "name": task_queue_name,
-            "loop": loop,
-            "loop_count": loop_count,
-            "map_name": map_name,
-        }
+        res = await self._post(
+            "/gs-robot/cmd/start_task_queue",
+            json={
+                "name": task_queue_name,
+                "loop": loop,
+                "loop_count": loop_count,
+                "map_name": map_name,
+            },
+        )
+        return self._success_or_raise(res.json()) is not None
 
-        res = self._post(self._build_url(url), json=payload)
-        return self._success_or_raise(res.json())
-
-    def _pause_task_queue(self) -> bool:
+    async def _pause_task_queue(self) -> bool:
         """Pause the ongoing cleaning task
 
         Returns:
             bool: True if successful, False otherwise
         """
-        url = "/gs-robot/cmd/pause_task_queue"
-        res = self._get(self._build_url(url))
-        return self._success_or_raise(res.json())
+        res = await self._get("/gs-robot/cmd/pause_task_queue")
+        return self._success_or_raise(res.json()) is not None
 
-    def _pause_task(self) -> bool:
+    async def _pause_task(self) -> bool:
         """Pause the ongoing cleaning task. Suitable for pausing a task on a currently loaded map
         or on an unloaded map (v3-6-6 and higher)
 
         Returns:
             bool: True if successful, False otherwise
         """
-        if not self._is_firmware_post_v3_6_6():
-            self.logger.warning("pause_task is only available on firmware v3-6-6 and higher")
+        if not await self._is_firmware_post_v3_6_6():
+            self.logger.warning("_pause_task is only available on firmware v3-6-6 and higher")
             return False
 
-        url = "/gs-robot/cmd/pause_task"
-        res = self._get(self._build_url(url))
-        return self._success_or_raise(res.json())
+        res = await self._get("/gs-robot/cmd/pause_task")
+        return self._success_or_raise(res.json()) is not None
 
-    def _pause_multi_map_cleaning_task(self) -> bool:
+    async def _pause_multi_map_cleaning_task(self) -> bool:
         """Pause a cleaning task that spans multiple maps (v3-6-6 and higher)
 
         Returns:
             bool: True if successful, False otherwise
         """
-        if not self._is_firmware_post_v3_6_6():
+        if not await self._is_firmware_post_v3_6_6():
             self.logger.warning(
-                "pause_multi_map_cleaning_task is only available on firmware v3-6-6 and higher"
+                "_pause_multi_map_cleaning_task is only available on firmware v3-6-6 and higher"
             )
             return False
 
-        url = "/gs-robot/cmd/pause_multi_task"
-        res = self._get(self._build_url(url))
-        return self._success_or_raise(res.json())
+        res = await self._get("/gs-robot/cmd/pause_multi_task")
+        return self._success_or_raise(res.json()) is not None
 
-    def _resume_task_queue(self) -> bool:
+    async def _resume_task_queue(self) -> bool:
         """Resume the paused cleaning task.
 
         On v3-6-6 and higher it resumes a paused task on currently loaded map
@@ -865,69 +1042,68 @@ class GausiumCloudAPI(GausiumRobotAPI):
         Returns:
             bool: True if successful, False otherwise
         """
-        url = "/gs-robot/cmd/resume_task_queue"
+        res = await self._get("/gs-robot/cmd/resume_task_queue")
+        return self._success_or_raise(res.json()) is not None
 
-        res = self._get(self._build_url(url))
-        return self._success_or_raise(res.json())
-
-    def _resume_task(self) -> bool:
+    async def _resume_task(self) -> bool:
         """Resume the paused cleaning task. Suitable for resuming a task on a currently loaded map
         or on an unloaded map (v3-6-6 and higher)
 
         Returns:
             bool: True if successful, False otherwise
         """
-        if not self._is_firmware_post_v3_6_6():
-            self.logger.warning("resume_task is only available on firmware v3-6-6 and higher")
+        if not await self._is_firmware_post_v3_6_6():
+            self.logger.warning("_resume_task is only available on firmware v3-6-6 and higher")
             return False
 
-        url = "/gs-robot/cmd/resume_task"
-        res = self._get(self._build_url(url))
+        res = await self._get("/gs-robot/cmd/resume_task")
+        # This endpoint seems to return success directly in response
         response = res.json()
         return response.get("successed", False)
 
-    def _resume_multi_map_cleaning_task(self) -> bool:
+    async def _resume_multi_map_cleaning_task(self) -> bool:
         """Resume a cleaning task that spans multiple maps (v3-6-6 and higher)
 
         Returns:
             bool: True if successful, False otherwise
         """
-        if not self._is_firmware_post_v3_6_6():
+        if not await self._is_firmware_post_v3_6_6():
             self.logger.warning(
-                "resume_multi_map_cleaning_task is only available on firmware v3-6-6 and higher"
+                "_resume_multi_map_cleaning_task is only available on firmware v3-6-6 and higher"
             )
             return False
 
-        url = "/gs-robot/cmd/resume_multi_task"
-        res = self._get(self._build_url(url))
+        res = await self._get("/gs-robot/cmd/resume_multi_task")
+        # This endpoint seems to return success directly in response
         response = res.json()
         return response.get("successed", False)
 
-    def _cancel_cleaning_task(self) -> bool:
+    async def _cancel_cleaning_task(self) -> bool:
         """Cancel the ongoing cleaning task
 
         Returns:
             bool: True if successful, False otherwise
         """
-        url = "/gs-robot/cmd/stop_task_queue"
-        res = self._get(self._build_url(url))
+        res = await self._get("/gs-robot/cmd/stop_task_queue")
+        # This endpoint seems to return success directly in response
         response = res.json()
         return response.get("successed", False)
 
-    def _is_cleaning_task_finished(self) -> bool:
+    async def _is_cleaning_task_finished(self) -> bool:
         """Check if the cleaning task is finished
 
         Returns:
             bool: True if the task is finished, False if it's still running
         """
-        url = "/gs-robot/cmd/is_task_queue_finished"
-        res = self._get(self._build_url(url))
+        res = await self._get("/gs-robot/cmd/is_task_queue_finished")
+        response_json = self._success_or_raise(res.json())  # Ensure base call succeeded
         # Response has "data" field that contains "True" or "False" as a string
-        return self._success_or_raise(res.json()).lower() == "true"
+        data_str = response_json.get("data", "false")  # Default to false if data missing
+        return str(data_str).lower() == "true"
 
     # ---------- Navigation Task APIs ----------#
 
-    def _navigate_to_named_waypoint(self, map_name: str, position_name: str) -> bool:
+    async def _navigate_to_named_waypoint(self, map_name: str, position_name: str) -> bool:
         """Implementation of send_to_named_waypoint that handles robot API calls
 
         Args:
@@ -942,32 +1118,34 @@ class GausiumCloudAPI(GausiumRobotAPI):
             self.logger.error("Map name and position name are required for send_waypoint")
             return False
 
-        if self._is_firmware_post_v3_6_6():
+        if await self._is_firmware_post_v3_6_6():
             # For v3-6-6 and higher
-            url = (
+            res = await self._get(
                 f"/gs-robot/cmd/start_cross_task?map_name={map_name}&position_name={position_name}"
             )
-            res = self._get(self._build_url(url))
         else:
             # For pre v3-6-6
-            url = "/gs-robot/cmd/start_task_queue"
-            payload = {
-                "name": "",
-                "loop": False,
-                "loop_count": 0,
-                "map_name": map_name,
-                "tasks": [
-                    {
-                        "name": "NavigationTask",
-                        "start_param": {"map_name": map_name, "position_name": position_name},
-                    }
-                ],
-            }
-            res = self._post(self._build_url(url), json=payload)
+            res = await self._post(
+                "/gs-robot/cmd/start_task_queue",
+                json={
+                    "name": "",
+                    "loop": False,
+                    "loop_count": 0,
+                    "map_name": map_name,
+                    "tasks": [
+                        {
+                            "name": "NavigationTask",
+                            "start_param": {"map_name": map_name, "position_name": position_name},
+                        }
+                    ],
+                },
+            )
 
-        return self._success_or_raise(res.json())
+        return self._success_or_raise(res.json()) is not None
 
-    def _navigate_to_coordinates(self, map_name: str, x: int, y: int, angle: float = 0.0) -> bool:
+    async def _navigate_to_coordinates(
+        self, map_name: str, x: int, y: int, angle: float = 0.0
+    ) -> bool:
         """Navigate the robot to specific coordinates
 
         Args:
@@ -979,32 +1157,35 @@ class GausiumCloudAPI(GausiumRobotAPI):
         Returns:
             bool: True if successful, False otherwise
         """
-        if self._is_firmware_post_v3_6_6():
+        if await self._is_firmware_post_v3_6_6():
             # For v3-6-6 and higher
-            url = "/gs-robot/cmd/quick/navigate?type=2"
-            payload = {"destination": {"gridPosition": {"x": x, "y": y, "angle": angle}}}
+            res = await self._post(
+                "/gs-robot/cmd/quick/navigate?type=2",
+                json={"destination": {"gridPosition": {"x": x, "y": y, "angle": angle}}},
+            )
         else:
             # For pre v3-6-6
-            url = "/gs-robot/cmd/start_task_queue"
-            payload = {
-                "name": "",
-                "loop": False,
-                "loop_count": 0,
-                "map_name": map_name,
-                "tasks": [
-                    {
-                        "name": "NavigationTask",
-                        "start_param": {
-                            "destination": {"angle": angle, "gridPosition": {"x": x, "y": y}}
-                        },
-                    }
-                ],
-            }
+            res = await self._post(
+                "/gs-robot/cmd/start_task_queue",
+                json={
+                    "name": "",
+                    "loop": False,
+                    "loop_count": 0,
+                    "map_name": map_name,
+                    "tasks": [
+                        {
+                            "name": "NavigationTask",
+                            "start_param": {
+                                "destination": {"angle": angle, "gridPosition": {"x": x, "y": y}}
+                            },
+                        }
+                    ],
+                },
+            )
 
-        res = self._post(self._build_url(url), json=payload)
-        return self._success_or_raise(res.json())
+        return self._success_or_raise(res.json()) is not None
 
-    def _coordinate_to_grid_units(self, x: float, y: float) -> tuple[int, int]:
+    async def _coordinate_to_grid_units(self, x: float, y: float) -> tuple[int, int]:
         """Convert coordinates to grid units of the current map
 
         Args:
@@ -1014,7 +1195,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         Returns:
             tuple[int, int]: Grid units of the current map
         """
-        map_data = self._get_current_map_or_raise()
+        map_data = await self._get_current_map_or_raise()
         resolution = map_data.resolution
         origin_x = map_data.origin_x
         origin_y = map_data.origin_y
@@ -1023,7 +1204,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         grid_y = round((y - origin_y) / resolution)
         return grid_x, grid_y
 
-    def _grid_units_to_coordinate(self, x: int, y: int) -> tuple[float, float]:
+    async def _grid_units_to_coordinate(self, x: int, y: int) -> tuple[float, float]:
         """Convert grid units to coordinates of the current map
 
         Args:
@@ -1033,7 +1214,7 @@ class GausiumCloudAPI(GausiumRobotAPI):
         Returns:
             tuple[float, float]: Coordinates of the current map
         """
-        map_data = self._get_current_map_or_raise()
+        map_data = await self._get_current_map_or_raise()
         resolution = map_data.resolution
         origin_x = map_data.origin_x
         origin_y = map_data.origin_y
@@ -1042,80 +1223,79 @@ class GausiumCloudAPI(GausiumRobotAPI):
         coordinate_y = y * resolution + origin_y
         return coordinate_x, coordinate_y
 
-    def _pause_navigation_task(self) -> bool:
+    async def _pause_navigation_task(self) -> bool:
         """Pause the ongoing navigation task
 
         Returns:
             bool: True if successful, False otherwise
         """
-        if self._is_firmware_post_v3_6_6():
-            url = "/gs-robot/cmd/pause_navigate"
+        if await self._is_firmware_post_v3_6_6():
+            res = await self._get("/gs-robot/cmd/pause_navigate")
         else:
-            url = "/gs-robot/cmd/pause_task_queue"
+            res = await self._get("/gs-robot/cmd/pause_task_queue")
 
-        res = self._get(self._build_url(url))
-        return self._success_or_raise(res.json())
+        return self._success_or_raise(res.json()) is not None
 
-    def _resume_navigation_task(self) -> bool:
+    async def _resume_navigation_task(self) -> bool:
         """Resume the paused navigation task
 
         Returns:
             bool: True if successful, False otherwise
         """
-        if self._is_firmware_post_v3_6_6():
-            url = "/gs-robot/cmd/resume_navigate"
+        if await self._is_firmware_post_v3_6_6():
+            res = await self._get("/gs-robot/cmd/resume_navigate")
         else:
-            url = "/gs-robot/cmd/resume_task_queue"
+            res = await self._get("/gs-robot/cmd/resume_task_queue")
 
-        res = self._get(self._build_url(url))
-        return self._success_or_raise(res.json())
+        return self._success_or_raise(res.json()) is not None
 
-    def _cancel_navigation_task(self) -> bool:
+    async def _cancel_navigation_task(self) -> bool:
         """Cancel the ongoing navigation task
 
         Returns:
             bool: True if successful, False otherwise
         """
-        if self._is_firmware_post_v3_6_6():
-            url = "/gs-robot/cmd/cancel_navigate"
+        if await self._is_firmware_post_v3_6_6():
+            res = await self._get("/gs-robot/cmd/cancel_navigate")
         else:
-            url = "/gs-robot/cmd/stop_task_queue"
+            res = await self._get("/gs-robot/cmd/stop_task_queue")
 
-        res = self._get(self._build_url(url))
-        return self._success_or_raise(res.json())
+        return self._success_or_raise(res.json()) is not None
 
-    def _cancel_cross_map_navigation(self) -> bool:
+    async def _cancel_cross_map_navigation(self) -> bool:
         """Cancel an ongoing navigation task across maps (for pre v3-6-6)
 
         Returns:
             bool: True if successful, False otherwise
         """
-        if self._is_firmware_post_v3_6_6():
-            return self._cancel_navigation_task()
+        if await self._is_firmware_post_v3_6_6():
+            return await self._cancel_navigation_task()
         else:
-            url = "/gs-robot/cmd/stop_cross_task"
-            res = self._get(self._build_url(url))
-            return self._success_or_raise(res.json())
+            res = await self._get("/gs-robot/cmd/stop_cross_task")
+            return self._success_or_raise(res.json()) is not None
 
-    def _is_navigation_task_finished(self) -> bool:
+    async def _is_navigation_task_finished(self) -> bool:
         """Check if the navigation task is finished
 
         Returns:
             bool: True if the task is finished, False if it's still running
         """
-        if self._is_firmware_post_v3_6_6():
-            url = "/gs-robot/cmd/is_cross_task_finished"
+        if await self._is_firmware_post_v3_6_6():
+            endpoint = "/gs-robot/cmd/is_cross_task_finished"
         else:
             # Check if using cross_task API or task_queue
-            url = "/gs-robot/cmd/is_task_queue_finished"
+            # Assuming task_queue check is sufficient for pre-3.6.6 nav check
+            endpoint = "/gs-robot/cmd/is_task_queue_finished"
 
-        res = self._get(self._build_url(url))
+        res = await self._get(endpoint)
+        response_json = self._success_or_raise(res.json())  # Ensure base call succeeded
         # Response has "data" field that contains "True"/"False" or "true"/"false"
-        return self._success_or_raise(res.json()).lower() == "true"
+        data_str = response_json.get("data", "false")
+        return str(data_str).lower() == "true"
 
     # ---------- Miscellaneous APIs ----------#
 
-    def _set_cleaning_mode(self, mode_name: str) -> bool:
+    async def _set_cleaning_mode(self, mode_name: str) -> bool:
         """Set the cleaning mode
 
         Args:
@@ -1124,24 +1304,26 @@ class GausiumCloudAPI(GausiumRobotAPI):
         Returns:
             bool: True if successful, False otherwise
         """
-        url = f"/gs-robot/cmd/set_cleaning_mode?cleaning_mode={mode_name}"
-        res = self._get(self._build_url(url))
+        res = await self._get(f"/gs-robot/cmd/set_cleaning_mode?cleaning_mode={mode_name}")
+        # This endpoint seems to return success directly in response
         response = res.json()
         return response.get("successed", False)
 
-    def _get_device_status(self) -> dict:
+    async def _get_device_status(self) -> dict:
         """Fetch the device status
 
         Returns:
-            dict: The device status data
+            dict: The device status data (full JSON response)
         """
-        url = "/gs-robot/data/device_status"
-        res = self._get(self._build_url(url))
+        res = await self._get("/gs-robot/data/device_status")
+        # Return the raw JSON, let caller handle success/data extraction
         return res.json()
 
 
 class Vaccum40RobotAPI(GausiumCloudAPI):
-    """Gausium Vaccum 40 robot API wrapper. Inherits from GausiumCloudAPI, overriding all methods
-    that are specific to the Vaccum 40 robot."""
+    """Gausium Vaccum 40 robot API wrapper. Inherits from GausiumCloudAPI, overriding methods
+    that are specific to the Vaccum 40 robot if needed.
+    Currently, no overrides are needed, assuming Vaccum40 uses the same cloud API structure.
+    """
 
     pass

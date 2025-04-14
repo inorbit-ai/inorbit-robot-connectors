@@ -2,7 +2,6 @@
 #
 # SPDX-License-Identifier: MIT
 
-import asyncio
 from enum import Enum
 import io
 import math
@@ -19,7 +18,6 @@ from inorbit_edge.robot import (
     COMMAND_NAV_GOAL,
 )
 from inorbit_gausium_connector.src.mission import MissionTracking
-from inorbit_gausium_connector.src.robot.robot_api import ModelTypeMismatchError
 from PIL import Image
 
 from .. import __version__
@@ -78,13 +76,14 @@ class GausiumConnector(Connector):
         It starts the API polling loops.
         """
         self._logger.info("Starting API polling")
-        ...
+        await self.robot_api.start()
 
     @override
     async def _disconnect(self) -> None:
         """Disconnect from the robot services."""
         self._logger.info("Stopping API polling")
-        # await self._robot.stop()
+        await self.robot_api.stop()
+        await self.robot_api.close()
 
     @override
     async def _execution_loop(self) -> None:
@@ -92,24 +91,6 @@ class GausiumConnector(Connector):
 
         It publishes the last updated robot data to InOrbit.
         """
-
-        # Update the robot data
-        # If case of a model type mismatch, raise an exception so that the connector is stopped.
-        # Otherwise, log the error and continue.
-        await asyncio.sleep(10)
-        try:
-            self.robot_api.update()
-        except ModelTypeMismatchError as ex:
-            raise ex
-        except Exception as ex:
-            self._logger.error(f"Failed to refresh robot data: {ex}")
-            self._robot_session.publish_key_values(
-                {
-                    "robot_available": False,
-                    "connector_last_error": str(ex),
-                }
-            )
-            return
 
         self.publish_pose(**self.robot_api.pose)
         self._robot_session.publish_odometry(**self.robot_api.odometry)

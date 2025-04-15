@@ -9,7 +9,7 @@ import os
 import tempfile
 from typing import override
 
-from inorbit_connector.connector import Connector
+from inorbit_connector.connector import Connector, CommandResultCode
 from inorbit_connector.models import MapConfig
 from inorbit_edge.robot import (
     COMMAND_CUSTOM_COMMAND,
@@ -66,7 +66,6 @@ class GausiumConnector(Connector):
             loglevel=config.log_level.value,
             ignore_model_type_validation=config.connector_config.ignore_model_type_validation,
         )
-        self.status = {}
         self.mission_tracking = MissionTracking(self.publish_mission_tracking)
 
     @override
@@ -199,7 +198,9 @@ class GausiumConnector(Connector):
         if command_name == COMMAND_CUSTOM_COMMAND:
             if not self.is_robot_available():
                 self._logger.error("Robot is unavailable")
-                return options["result_function"]("1", "Robot is not available")
+                return options["result_function"](
+                    CommandResultCode.FAILURE, "Robot is not available"
+                )
 
             # Parse command name and arguments
             script_name = args[0]
@@ -213,7 +214,7 @@ class GausiumConnector(Connector):
                 script_args = dict(zip(args_raw[::2], args_raw[1::2]))
                 self._logger.debug(f"Parsed arguments are: {script_args}")
             else:
-                return options["result_function"]("1", "Invalid arguments")
+                return options["result_function"](CommandResultCode.FAILURE, "Invalid arguments")
 
             # If the command to run is a script (or anything with a dot), ignore it and let the
             # edge-sdk run it. If the script doesn't exist or can't be run, the edge-sdk will
@@ -221,6 +222,7 @@ class GausiumConnector(Connector):
             if "." in script_name:
                 return
 
+            success = False
             if script_name == CustomScripts.START_TASK_QUEUE.value:
                 # The most important argument
                 task_queue_name = script_args.get("task_queue_name")
@@ -230,34 +232,41 @@ class GausiumConnector(Connector):
                 loop = script_args.get("loop", False)
                 # Number of loops. Defaults to 0
                 loop_count = script_args.get("loop_count", 0)
-                self.robot_api.start_task_queue(task_queue_name, map_name, loop, loop_count)
+                success = await self.robot_api.start_task_queue(
+                    task_queue_name, map_name, loop, loop_count
+                )
+
             elif script_name == CustomScripts.PAUSE_TASK_QUEUE.value:
-                self.robot_api.pause_task_queue()
+                success = await self.robot_api.pause_task_queue()
             elif script_name == CustomScripts.RESUME_TASK_QUEUE.value:
-                self.robot_api.resume_task_queue()
+                success = await self.robot_api.resume_task_queue()
             elif script_name == CustomScripts.CANCEL_TASK_QUEUE.value:
-                self.robot_api.cancel_task_queue()
+                success = await self.robot_api.cancel_task_queue()
 
             elif script_name == CustomScripts.SEND_TO_NAMED_WAYPOINT.value:
                 # The most important argument
                 position_name = script_args.get("position_name")
                 # Defaults to the current map
                 map_name = script_args.get("map_name")
-                self.robot_api.send_to_named_waypoint(position_name, map_name)
+                success = await self.robot_api.send_to_named_waypoint(position_name, map_name)
             elif script_name == CustomScripts.PAUSE_NAVIGATION_TASK.value:
-                self.robot_api.pause_navigation_task()
+                success = await self.robot_api.pause_navigation_task()
             elif script_name == CustomScripts.RESUME_NAVIGATION_TASK.value:
-                self.robot_api.resume_navigation_task()
+                success = await self.robot_api.resume_navigation_task()
             elif script_name == CustomScripts.CANCEL_NAVIGATION_TASK.value:
-                self.robot_api.cancel_navigation_task()
+                success = await self.robot_api.cancel_navigation_task()
 
             else:
                 return options["result_function"](
-                    "1", f"Custom command '{script_name}' is not implemented"
+                    CommandResultCode.FAILURE, f"Custom command '{script_name}' is not implemented"
                 )
 
-            # Return '0' for success
-            return options["result_function"]("0")
+            if success:
+                return options["result_function"](CommandResultCode.SUCCESS)
+            else:
+                return options["result_function"](
+                    CommandResultCode.FAILURE, "Failed to execute command"
+                )
 
         try:
             # Waypoint navigation
@@ -266,10 +275,13 @@ class GausiumConnector(Connector):
                 x = float(pose["x"])
                 y = float(pose["y"])
                 orientation = math.degrees(float(pose["theta"]))
-                self.robot_api.send_waypoint(x, y, orientation)
-
-                # Return '0' for success
-                return options["result_function"]("0")
+                success = await self.robot_api.send_waypoint(x, y, orientation)
+                if success:
+                    return options["result_function"](CommandResultCode.SUCCESS)
+                else:
+                    return options["result_function"](
+                        CommandResultCode.FAILURE, "Failed to execute command"
+                    )
 
             # Pose initalization
             elif command_name == COMMAND_INITIAL_POSE:
@@ -282,10 +294,13 @@ class GausiumConnector(Connector):
                 # Normalize the angle to be between -pi and pi
                 new_orientation = ((new_orientation + math.pi) % (2 * math.pi)) - math.pi
                 new_orientation = math.degrees(new_orientation)
-                self.robot_api.localize_at(new_x, new_y, new_orientation)
-
-                # Return '0' for success
-                return options["result_function"]("0")
+                success = await self.robot_api.localize_at(new_x, new_y, new_orientation)
+                if success:
+                    return options["result_function"](CommandResultCode.SUCCESS)
+                else:
+                    return options["result_function"](
+                        CommandResultCode.FAILURE, "Failed to execute command"
+                    )
 
         except Exception as e:
             # HACK(b-Tomas): If navGoal or initalPose fail, the edge-sdk crashes because it
@@ -300,17 +315,25 @@ class GausiumConnector(Connector):
         if command_name == COMMAND_MESSAGE:
             message = args[0]
             if message == CommandMessages.PAUSE.value:
-                self.robot_api.pause()
+                success = await self.robot_api.pause()
             elif message == CommandMessages.RESUME.value:
-                self.robot_api.resume()
+                success = await self.robot_api.resume()
             else:
-                return options["result_function"]("1", f"Message '{message}' is not implemented")
+                return options["result_function"](
+                    CommandResultCode.FAILURE, f"Message '{message}' is not implemented"
+                )
 
-            # Return '0' for success
-            return options["result_function"]("0")
+            if success:
+                return options["result_function"](CommandResultCode.SUCCESS)
+            else:
+                return options["result_function"](
+                    CommandResultCode.FAILURE, "Failed to execute command"
+                )
 
         else:
-            return options["result_function"]("1", f"'{command_name}' is not implemented")
+            return options["result_function"](
+                CommandResultCode.FAILURE, f"'{command_name}' is not implemented"
+            )
 
     def is_robot_available(self) -> bool:
         """Check if the robot is available for receiving commands.
@@ -318,9 +341,8 @@ class GausiumConnector(Connector):
         Returns:
             bool: True if the robot is online, False otherwise.
         """
-        # If the last call was successful and the robot is online, return True
-        # If unable to determine if the robot is online from the status data, assume it is
-        return self.robot_api._last_call_successful and self.status.get("online", True)
+        # If the last call was successful, return True
+        return self.robot_api._last_call_successful
 
     def publish_mission_tracking(self, report: dict) -> None:
         """Publish a mission tracking report to InOrbit."""

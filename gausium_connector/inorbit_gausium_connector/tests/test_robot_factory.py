@@ -8,7 +8,7 @@ from pydantic import HttpUrl
 
 from inorbit_gausium_connector.src.robot import Vaccum40RobotAPI
 from inorbit_gausium_connector.src.robot.robot_factory import (
-    create_robot_api,
+    create_robot,
     ROBOT_API_CLASSES,
     CLOUD_APIS_ALLOWED_MODEL_TYPES,
 )
@@ -25,7 +25,7 @@ class TestRobotFactory:
     def test_create_robot_api_with_valid_type(self):
         """Test creating a robot API with a valid connector type."""
         with patch.object(Vaccum40RobotAPI, "__init__", return_value=None) as mock_init:
-            api = create_robot_api(
+            api = create_robot(
                 connector_type="V40", base_url=HttpUrl("http://example.com/"), loglevel="DEBUG"
             )
             mock_init.assert_called_once_with(
@@ -38,7 +38,7 @@ class TestRobotFactory:
     def test_create_robot_api_with_invalid_type(self):
         """Test creating a robot API with an invalid connector type."""
         with pytest.raises(ValueError) as excinfo:
-            create_robot_api(
+            create_robot(
                 connector_type="InvalidType",
                 base_url=HttpUrl("http://example.com/"),
                 loglevel="INFO",
@@ -51,7 +51,7 @@ class TestRobotFactory:
     def test_create_robot_api_default_loglevel(self):
         """Test creating a robot API with the default log level."""
         with patch.object(Vaccum40RobotAPI, "__init__", return_value=None) as mock_init:
-            api = create_robot_api(connector_type="V40", base_url=HttpUrl("http://example.com/"))
+            api = create_robot(connector_type="V40", base_url=HttpUrl("http://example.com/"))
             mock_init.assert_called_once_with(
                 base_url=HttpUrl("http://example.com/"),
                 loglevel="INFO",
@@ -64,7 +64,7 @@ class TestRobotFactory:
         # Create a mock robot API with allowed model types
         with patch.object(Vaccum40RobotAPI, "__init__", return_value=None) as mock_init:
             # Create with default validation (not ignored)
-            api = create_robot_api(
+            api = create_robot(
                 connector_type="V40",
                 base_url=HttpUrl("http://example.com/"),
             )
@@ -78,7 +78,7 @@ class TestRobotFactory:
 
         # Test with validation ignored
         with patch.object(Vaccum40RobotAPI, "__init__", return_value=None) as mock_init:
-            api = create_robot_api(
+            api = create_robot(
                 connector_type="V40",
                 base_url=HttpUrl("http://example.com/"),
                 ignore_model_type_validation=True,

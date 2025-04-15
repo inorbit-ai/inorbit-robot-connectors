@@ -22,7 +22,7 @@ from PIL import Image
 
 from .. import __version__
 from .config.connector_model import ConnectorConfig
-from .robot import create_robot_api
+from .robot import create_robot
 
 
 class CustomScripts(Enum):
@@ -60,7 +60,7 @@ class GausiumConnector(Connector):
     def __init__(self, robot_id: str, config: ConnectorConfig) -> None:
         """Initialize the Gausium Connector."""
         super().__init__(robot_id, config)
-        self.robot_api = create_robot_api(
+        self.robot_api, self.robot_state = create_robot(
             connector_type=config.connector_type,
             base_url=config.connector_config.base_url,
             loglevel=config.log_level.value,
@@ -76,13 +76,13 @@ class GausiumConnector(Connector):
         It starts the API polling loops.
         """
         self._logger.info("Starting API polling")
-        await self.robot_api.start()
+        self.robot_state.start()
 
     @override
     async def _disconnect(self) -> None:
         """Disconnect from the robot services."""
         self._logger.info("Stopping API polling")
-        await self.robot_api.stop()
+        await self.robot_state.stop()
         await self.robot_api.close()
 
     @override
@@ -91,24 +91,25 @@ class GausiumConnector(Connector):
 
         It publishes the last updated robot data to InOrbit.
         """
+        if pose := self.robot_state.pose:
+            self.publish_pose(**pose)
 
-        self.publish_pose(**self.robot_api.pose)
-        self._robot_session.publish_odometry(**self.robot_api.odometry)
-        robot_key_values = self.robot_api.key_values
-        self._robot_session.publish_key_values(
-            {
-                **robot_key_values,
-                "connector_version": __version__,
-                "robot_available": self.is_robot_available(),
-            }
-        )
-        if self.robot_api.path:
-            self._robot_session.publish_path(**self.robot_api.path.model_dump())
+        if path := self.robot_state.path:
+            self._robot_session.publish_path(**path.model_dump())
 
-        # Update mission tracking data
-        robot_status = robot_key_values.get("robotStatus", {})
-        status_data = robot_key_values.get("statusData", {})
-        self.mission_tracking.mission_update(robot_status, status_data)
+        if key_values := self.robot_state.key_values:
+            self._robot_session.publish_key_values(
+                {
+                    **key_values,
+                    "connector_version": __version__,
+                    "robot_available": self.is_robot_available(),
+                }
+            )
+
+            # Update mission tracking data
+            robot_status = key_values.get("robotStatus", {})
+            status_data = key_values.get("statusData", {})
+            self.mission_tracking.mission_update(robot_status, status_data)
 
     @override
     def publish_map(self, frame_id: str, is_update: bool = False) -> None:
@@ -125,7 +126,7 @@ class GausiumConnector(Connector):
                 f"Map with frame_id {frame_id} not found in config, attempting to load from robot"
             )
             try:
-                map_data = self.robot_api.current_map
+                map_data = self.robot_state.current_map
             except Exception as ex:
                 self._logger.error(f"Failed to load map from robot: {ex}")
                 return

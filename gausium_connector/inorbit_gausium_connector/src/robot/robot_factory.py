@@ -62,5 +62,7 @@ def create_robot(
     )
 
     robot_api = api_class(base_url=base_url, loglevel=loglevel)
-    robot_state = Robot(robot_api, allowed_model_types)
+    robot_state = Robot(
+        api_wrapper=robot_api, loglevel=loglevel, allowed_model_types=allowed_model_types
+    )
     return robot_api, robot_state

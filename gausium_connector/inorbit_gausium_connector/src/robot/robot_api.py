@@ -10,6 +10,7 @@ import httpx
 from pydantic import HttpUrl
 
 from inorbit_gausium_connector.src.robot.datatypes import MapData
+from inorbit_gausium_connector.src.robot.utils import coordinate_to_grid_units
 
 
 class BaseRobotAPI(ABC):
@@ -171,7 +172,7 @@ class GausiumCloudAPI(BaseRobotAPI):
             bool: True if successful, False otherwise
         """
         map_name = map.map_name
-        grid_x, grid_y = self._coordinate_to_grid_units(x, y)
+        grid_x, grid_y = coordinate_to_grid_units(x, y, map)
         self.logger.debug(f"Converted {x}, {y} coordinates to grid units: {grid_x}, {grid_y}")
         return await self._navigate_to_coordinates(
             map_name, firmware_version, grid_x, grid_y, orientation
@@ -185,71 +186,37 @@ class GausiumCloudAPI(BaseRobotAPI):
     async def pause(self, firmware_version: str) -> bool:
         """Requests the robot to pause whatever it is doing.
         It fetches the state of cleaning and navigation and the pauses whichever is running"""
-
-        # In firmware version lower than v3-6-6, nav and cleaning pause commands are the same
-        if not await self._is_firmware_post_v3_6_6(firmware_version):
+        # In firmware version lower than v3-6-6, navigation and cleaning pause commands are the same
+        if not self._is_firmware_post_v3_6_6():
             return await self._pause_task_queue()
 
-        # In firmware version v3-6-6 and higher, commands are different
-        try:
-            is_finished = await self._is_cleaning_task_finished()
-        except Exception as e:
-            self.logger.warning(
-                f"Could not determine cleaning task status: {e}. Assuming navigation pause."
-            )
-            is_finished = True  # Assume finished if check fails, try pausing navigation
-
-        if is_finished:
-            self.logger.info("Cleaning task finished or unknown, attempting to pause navigation.")
+        # In firmware version v3-6-6 and higher, navigation and cleaning pause commands are
+        # different
+        if await self._is_cleaning_task_finished():
             self._last_pause_command = "navigation"
             return await self._pause_navigation_task()
         else:
-            self.logger.info("Cleaning task active, attempting to pause cleaning.")
             self._last_pause_command = "cleaning"
-            # Decide which pause command to use based on firmware
-            # Assuming _pause_task_queue works for both single/multi map < 3.6.6
-            # and _pause_task works for >= 3.6.6 (check Gausium docs for specifics)
-            # Let's stick to pause_task_queue for now based on original logic separation
-            return (
-                await self._pause_task_queue()
-            )  # Or potentially _pause_task() or _pause_multi_map_cleaning_task()
+            return await self._pause_cleaning_task()
 
     async def resume(self, firmware_version: str) -> bool:
         """Requests the robot to resume a previously paused task"""
-        # In firmware version lower than v3-6-6, commands are the same
-        if not await self._is_firmware_post_v3_6_6(firmware_version):
+        # In firmware version lower than v3-6-6, navigation and cleaning resume commands are the
+        # same
+        if not self._is_firmware_post_v3_6_6():
             return await self._resume_task_queue()
 
-        # In firmware version v3-6-6 and higher, commands are different.
+        # In firmware version v3-6-6 and higher, navigation and cleaning resume commands are
+        # different.
         # Get the previously paused command to know which one to resume
         if self._last_pause_command == "cleaning":
-            self.logger.info("Resuming previously paused cleaning task.")
             self._last_pause_command = None
-            # Decide which resume command to use based on firmware/context
-            # Let's stick to resume_task_queue for now
-            return (
-                await self._resume_task_queue()
-            )  # Or potentially _resume_task() or _resume_multi_map_cleaning_task()
-        elif self._last_pause_command == "navigation":
-            self.logger.info("Resuming previously paused navigation task.")
+            return await self._resume_cleaning_task()
+        if self._last_pause_command == "navigation":
             self._last_pause_command = None
             return await self._resume_navigation_task()
         else:
-            self.logger.warning("No previously paused command recorded. Attempting general resume.")
-            # Attempt a general resume if state is unknown (could try both or pick one)
-            # Let's try resuming task queue as a default guess
-            try:
-                success = await self._resume_task_queue()
-                if success:
-                    return True
-            except Exception:
-                pass  # Ignore error and try navigation resume
-            # If task resume fails or wasn't tried, try navigation resume
-            try:
-                return await self._resume_navigation_task()
-            except Exception as e:
-                self.logger.error(f"Failed to resume any task: {e}")
-                return False
+            raise Exception("No previously paused command found")
 
     async def start_task_queue(
         self,
@@ -362,7 +329,7 @@ class GausiumCloudAPI(BaseRobotAPI):
         res = await self._get("/gs-robot/real_time_data/robot_status")
         return res.json()
 
-    async def _is_firmware_post_v3_6_6(self, firmware_version: str) -> bool:
+    def _is_firmware_post_v3_6_6(self, firmware_version: str) -> bool:
         """Check if the firmware version is v3-6-6 or higher
 
         Returns:
@@ -587,7 +554,7 @@ class GausiumCloudAPI(BaseRobotAPI):
         Returns:
             bool: True if successful, False otherwise
         """
-        if not await self._is_firmware_post_v3_6_6(firmware_version):
+        if not self._is_firmware_post_v3_6_6(firmware_version):
             self.logger.warning("_pause_task is only available on firmware v3-6-6 and higher")
             return False
 
@@ -600,7 +567,7 @@ class GausiumCloudAPI(BaseRobotAPI):
         Returns:
             bool: True if successful, False otherwise
         """
-        if not await self._is_firmware_post_v3_6_6(firmware_version):
+        if not self._is_firmware_post_v3_6_6(firmware_version):
             self.logger.warning(
                 "_pause_multi_map_cleaning_task is only available on firmware v3-6-6 and higher"
             )
@@ -628,7 +595,7 @@ class GausiumCloudAPI(BaseRobotAPI):
         Returns:
             bool: True if successful, False otherwise
         """
-        if not await self._is_firmware_post_v3_6_6(firmware_version):
+        if not self._is_firmware_post_v3_6_6(firmware_version):
             self.logger.warning("_resume_task is only available on firmware v3-6-6 and higher")
             return False
 
@@ -643,7 +610,7 @@ class GausiumCloudAPI(BaseRobotAPI):
         Returns:
             bool: True if successful, False otherwise
         """
-        if not await self._is_firmware_post_v3_6_6(firmware_version):
+        if not self._is_firmware_post_v3_6_6(firmware_version):
             self.logger.warning(
                 "_resume_multi_map_cleaning_task is only available on firmware v3-6-6 and higher"
             )
@@ -696,7 +663,7 @@ class GausiumCloudAPI(BaseRobotAPI):
             self.logger.error("Map name and position name are required for send_waypoint")
             return False
 
-        if await self._is_firmware_post_v3_6_6(firmware_version):
+        if self._is_firmware_post_v3_6_6(firmware_version):
             # For v3-6-6 and higher
             res = await self._get(
                 f"/gs-robot/cmd/start_cross_task?map_name={map_name}&position_name={position_name}"
@@ -735,7 +702,7 @@ class GausiumCloudAPI(BaseRobotAPI):
         Returns:
             bool: True if successful, False otherwise
         """
-        if await self._is_firmware_post_v3_6_6(firmware_version):
+        if self._is_firmware_post_v3_6_6(firmware_version):
             # For v3-6-6 and higher
             res = await self._post(
                 "/gs-robot/cmd/quick/navigate?type=2",
@@ -763,31 +730,13 @@ class GausiumCloudAPI(BaseRobotAPI):
 
         return self._success_or_raise(res.json()) is not None
 
-    async def _coordinate_to_grid_units(self, x: float, y: float, map: MapData) -> tuple[int, int]:
-        """Convert coordinates to grid units of the current map
-
-        Args:
-            x (float): X coordinate in meters
-            y (float): Y coordinate in meters
-
-        Returns:
-            tuple[int, int]: Grid units of the current map
-        """
-        resolution = map.resolution
-        origin_x = map.origin_x
-        origin_y = map.origin_y
-
-        grid_x = round((x - origin_x) / resolution)
-        grid_y = round((y - origin_y) / resolution)
-        return grid_x, grid_y
-
     async def _pause_navigation_task(self, firmware_version: str) -> bool:
         """Pause the ongoing navigation task
 
         Returns:
             bool: True if successful, False otherwise
         """
-        if await self._is_firmware_post_v3_6_6(firmware_version):
+        if self._is_firmware_post_v3_6_6(firmware_version):
             res = await self._get("/gs-robot/cmd/pause_navigate")
         else:
             res = await self._get("/gs-robot/cmd/pause_task_queue")
@@ -800,7 +749,7 @@ class GausiumCloudAPI(BaseRobotAPI):
         Returns:
             bool: True if successful, False otherwise
         """
-        if await self._is_firmware_post_v3_6_6(firmware_version):
+        if self._is_firmware_post_v3_6_6(firmware_version):
             res = await self._get("/gs-robot/cmd/resume_navigate")
         else:
             res = await self._get("/gs-robot/cmd/resume_task_queue")
@@ -813,7 +762,7 @@ class GausiumCloudAPI(BaseRobotAPI):
         Returns:
             bool: True if successful, False otherwise
         """
-        if await self._is_firmware_post_v3_6_6(firmware_version):
+        if self._is_firmware_post_v3_6_6(firmware_version):
             res = await self._get("/gs-robot/cmd/cancel_navigate")
         else:
             res = await self._get("/gs-robot/cmd/stop_task_queue")
@@ -826,7 +775,7 @@ class GausiumCloudAPI(BaseRobotAPI):
         Returns:
             bool: True if successful, False otherwise
         """
-        if await self._is_firmware_post_v3_6_6(firmware_version):
+        if self._is_firmware_post_v3_6_6(firmware_version):
             return await self._cancel_navigation_task(firmware_version)
         else:
             res = await self._get("/gs-robot/cmd/stop_cross_task")
@@ -838,7 +787,7 @@ class GausiumCloudAPI(BaseRobotAPI):
         Returns:
             bool: True if the task is finished, False if it's still running
         """
-        if await self._is_firmware_post_v3_6_6(firmware_version):
+        if self._is_firmware_post_v3_6_6(firmware_version):
             endpoint = "/gs-robot/cmd/is_cross_task_finished"
         else:
             # Check if using cross_task API or task_queue

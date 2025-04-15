@@ -10,6 +10,7 @@ from typing import Coroutine, List
 from inorbit_gausium_connector.src.robot.constants import WorkType
 from inorbit_gausium_connector.src.robot.datatypes import MapData, ModelTypeMismatchError, PathData
 from inorbit_gausium_connector.src.robot.robot_api import GausiumCloudAPI
+from inorbit_gausium_connector.src.robot.utils import grid_units_to_coordinate
 
 
 class Robot:
@@ -98,7 +99,7 @@ class Robot:
                     await asyncio.wait(pending, timeout=0.5)
 
             except Exception as e:
-                print(f"Error during graceful shutdown: {e}")
+                self._logger.error(f"Error during graceful shutdown: {e}")
 
         # Clear the task list
         self._running_tasks.clear()
@@ -246,42 +247,24 @@ class Robot:
         # If executing a task, publish the "taskSegments"
         elif work_type == WorkType.EXECUTE_TASK.value:
             # Current map data must be set in order to convert grid units to coordinates
-            if not self._current_map:
+            if not self.current_map:
                 self._logger.warning("No current map data available, skipping task path")
                 path_points = []
             else:
                 task_segments = robot_status_data.get("statusData", {}).get("taskSegments", [])
                 for segment in task_segments:
                     data = segment.get("data", [])
-                path_points.extend(
-                    [
-                        self._grid_units_to_coordinate(point["x"], point["y"], self._current_map)
-                        for point in data
-                    ]
-                )
+                    path_points.extend(
+                        [
+                            grid_units_to_coordinate(point["x"], point["y"], self.current_map)
+                            for point in data
+                        ]
+                    )
 
         return PathData(
             path_points=path_points,
             frame_id=frame_id,
         )
-
-    def _grid_units_to_coordinate(self, x: int, y: int, map: MapData) -> tuple[float, float]:
-        """Convert grid units to coordinates of the current map
-
-        Args:
-            x (int): X coordinate in grid units
-            y (int): Y coordinate in grid units
-            map (MapData): The map to convert the coordinates to
-        Returns:
-            tuple[float, float]: Coordinates of the current map
-        """
-        resolution = map.resolution
-        origin_x = map.origin_x
-        origin_y = map.origin_y
-
-        coordinate_x = x * resolution + origin_x
-        coordinate_y = y * resolution + origin_y
-        return coordinate_x, coordinate_y
 
     @property
     def key_values(self) -> dict | None:
@@ -299,7 +282,12 @@ class Robot:
         if self._current_map is None:
             return None
         if self._current_map and self._current_map.map_image is None:
-            self._current_map.map_image = self._get_map_image(self._current_map.map_name)
+            # NOTE: beacuse the map image is required within the publish_map method, this method
+            # cannot be async and the image is fetched in a blocking call
+            loop = asyncio.get_event_loop()
+            self._current_map.map_image = loop.call_soon_threadsafe(
+                self._api_wrapper._get_map_image(self._current_map.map_name)
+            )
         return self._current_map
 
     @property

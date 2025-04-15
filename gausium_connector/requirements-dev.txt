@@ -7,6 +7,7 @@ build==1.0
 bump-my-version==0.15
 black
 flake8
-pytest>=3
+pytest~=8.1
+pytest-asyncio~=0.26.0
 pytest-cov>=6
 requests_mock==1.11

@@ -2,18 +2,18 @@
 #
 # SPDX-License-Identifier: MIT
 
-import math
-from unittest.mock import call
-from unittest.mock import MagicMock
-from unittest.mock import Mock
 import logging
+import math
+from unittest.mock import AsyncMock, MagicMock, Mock, call
 
-from inorbit_edge.commands import COMMAND_INITIAL_POSE
 import pytest
-from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND
-from inorbit_edge.robot import COMMAND_MESSAGE
-from inorbit_edge.robot import COMMAND_NAV_GOAL
-from inorbit_edge.robot import RobotSession
+from inorbit_edge.commands import COMMAND_INITIAL_POSE
+from inorbit_edge.robot import (
+    COMMAND_CUSTOM_COMMAND,
+    COMMAND_MESSAGE,
+    COMMAND_NAV_GOAL,
+    RobotSession,
+)
 from inorbit_gausium_connector.src.config.connector_model import ConnectorConfig
 from inorbit_gausium_connector.src.connector import GausiumConnector
 
@@ -48,7 +48,8 @@ class TestGausiumConnector:
         )
 
         # Mock API and session
-        connector.robot_api = MagicMock()
+        connector.robot_api = AsyncMock()
+        connector.robot_state = MagicMock()
         connector.mission_tracking = MagicMock()
         connector._robot_session = MagicMock()
 
@@ -56,6 +57,18 @@ class TestGausiumConnector:
         connector._logger = mock_logger
 
         return connector
+
+    @pytest.fixture
+    def callback_kwargs(self):
+        return {
+            "command_name": "cmd_name",
+            "args": [],
+            "options": {
+                "result_function": Mock(),
+                "progress_funtion": Mock(),
+                "metadata": {},
+            },
+        }
 
     def test_publish_map(self, connector, monkeypatch):
         """Test the publish_map method in different scenarios."""
@@ -87,7 +100,7 @@ class TestGausiumConnector:
         mock_map_data.origin_x = 10.5
         mock_map_data.origin_y = 20.7
         mock_map_data.resolution = 0.05
-        connector.robot_api.current_map = mock_map_data
+        connector.robot_state.current_map = mock_map_data
 
         # Mock tempfile.mkstemp to return a known file descriptor and path
         mock_fd = 42
@@ -134,7 +147,7 @@ class TestGausiumConnector:
         super_publish_map.reset_mock()
 
         # Test case 3: Map doesn't exist and robot doesn't provide map data
-        connector.robot_api.current_map = None
+        connector.robot_state.current_map = None
         connector.config.maps = {}  # Reset maps
 
         # Call the method
@@ -144,7 +157,7 @@ class TestGausiumConnector:
         assert not super_publish_map.called
 
         # Test case 4: Error flipping the image
-        connector.robot_api.current_map = mock_map_data
+        connector.robot_state.current_map = mock_map_data
         monkeypatch.setattr("PIL.Image.open", Mock(side_effect=Exception("Failed to open image")))
 
         # Reset counters for this test case
@@ -163,10 +176,10 @@ class TestGausiumConnector:
         monkeypatch.setenv("INORBIT_KEY", "abc123")
         monkeypatch.setattr(RobotSession, "connect", MagicMock())
 
-        # Mock the create_robot_api function
-        mock_create_robot_api = MagicMock()
+        # Mock the create_robot function
+        mock_create_robot = MagicMock(return_value=(..., ...))
         monkeypatch.setattr(
-            "inorbit_gausium_connector.src.connector.create_robot_api", mock_create_robot_api
+            "inorbit_gausium_connector.src.connector.create_robot", mock_create_robot
         )
 
         # Create a connector with ignore_model_type_validation set to True
@@ -186,13 +199,13 @@ class TestGausiumConnector:
             ),
         )
 
-        # Verify that create_robot_api was called with ignore_model_type_validation=True
-        mock_create_robot_api.assert_called_once()
-        call_kwargs = mock_create_robot_api.call_args.kwargs
+        # Verify that create_robot was called with ignore_model_type_validation=True
+        mock_create_robot.assert_called_once()
+        call_kwargs = mock_create_robot.call_args.kwargs
         assert call_kwargs["ignore_model_type_validation"] is True
 
         # Reset the mock
-        mock_create_robot_api.reset_mock()
+        mock_create_robot.reset_mock()
 
         # Create a connector with ignore_model_type_validation set to False
         GausiumConnector(
@@ -211,27 +224,16 @@ class TestGausiumConnector:
             ),
         )
 
-        # Verify that create_robot_api was called with ignore_model_type_validation=False
-        mock_create_robot_api.assert_called_once()
-        call_kwargs = mock_create_robot_api.call_args.kwargs
+        # Verify that create_robot was called with ignore_model_type_validation=False
+        mock_create_robot.assert_called_once()
+        call_kwargs = mock_create_robot.call_args.kwargs
         assert call_kwargs["ignore_model_type_validation"] is False
 
-    @pytest.fixture
-    def callback_kwargs(self):
-        return {
-            "command_name": "cmd_name",
-            "args": [],
-            "options": {
-                "result_function": Mock(),
-                "progress_funtion": Mock(),
-                "metadata": {},
-            },
-        }
-
-    def test_command_callback_unknown_commands(self, connector, callback_kwargs, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_command_callback_unknown_commands(self, connector, callback_kwargs, monkeypatch):
         # Unknown command
         callback_kwargs["command_name"] = "unknown_command"
-        connector._inorbit_command_handler(**callback_kwargs)
+        await connector._inorbit_command_handler(**callback_kwargs)
         callback_kwargs["options"]["result_function"].assert_called_with(
             "1", "'unknown_command' is not implemented"
         )
@@ -240,7 +242,7 @@ class TestGausiumConnector:
         callback_kwargs["options"]["result_function"].reset_mock()
         callback_kwargs["command_name"] = "customCommand"
         callback_kwargs["args"] = ["unknown_custom_command", ["arg1", "arg2"]]
-        connector._inorbit_command_handler(**callback_kwargs)
+        await connector._inorbit_command_handler(**callback_kwargs)
         callback_kwargs["options"]["result_function"].assert_called_with(
             "1", "Custom command 'unknown_custom_command' is not implemented"
         )
@@ -249,7 +251,7 @@ class TestGausiumConnector:
         callback_kwargs["options"]["result_function"].reset_mock()
         callback_kwargs["command_name"] = "message"
         callback_kwargs["args"] = ["unknown_message", ["arg1", "arg2"]]
-        connector._inorbit_command_handler(**callback_kwargs)
+        await connector._inorbit_command_handler(**callback_kwargs)
         callback_kwargs["options"]["result_function"].assert_called_with(
             "1", "Message 'unknown_message' is not implemented"
         )
@@ -259,21 +261,23 @@ class TestGausiumConnector:
         callback_kwargs["command_name"] = "customCommand"
         callback_kwargs["args"] = ["script.sh", ["arg1", "arg2"]]
         # The connector should let the edge-sdk handle this
-        connector._inorbit_command_handler(**callback_kwargs)
+        await connector._inorbit_command_handler(**callback_kwargs)
         assert not callback_kwargs["options"]["result_function"].called
 
-    def test_command_callback_nav_goal(self, connector, callback_kwargs):
+    @pytest.mark.asyncio
+    async def test_command_callback_nav_goal(self, connector, callback_kwargs):
         callback_kwargs["command_name"] = COMMAND_NAV_GOAL
         callback_kwargs["args"] = [{"x": "1", "y": "2", "theta": "3.14"}]
-        connector._inorbit_command_handler(**callback_kwargs)
+        await connector._inorbit_command_handler(**callback_kwargs)
         assert connector.robot_api.send_waypoint.call_args_list == [call(1, 2, math.degrees(3.14))]
         callback_kwargs["options"]["result_function"].assert_called_with("0")
 
-    def test_command_callback_initial_pose(self, connector, callback_kwargs):
+    @pytest.mark.asyncio
+    async def test_command_callback_initial_pose(self, connector, callback_kwargs):
         callback_kwargs["command_name"] = COMMAND_INITIAL_POSE
         callback_kwargs["args"] = [{"x": "1", "y": "2", "theta": "3.1415"}]
         connector.robot_api.pose = {"x": 0, "y": 0, "yaw": 0}
-        connector._inorbit_command_handler(**callback_kwargs)
+        await connector._inorbit_command_handler(**callback_kwargs)
         callback_kwargs["options"]["result_function"].assert_called_with("0")
         assert connector.robot_api.localize_at.call_args_list[0].args[0] == 1
         assert connector.robot_api.localize_at.call_args_list[0].args[1] == 2
@@ -281,57 +285,60 @@ class TestGausiumConnector:
         connector.robot_api.localize_at.reset_mock()
         callback_kwargs["args"] = [{"x": "1", "y": "2", "theta": "3.1415"}]
         connector.robot_api.pose = {"x": 1, "y": 2, "yaw": 3.1415}
-        connector._inorbit_command_handler(**callback_kwargs)
+        await connector._inorbit_command_handler(**callback_kwargs)
         callback_kwargs["options"]["result_function"].assert_called_with("0")
         assert connector.robot_api.localize_at.call_args_list[0].args[0] == 2
         assert connector.robot_api.localize_at.call_args_list[0].args[1] == 4
         assert abs(connector.robot_api.localize_at.call_args_list[0].args[2]) < 0.1
 
-    def test_command_callback_inorbit_messages(self, connector, callback_kwargs):
+    @pytest.mark.asyncio
+    async def test_command_callback_inorbit_messages(self, connector, callback_kwargs):
         callback_kwargs["command_name"] = COMMAND_MESSAGE
         # InOrbit pause message
         callback_kwargs["args"] = ["inorbit_pause"]
-        connector._inorbit_command_handler(**callback_kwargs)
+        await connector._inorbit_command_handler(**callback_kwargs)
         connector.robot_api.pause.assert_called_once()
         callback_kwargs["options"]["result_function"].assert_called_with("0")
 
         # InOrbit resume message
         callback_kwargs["args"] = ["inorbit_resume"]
-        connector._inorbit_command_handler(**callback_kwargs)
+        await connector._inorbit_command_handler(**callback_kwargs)
         connector.robot_api.resume.assert_called_once()
         callback_kwargs["options"]["result_function"].assert_called_with("0")
 
         # Unknown message
         callback_kwargs["args"] = ["unknown_message"]
-        connector._inorbit_command_handler(**callback_kwargs)
+        await connector._inorbit_command_handler(**callback_kwargs)
         callback_kwargs["options"]["result_function"].assert_called_with(
             "1", "Message 'unknown_message' is not implemented"
         )
 
-    def test_command_callback_custom_command(self, connector, callback_kwargs):
+    @pytest.mark.asyncio
+    async def test_command_callback_custom_command(self, connector, callback_kwargs):
         callback_kwargs["command_name"] = COMMAND_CUSTOM_COMMAND
 
         # Test with invalid arguments
         callback_kwargs["args"] = ["script_name", ["not_even_key_value_pairs"]]
-        connector._inorbit_command_handler(**callback_kwargs)
+        await connector._inorbit_command_handler(**callback_kwargs)
         callback_kwargs["options"]["result_function"].assert_called_with("1", "Invalid arguments")
 
         # Test with robot unavailable
         connector.robot_api._last_call_successful = False
         connector.status = {"online": False}
         callback_kwargs["args"] = ["script_name", ["param1", "value1"]]
-        connector._inorbit_command_handler(**callback_kwargs)
+        await connector._inorbit_command_handler(**callback_kwargs)
         callback_kwargs["options"]["result_function"].assert_called_with(
             "1", "Robot is not available"
         )
 
-    def test_command_callback_start_task_queue(self, connector, callback_kwargs):
+    @pytest.mark.asyncio
+    async def test_command_callback_start_task_queue(self, connector, callback_kwargs):
         callback_kwargs["command_name"] = COMMAND_CUSTOM_COMMAND
         callback_kwargs["args"] = [
             "start_task_queue",
             ["task_queue_name", "vacuum_zone_corridor_123"],
         ]
-        connector._inorbit_command_handler(**callback_kwargs)
+        await connector._inorbit_command_handler(**callback_kwargs)
         # Verify the result function was called with success code
         callback_kwargs["options"]["result_function"].assert_called_with("0")
         # Verify the robot API method was called with the correct parameters
@@ -359,7 +366,7 @@ class TestGausiumConnector:
                 3,
             ],
         ]
-        connector._inorbit_command_handler(**callback_kwargs)
+        await connector._inorbit_command_handler(**callback_kwargs)
         callback_kwargs["options"]["result_function"].assert_called_with("0")
         connector.robot_api.start_task_queue.assert_called_once_with(
             "vacuum_zone_corridor_123",
@@ -368,10 +375,11 @@ class TestGausiumConnector:
             3,
         )
 
-    def test_command_callback_send_to_named_waypoint(self, connector, callback_kwargs):
+    @pytest.mark.asyncio
+    async def test_command_callback_send_to_named_waypoint(self, connector, callback_kwargs):
         callback_kwargs["command_name"] = COMMAND_CUSTOM_COMMAND
         callback_kwargs["args"] = ["send_to_named_waypoint", ["position_name", "waypoint_1"]]
-        connector._inorbit_command_handler(**callback_kwargs)
+        await connector._inorbit_command_handler(**callback_kwargs)
         callback_kwargs["options"]["result_function"].assert_called_with("0")
         connector.robot_api.send_to_named_waypoint.assert_called_once_with("waypoint_1", None)
         connector.robot_api.send_to_named_waypoint.reset_mock()
@@ -381,11 +389,12 @@ class TestGausiumConnector:
             "send_to_named_waypoint",
             ["position_name", "waypoint_1", "map_name", "test_map"],
         ]
-        connector._inorbit_command_handler(**callback_kwargs)
+        await connector._inorbit_command_handler(**callback_kwargs)
         callback_kwargs["options"]["result_function"].assert_called_with("0")
         connector.robot_api.send_to_named_waypoint.assert_called_once_with("waypoint_1", "test_map")
 
-    def test_command_callback_pause_task_queue(self, connector, callback_kwargs):
+    @pytest.mark.asyncio
+    async def test_command_callback_pause_task_queue(self, connector, callback_kwargs):
         # Set up the robot to be available
         connector.robot_api._last_call_successful = True
         connector.status = {"online": True}
@@ -395,7 +404,7 @@ class TestGausiumConnector:
         callback_kwargs["args"] = ["pause_task_queue", []]
 
         # Call the handler
-        connector._inorbit_command_handler(**callback_kwargs)
+        await connector._inorbit_command_handler(**callback_kwargs)
 
         # Verify the result function was called with success code
         callback_kwargs["options"]["result_function"].assert_called_with("0")
@@ -403,7 +412,8 @@ class TestGausiumConnector:
         # Verify the robot API method was called
         connector.robot_api.pause_task_queue.assert_called_once()
 
-    def test_command_callback_resume_task_queue(self, connector, callback_kwargs):
+    @pytest.mark.asyncio
+    async def test_command_callback_resume_task_queue(self, connector, callback_kwargs):
         # Set up the robot to be available
         connector.robot_api._last_call_successful = True
         connector.status = {"online": True}
@@ -413,7 +423,7 @@ class TestGausiumConnector:
         callback_kwargs["args"] = ["resume_task_queue", []]
 
         # Call the handler
-        connector._inorbit_command_handler(**callback_kwargs)
+        await connector._inorbit_command_handler(**callback_kwargs)
 
         # Verify the result function was called with success code
         callback_kwargs["options"]["result_function"].assert_called_with("0")
@@ -421,7 +431,8 @@ class TestGausiumConnector:
         # Verify the robot API method was called
         connector.robot_api.resume_task_queue.assert_called_once()
 
-    def test_command_callback_cancel_task_queue(self, connector, callback_kwargs):
+    @pytest.mark.asyncio
+    async def test_command_callback_cancel_task_queue(self, connector, callback_kwargs):
         # Set up the robot to be available
         connector.robot_api._last_call_successful = True
         connector.status = {"online": True}
@@ -431,7 +442,7 @@ class TestGausiumConnector:
         callback_kwargs["args"] = ["cancel_task_queue", []]
 
         # Call the handler
-        connector._inorbit_command_handler(**callback_kwargs)
+        await connector._inorbit_command_handler(**callback_kwargs)
 
         # Verify the result function was called with success code
         callback_kwargs["options"]["result_function"].assert_called_with("0")
@@ -439,7 +450,8 @@ class TestGausiumConnector:
         # Verify the robot API method was called
         connector.robot_api.cancel_task_queue.assert_called_once()
 
-    def test_command_callback_pause_navigation_task(self, connector, callback_kwargs):
+    @pytest.mark.asyncio
+    async def test_command_callback_pause_navigation_task(self, connector, callback_kwargs):
         # Set up the robot to be available
         connector.robot_api._last_call_successful = True
         connector.status = {"online": True}
@@ -449,7 +461,7 @@ class TestGausiumConnector:
         callback_kwargs["args"] = ["pause_navigation_task", []]
 
         # Call the handler
-        connector._inorbit_command_handler(**callback_kwargs)
+        await connector._inorbit_command_handler(**callback_kwargs)
 
         # Verify the result function was called with success code
         callback_kwargs["options"]["result_function"].assert_called_with("0")
@@ -457,7 +469,8 @@ class TestGausiumConnector:
         # Verify the robot API method was called
         connector.robot_api.pause_navigation_task.assert_called_once()
 
-    def test_command_callback_resume_navigation_task(self, connector, callback_kwargs):
+    @pytest.mark.asyncio
+    async def test_command_callback_resume_navigation_task(self, connector, callback_kwargs):
         # Set up the robot to be available
         connector.robot_api._last_call_successful = True
         connector.status = {"online": True}
@@ -467,7 +480,7 @@ class TestGausiumConnector:
         callback_kwargs["args"] = ["resume_navigation_task", []]
 
         # Call the handler
-        connector._inorbit_command_handler(**callback_kwargs)
+        await connector._inorbit_command_handler(**callback_kwargs)
 
         # Verify the result function was called with success code
         callback_kwargs["options"]["result_function"].assert_called_with("0")
@@ -475,7 +488,8 @@ class TestGausiumConnector:
         # Verify the robot API method was called
         connector.robot_api.resume_navigation_task.assert_called_once()
 
-    def test_command_callback_cancel_navigation_task(self, connector, callback_kwargs):
+    @pytest.mark.asyncio
+    async def test_command_callback_cancel_navigation_task(self, connector, callback_kwargs):
         # Set up the robot to be available
         connector.robot_api._last_call_successful = True
         connector.status = {"online": True}
@@ -485,7 +499,7 @@ class TestGausiumConnector:
         callback_kwargs["args"] = ["cancel_navigation_task", []]
 
         # Call the handler
-        connector._inorbit_command_handler(**callback_kwargs)
+        await connector._inorbit_command_handler(**callback_kwargs)
 
         # Verify the result function was called with success code
         callback_kwargs["options"]["result_function"].assert_called_with("0")
@@ -493,7 +507,8 @@ class TestGausiumConnector:
         # Verify the robot API method was called
         connector.robot_api.cancel_navigation_task.assert_called_once()
 
-    def test_command_callback_robot_unavailable(self, connector, callback_kwargs):
+    @pytest.mark.asyncio
+    async def test_command_callback_robot_unavailable(self, connector, callback_kwargs):
         # Set up the robot to be unavailable
         connector.robot_api._last_call_successful = False
         connector.status = {"online": False}
@@ -521,7 +536,7 @@ class TestGausiumConnector:
             callback_kwargs["args"] = [command, []]
 
             # Call the handler
-            connector._inorbit_command_handler(**callback_kwargs)
+            await connector._inorbit_command_handler(**callback_kwargs)
 
             # Verify the result function was called with error code
             callback_kwargs["options"]["result_function"].assert_called_with(
@@ -533,7 +548,8 @@ class TestGausiumConnector:
                 not robot_api_method.called
             ), f"Robot API method {method_name} was called when robot was unavailable"
 
-    def test_execution_loop(
+    @pytest.mark.asyncio
+    async def test_execution_loop(
         self,
         connector,
         robot_info,
@@ -542,14 +558,13 @@ class TestGausiumConnector:
         robot_status_data_task,
     ):
         # Setup mock return values based on fixtures
-        connector.robot_api.pose = {
+        connector.robot_state.pose = {
             "x": current_position_data["worldPosition"]["position"]["x"],
             "y": current_position_data["worldPosition"]["position"]["y"],
             "yaw": current_position_data["angle"],
             "frame_id": "map",
         }
-        connector.robot_api.odometry = {"vx": 0.1, "vy": 0.2, "vtheta": 0.3}
-        connector.robot_api.key_values = {
+        connector.robot_state.key_values = {
             "battery_percentage": device_status_data["data"]["battery"],
             "model": robot_info["data"]["modelType"],
             "uptime": 1000,
@@ -561,53 +576,21 @@ class TestGausiumConnector:
         connector.publish_pose = MagicMock()
 
         # Test successful execution loop
-        connector._execution_loop()
-
-        # Verify that the robot API was updated
-        connector.robot_api.update.assert_called_once()
+        await connector._execution_loop()
 
         # Verify that the data was published
-        connector.publish_pose.assert_called_once_with(**connector.robot_api.pose)
-        connector._robot_session.publish_odometry.assert_called_once_with(
-            **connector.robot_api.odometry
-        )
+        connector.publish_pose.assert_called_once_with(**connector.robot_state.pose)
         connector._robot_session.publish_key_values.assert_called_once()
         connector.mission_tracking.mission_update.assert_called_once_with(
-            connector.robot_api.key_values["robotStatus"],
-            connector.robot_api.key_values["statusData"],
-        )
-
-        # Test execution loop with exception
-        connector.robot_api.update.reset_mock()
-        connector.robot_api.update.side_effect = Exception("Test exception")
-
-        connector._execution_loop()
-
-        # Verify that the robot API was updated but no data was published
-        connector.robot_api.update.assert_called_once()
-        assert connector.publish_pose.call_count == 1  # Still just the one call from before
-        assert (
-            connector._robot_session.publish_odometry.call_count == 1
-        )  # Still just the one call from before
-        connector._robot_session.publish_key_values.assert_called_with(
-            {
-                "robot_available": False,
-                "connector_last_error": "Test exception",
-            }
+            connector.robot_state.key_values["robotStatus"],
+            connector.robot_state.key_values["statusData"],
         )
 
     def test_is_robot_available(self, connector):
         # Test with robot available
         connector.robot_api._last_call_successful = True
-        connector.status = {"online": True}
         assert connector.is_robot_available() is True
 
         # Test with robot unavailable
         connector.robot_api._last_call_successful = False
-        connector.status = {"online": False}
         assert connector.is_robot_available() is False
-
-        # Test with robot status unknown but last call successful
-        connector.robot_api._last_call_successful = True
-        connector.status = {}
-        assert connector.is_robot_available() is True

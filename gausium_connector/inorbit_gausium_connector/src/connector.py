@@ -9,7 +9,7 @@ import os
 import tempfile
 from typing import override
 
-from inorbit_connector.connector import Connector
+from inorbit_connector.connector import Connector, CommandResultCode
 from inorbit_connector.models import MapConfig
 from inorbit_edge.robot import (
     COMMAND_CUSTOM_COMMAND,
@@ -18,12 +18,11 @@ from inorbit_edge.robot import (
     COMMAND_NAV_GOAL,
 )
 from inorbit_gausium_connector.src.mission import MissionTracking
-from inorbit_gausium_connector.src.robot.robot_api import ModelTypeMismatchError
 from PIL import Image
 
 from .. import __version__
 from .config.connector_model import ConnectorConfig
-from .robot import create_robot_api
+from .robot import create_robot
 
 
 class CustomScripts(Enum):
@@ -61,64 +60,55 @@ class GausiumConnector(Connector):
     def __init__(self, robot_id: str, config: ConnectorConfig) -> None:
         """Initialize the Gausium Connector."""
         super().__init__(robot_id, config)
-        self.robot_api = create_robot_api(
+        self.robot_api, self.robot_state = create_robot(
             connector_type=config.connector_type,
             base_url=config.connector_config.base_url,
             loglevel=config.log_level.value,
             ignore_model_type_validation=config.connector_config.ignore_model_type_validation,
         )
-        self.status = {}
         self.mission_tracking = MissionTracking(self.publish_mission_tracking)
 
-    def _connect(self) -> None:
+    @override
+    async def _connect(self) -> None:
         """Connect to the robot services.
 
-        This method should always call super.
+        It starts the API polling loops.
         """
-        super()._connect()
+        self._logger.info("Starting API polling")
+        self.robot_state.start()
 
-    def _execution_loop(self) -> None:
+    @override
+    async def _disconnect(self) -> None:
+        """Disconnect from the robot services."""
+        self._logger.info("Stopping API polling")
+        await self.robot_state.stop()
+        await self.robot_api.close()
+
+    @override
+    async def _execution_loop(self) -> None:
         """The main execution loop for the connector.
 
-        This is where the meat of your connector is implemented. It is good practice to
-        handle things like action requests in a threaded manner so that the connector
-        does not block the execution loop.
+        It publishes the last updated robot data to InOrbit.
         """
+        if pose := self.robot_state.pose:
+            self.publish_pose(**pose)
 
-        # Update the robot data
-        # If case of a model type mismatch, raise an exception so that the connector is stopped.
-        # Otherwise, log the error and continue.
-        try:
-            self.robot_api.update()
-        except ModelTypeMismatchError as ex:
-            raise ex
-        except Exception as ex:
-            self._logger.error(f"Failed to refresh robot data: {ex}")
+        if path := self.robot_state.path:
+            self._robot_session.publish_path(**path.model_dump())
+
+        if key_values := self.robot_state.key_values:
             self._robot_session.publish_key_values(
                 {
-                    "robot_available": False,
-                    "connector_last_error": str(ex),
+                    **key_values,
+                    "connector_version": __version__,
+                    "robot_available": self.is_robot_available(),
                 }
             )
-            return
 
-        self.publish_pose(**self.robot_api.pose)
-        self._robot_session.publish_odometry(**self.robot_api.odometry)
-        robot_key_values = self.robot_api.key_values
-        self._robot_session.publish_key_values(
-            {
-                **robot_key_values,
-                "connector_version": __version__,
-                "robot_available": self.is_robot_available(),
-            }
-        )
-        if self.robot_api.path:
-            self._robot_session.publish_path(**self.robot_api.path.model_dump())
-
-        # Update mission tracking data
-        robot_status = robot_key_values.get("robotStatus", {})
-        status_data = robot_key_values.get("statusData", {})
-        self.mission_tracking.mission_update(robot_status, status_data)
+            # Update mission tracking data
+            robot_status = key_values.get("robotStatus", {})
+            status_data = key_values.get("statusData", {})
+            self.mission_tracking.mission_update(robot_status, status_data)
 
     @override
     def publish_map(self, frame_id: str, is_update: bool = False) -> None:
@@ -135,13 +125,28 @@ class GausiumConnector(Connector):
                 f"Map with frame_id {frame_id} not found in config, attempting to load from robot"
             )
             try:
-                map_data = self.robot_api.current_map
+                map_data = self.robot_state.current_map
+
+                if map_data is None:
+                    raise Exception("No map data available")
+                elif map_data.map_name != frame_id:
+                    raise Exception(
+                        f"Available map data doesn't match the requested frame_id: "
+                        f"{map_data.map_name} != {frame_id}"
+                    )
+
+                map_image = self.robot_api.get_map_image_sync(map_data.map_name)
+                if map_image:
+                    self._logger.info(f"Map image size: {len(map_image)} bytes")
+                else:
+                    self._logger.warning("No map image data received from robot")
+
             except Exception as ex:
                 self._logger.error(f"Failed to load map from robot: {ex}")
                 return
             # HACK(b-Tomas): Create a temporary file with .png extension to store the map image
             # It should be possible to avoid this and work with the in-memory bytes instead
-            if map_data and map_data.map_image:
+            if map_data and map_image:
                 # Create a temporary file with .png extension to store the map image
                 fd, temp_path = tempfile.mkstemp(suffix=".png")
                 self._logger.debug(f"Created temporary file: {temp_path}")
@@ -152,7 +157,7 @@ class GausiumConnector(Connector):
                 # Convert the map image bytes to a PIL Image
                 try:
                     # Create an image from the bytes
-                    image = Image.open(io.BytesIO(map_data.map_image))
+                    image = Image.open(io.BytesIO(map_image))
 
                     # Flip the image vertically
                     flipped_image = image.transpose(Image.FLIP_TOP_BOTTOM)
@@ -166,7 +171,7 @@ class GausiumConnector(Connector):
                 except Exception as e:
                     self._logger.error(f"Failed to flip map image: {e}")
                     # If flipping fails, use the original bytes
-                    flipped_bytes = map_data.map_image
+                    flipped_bytes = map_image
                 try:
                     # Write the map image bytes to the temporary file
                     with os.fdopen(fd, "wb") as tmp_file:
@@ -183,31 +188,24 @@ class GausiumConnector(Connector):
                     )
 
                     self._logger.info(f"Added map {frame_id} from robot to configuration")
+                    return super().publish_map(frame_id, is_update)
                 except Exception as e:
                     self._logger.error(f"Failed to create temporary map file: {e}")
                     os.unlink(temp_path)  # Clean up the file in case of error
             else:
                 self._logger.error(f"No map data available for {frame_id}")
                 return
-            self.publish_map(frame_id, is_update)
 
-    def _inorbit_command_handler(self, command_name, args, options):
-        """Callback method for command messages.
+    @override
+    async def _inorbit_command_handler(self, command_name, args, options):
+        """Callback method for command messages. This method is called when a command
+        is received from InOrbit.
 
-        The callback signature is `callback(command_name, args, options)`
-
-        Arguments:
-            command_name -- identifies the specific command to be executed
-            args -- is an ordered list with each argument as an entry. Each
-                element of the array can be a string or an object, depending on
-                the definition of the action.
-            options -- is a dictionary that includes:
-                - `result_function` can be called to report command execution result.
-                It has the following signature: `result_function(return_code)`.
-                - `progress_function` can be used to report command output and has
-                the following signature: `progress_function(output, error)`.
-                - `metadata` is reserved for the future and will contains additional
-                information about the received command request.
+        Args:
+            command_name (str): The name of the command
+            args (list): The list of arguments
+            options (dict): The dictionary of options.
+                It contains the `result_function` explained above.
         """
         self._logger.info(f"Received '{command_name}'!. {args}")
 
@@ -215,7 +213,9 @@ class GausiumConnector(Connector):
         if command_name == COMMAND_CUSTOM_COMMAND:
             if not self.is_robot_available():
                 self._logger.error("Robot is unavailable")
-                return options["result_function"]("1", "Robot is not available")
+                return options["result_function"](
+                    CommandResultCode.FAILURE, "Robot is not available"
+                )
 
             # Parse command name and arguments
             script_name = args[0]
@@ -229,7 +229,7 @@ class GausiumConnector(Connector):
                 script_args = dict(zip(args_raw[::2], args_raw[1::2]))
                 self._logger.debug(f"Parsed arguments are: {script_args}")
             else:
-                return options["result_function"]("1", "Invalid arguments")
+                return options["result_function"](CommandResultCode.FAILURE, "Invalid arguments")
 
             # If the command to run is a script (or anything with a dot), ignore it and let the
             # edge-sdk run it. If the script doesn't exist or can't be run, the edge-sdk will
@@ -237,6 +237,7 @@ class GausiumConnector(Connector):
             if "." in script_name:
                 return
 
+            success = False
             if script_name == CustomScripts.START_TASK_QUEUE.value:
                 # The most important argument
                 task_queue_name = script_args.get("task_queue_name")
@@ -246,34 +247,49 @@ class GausiumConnector(Connector):
                 loop = script_args.get("loop", False)
                 # Number of loops. Defaults to 0
                 loop_count = script_args.get("loop_count", 0)
-                self.robot_api.start_task_queue(task_queue_name, map_name, loop, loop_count)
+                success = await self.robot_api.start_task_queue(
+                    task_queue_name, map_name, loop, loop_count
+                )
+
             elif script_name == CustomScripts.PAUSE_TASK_QUEUE.value:
-                self.robot_api.pause_task_queue()
+                success = await self.robot_api.pause_task_queue()
             elif script_name == CustomScripts.RESUME_TASK_QUEUE.value:
-                self.robot_api.resume_task_queue()
+                success = await self.robot_api.resume_task_queue()
             elif script_name == CustomScripts.CANCEL_TASK_QUEUE.value:
-                self.robot_api.cancel_task_queue()
+                success = await self.robot_api.cancel_task_queue()
 
             elif script_name == CustomScripts.SEND_TO_NAMED_WAYPOINT.value:
                 # The most important argument
                 position_name = script_args.get("position_name")
                 # Defaults to the current map
-                map_name = script_args.get("map_name")
-                self.robot_api.send_to_named_waypoint(position_name, map_name)
+                map_name = script_args.get("map_name", self.robot_state.current_map.map_name)
+                success = await self.robot_api.send_to_named_waypoint(
+                    position_name, map_name, self.robot_state.firmware_version
+                )
             elif script_name == CustomScripts.PAUSE_NAVIGATION_TASK.value:
-                self.robot_api.pause_navigation_task()
+                success = await self.robot_api.pause_navigation_task(
+                    self.robot_state.firmware_version
+                )
             elif script_name == CustomScripts.RESUME_NAVIGATION_TASK.value:
-                self.robot_api.resume_navigation_task()
+                success = await self.robot_api.resume_navigation_task(
+                    self.robot_state.firmware_version
+                )
             elif script_name == CustomScripts.CANCEL_NAVIGATION_TASK.value:
-                self.robot_api.cancel_navigation_task()
+                success = await self.robot_api.cancel_navigation_task(
+                    self.robot_state.firmware_version
+                )
 
             else:
                 return options["result_function"](
-                    "1", f"Custom command '{script_name}' is not implemented"
+                    CommandResultCode.FAILURE, f"Custom command '{script_name}' is not implemented"
                 )
 
-            # Return '0' for success
-            return options["result_function"]("0")
+            if success:
+                return options["result_function"](CommandResultCode.SUCCESS)
+            else:
+                return options["result_function"](
+                    CommandResultCode.FAILURE, "Failed to execute command"
+                )
 
         try:
             # Waypoint navigation
@@ -282,15 +298,30 @@ class GausiumConnector(Connector):
                 x = float(pose["x"])
                 y = float(pose["y"])
                 orientation = math.degrees(float(pose["theta"]))
-                self.robot_api.send_waypoint(x, y, orientation)
-
-                # Return '0' for success
-                return options["result_function"]("0")
+                map = self.robot_state.current_map
+                if map is None:
+                    return options["result_function"](CommandResultCode.FAILURE, "No map available")
+                success = await self.robot_api.send_waypoint(
+                    x,
+                    y,
+                    orientation,
+                    map.map_name,
+                    self.robot_state.firmware_version,
+                )
+                if success:
+                    return options["result_function"](CommandResultCode.SUCCESS)
+                else:
+                    return options["result_function"](
+                        CommandResultCode.FAILURE, "Failed to execute command"
+                    )
 
             # Pose initalization
             elif command_name == COMMAND_INITIAL_POSE:
                 # Localize the robot within the current map
-                current_pose = self.robot_api.pose
+                map = self.robot_state.current_map
+                if map is None:
+                    return options["result_function"](CommandResultCode.FAILURE, "No map available")
+                current_pose = self.robot_state.pose
                 pose_diff = args[0]
                 new_x = current_pose["x"] + float(pose_diff["x"])
                 new_y = current_pose["y"] + float(pose_diff["y"])
@@ -298,10 +329,15 @@ class GausiumConnector(Connector):
                 # Normalize the angle to be between -pi and pi
                 new_orientation = ((new_orientation + math.pi) % (2 * math.pi)) - math.pi
                 new_orientation = math.degrees(new_orientation)
-                self.robot_api.localize_at(new_x, new_y, new_orientation)
-
-                # Return '0' for success
-                return options["result_function"]("0")
+                success = await self.robot_api.localize_at(
+                    new_x, new_y, new_orientation, map.map_name
+                )
+                if success:
+                    return options["result_function"](CommandResultCode.SUCCESS)
+                else:
+                    return options["result_function"](
+                        CommandResultCode.FAILURE, "Failed to execute command"
+                    )
 
         except Exception as e:
             # HACK(b-Tomas): If navGoal or initalPose fail, the edge-sdk crashes because it
@@ -316,17 +352,25 @@ class GausiumConnector(Connector):
         if command_name == COMMAND_MESSAGE:
             message = args[0]
             if message == CommandMessages.PAUSE.value:
-                self.robot_api.pause()
+                success = await self.robot_api.pause()
             elif message == CommandMessages.RESUME.value:
-                self.robot_api.resume()
+                success = await self.robot_api.resume()
             else:
-                return options["result_function"]("1", f"Message '{message}' is not implemented")
+                return options["result_function"](
+                    CommandResultCode.FAILURE, f"Message '{message}' is not implemented"
+                )
 
-            # Return '0' for success
-            return options["result_function"]("0")
+            if success:
+                return options["result_function"](CommandResultCode.SUCCESS)
+            else:
+                return options["result_function"](
+                    CommandResultCode.FAILURE, "Failed to execute command"
+                )
 
         else:
-            return options["result_function"]("1", f"'{command_name}' is not implemented")
+            return options["result_function"](
+                CommandResultCode.FAILURE, f"'{command_name}' is not implemented"
+            )
 
     def is_robot_available(self) -> bool:
         """Check if the robot is available for receiving commands.
@@ -334,9 +378,8 @@ class GausiumConnector(Connector):
         Returns:
             bool: True if the robot is online, False otherwise.
         """
-        # If the last call was successful and the robot is online, return True
-        # If unable to determine if the robot is online from the status data, assume it is
-        return self.robot_api._last_call_successful and self.status.get("online", True)
+        # If the last call was successful, return True
+        return self.robot_api._last_call_successful
 
     def publish_mission_tracking(self, report: dict) -> None:
         """Publish a mission tracking report to InOrbit."""

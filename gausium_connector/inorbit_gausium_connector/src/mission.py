@@ -105,7 +105,6 @@ class MissionTracking:
             return MissionState.in_progress
         elif state == TaskState.PAUSED.value:
             return MissionState.paused
-        print(f"Unknown task state: {state}")
         return MissionState.completed
 
     @staticmethod

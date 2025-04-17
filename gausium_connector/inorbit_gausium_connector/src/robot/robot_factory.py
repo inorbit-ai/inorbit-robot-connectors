@@ -3,12 +3,14 @@
 # SPDX-License-Identifier: MIT
 
 from pydantic import HttpUrl
-from typing import Dict, List, Type
+from typing import Dict, List, Tuple, Type
 
-from .robot_api import GausiumRobotAPI, Vaccum40RobotAPI
+from inorbit_gausium_connector.src.robot.robot import Robot
+
+from .robot_api import GausiumCloudAPI, Vaccum40RobotAPI
 
 # Mapping of connector types to their corresponding GausiumRobotAPI classes
-ROBOT_API_CLASSES: Dict[str, Type[GausiumRobotAPI]] = {
+ROBOT_API_CLASSES: Dict[str, Type[GausiumCloudAPI]] = {
     "V40": Vaccum40RobotAPI,
     # Add more mappings as new robot types are introduced
 }
@@ -21,14 +23,15 @@ CLOUD_APIS_ALLOWED_MODEL_TYPES: Dict[str, List[str]] = {
 }
 
 
-def create_robot_api(
+def create_robot(
     connector_type: str,
     base_url: HttpUrl,
     loglevel: str = "INFO",
     ignore_model_type_validation: bool = False,
-) -> GausiumRobotAPI:
+) -> Tuple[GausiumCloudAPI, Robot]:
     """
-    Factory function to create the appropriate GausiumRobotAPI instance based on connector_type.
+    Factory function to create the appropriate GausiumRobotAPI instance based on connector_type
+    and the corresponding Robot instance.
 
     Args:
         connector_type (str): The type of connector specified in the configuration.
@@ -37,7 +40,8 @@ def create_robot_api(
         ignore_model_type_validation (bool, optional): If True, the model type validation will be
             ignored. Defaults to False.
     Returns:
-        GausiumRobotAPI: An instance of the appropriate GausiumRobotAPI subclass.
+        Tuple[GausiumCloudAPI, Robot]: A tuple containing the GausiumCloudAPI instance and the
+            Robot instance.
 
     Raises:
         ValueError: If the connector_type is not supported.
@@ -57,4 +61,8 @@ def create_robot_api(
         else []
     )
 
-    return api_class(base_url=base_url, loglevel=loglevel, allowed_model_types=allowed_model_types)
+    robot_api = api_class(base_url=base_url, loglevel=loglevel)
+    robot_state = Robot(
+        api_wrapper=robot_api, loglevel=loglevel, allowed_model_types=allowed_model_types
+    )
+    return robot_api, robot_state

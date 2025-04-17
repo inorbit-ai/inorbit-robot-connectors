@@ -247,14 +247,22 @@ class GausiumConnector(Connector):
                 # The most important argument
                 position_name = script_args.get("position_name")
                 # Defaults to the current map
-                map_name = script_args.get("map_name")
-                success = await self.robot_api.send_to_named_waypoint(position_name, map_name)
+                map_name = script_args.get("map_name", self.robot_state.current_map.map_name)
+                success = await self.robot_api.send_to_named_waypoint(
+                    position_name, map_name, self.robot_state.firmware_version
+                )
             elif script_name == CustomScripts.PAUSE_NAVIGATION_TASK.value:
-                success = await self.robot_api.pause_navigation_task()
+                success = await self.robot_api.pause_navigation_task(
+                    self.robot_state.firmware_version
+                )
             elif script_name == CustomScripts.RESUME_NAVIGATION_TASK.value:
-                success = await self.robot_api.resume_navigation_task()
+                success = await self.robot_api.resume_navigation_task(
+                    self.robot_state.firmware_version
+                )
             elif script_name == CustomScripts.CANCEL_NAVIGATION_TASK.value:
-                success = await self.robot_api.cancel_navigation_task()
+                success = await self.robot_api.cancel_navigation_task(
+                    self.robot_state.firmware_version
+                )
 
             else:
                 return options["result_function"](
@@ -275,7 +283,16 @@ class GausiumConnector(Connector):
                 x = float(pose["x"])
                 y = float(pose["y"])
                 orientation = math.degrees(float(pose["theta"]))
-                success = await self.robot_api.send_waypoint(x, y, orientation)
+                map = self.robot_state.current_map
+                if map is None:
+                    return options["result_function"](CommandResultCode.FAILURE, "No map available")
+                success = await self.robot_api.send_waypoint(
+                    x,
+                    y,
+                    orientation,
+                    map.map_name,
+                    self.robot_state.firmware_version,
+                )
                 if success:
                     return options["result_function"](CommandResultCode.SUCCESS)
                 else:
@@ -286,7 +303,10 @@ class GausiumConnector(Connector):
             # Pose initalization
             elif command_name == COMMAND_INITIAL_POSE:
                 # Localize the robot within the current map
-                current_pose = self.robot_api.pose
+                map = self.robot_state.current_map
+                if map is None:
+                    return options["result_function"](CommandResultCode.FAILURE, "No map available")
+                current_pose = self.robot_state.pose
                 pose_diff = args[0]
                 new_x = current_pose["x"] + float(pose_diff["x"])
                 new_y = current_pose["y"] + float(pose_diff["y"])
@@ -294,7 +314,9 @@ class GausiumConnector(Connector):
                 # Normalize the angle to be between -pi and pi
                 new_orientation = ((new_orientation + math.pi) % (2 * math.pi)) - math.pi
                 new_orientation = math.degrees(new_orientation)
-                success = await self.robot_api.localize_at(new_x, new_y, new_orientation)
+                success = await self.robot_api.localize_at(
+                    new_x, new_y, new_orientation, map.map_name
+                )
                 if success:
                     return options["result_function"](CommandResultCode.SUCCESS)
                 else:

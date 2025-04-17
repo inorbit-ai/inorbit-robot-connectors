@@ -160,7 +160,7 @@ class GausiumCloudAPI(BaseRobotAPI):
         return self._is_initialized
 
     async def send_waypoint(
-        self, x: float, y: float, orientation: float, map: MapData, firmware_version: str
+        self, x: float, y: float, orientation: float, map_name: str, firmware_version: str
     ) -> bool:
         """Send the robot to a waypoint (named waypoint)
 
@@ -168,28 +168,27 @@ class GausiumCloudAPI(BaseRobotAPI):
             x (float): X coordinate in grid units
             y (float): Y coordinate in grid units
             orientation (float): Orientation angle in degrees
-            map (MapData): The target map
+            map_name (str): The target map name
+            firmware_version (str): The firmware version of the robot
 
         Returns:
             bool: True if successful, False otherwise
         """
-        map_name = map.map_name
-        grid_x, grid_y = coordinate_to_grid_units(x, y, map)
+        grid_x, grid_y = coordinate_to_grid_units(x, y, map_name)
         self.logger.debug(f"Converted {x}, {y} coordinates to grid units: {grid_x}, {grid_y}")
         return await self._navigate_to_coordinates(
             map_name, firmware_version, grid_x, grid_y, orientation
         )
 
-    async def localize_at(self, x: float, y: float, orientation: float, map: MapData) -> bool:
+    async def localize_at(self, x: float, y: float, orientation: float, map_name: str) -> bool:
         """Requests the robot to localize at the given coordinates within the same map"""
-        map_name = map.map_name
         return await self._initialize_at_custom_position(map_name, x, y, orientation)
 
     async def pause(self, firmware_version: str) -> bool:
         """Requests the robot to pause whatever it is doing.
         It fetches the state of cleaning and navigation and the pauses whichever is running"""
         # In firmware version lower than v3-6-6, navigation and cleaning pause commands are the same
-        if not self._is_firmware_post_v3_6_6():
+        if not self._is_firmware_post_v3_6_6(firmware_version):
             return await self._pause_task_queue()
 
         # In firmware version v3-6-6 and higher, navigation and cleaning pause commands are
@@ -205,7 +204,7 @@ class GausiumCloudAPI(BaseRobotAPI):
         """Requests the robot to resume a previously paused task"""
         # In firmware version lower than v3-6-6, navigation and cleaning resume commands are the
         # same
-        if not self._is_firmware_post_v3_6_6():
+        if not self._is_firmware_post_v3_6_6(firmware_version):
             return await self._resume_task_queue()
 
         # In firmware version v3-6-6 and higher, navigation and cleaning resume commands are
@@ -213,17 +212,17 @@ class GausiumCloudAPI(BaseRobotAPI):
         # Get the previously paused command to know which one to resume
         if self._last_pause_command == "cleaning":
             self._last_pause_command = None
-            return await self._resume_cleaning_task()
+            return await self._resume_cleaning_task(firmware_version)
         if self._last_pause_command == "navigation":
             self._last_pause_command = None
-            return await self._resume_navigation_task()
+            return await self._resume_navigation_task(firmware_version)
         else:
             raise Exception("No previously paused command found")
 
     async def start_task_queue(
         self,
         task_queue_name: str,
-        map: MapData,
+        map_name: str,
         loop: bool = False,
         loop_count: int = 0,
     ) -> bool:
@@ -238,7 +237,7 @@ class GausiumCloudAPI(BaseRobotAPI):
         Returns:
             bool: True if successful, False otherwise
         """
-        return await self._start_cleaning_task(map.map_name, task_queue_name, loop, loop_count)
+        return await self._start_cleaning_task(map_name, task_queue_name, loop, loop_count)
 
     async def pause_task_queue(self) -> bool:
         """Pauses the cleaning task"""
@@ -253,7 +252,7 @@ class GausiumCloudAPI(BaseRobotAPI):
         return await self._cancel_cleaning_task()
 
     async def send_to_named_waypoint(
-        self, position_name: str, map: MapData, firmware_version: str
+        self, position_name: str, map_name: str, firmware_version: str
     ) -> bool:
         """Sends the robot to a named waypoint.
 
@@ -264,19 +263,19 @@ class GausiumCloudAPI(BaseRobotAPI):
         Returns:
             bool: True if successful, False otherwise
         """
-        return await self._navigate_to_named_waypoint(map.map_name, position_name, firmware_version)
+        return await self._navigate_to_named_waypoint(map_name, position_name, firmware_version)
 
-    async def pause_navigation_task(self) -> bool:
+    async def pause_navigation_task(self, firmware_version: str) -> bool:
         """Pauses the navigation task"""
-        return await self._pause_navigation_task()
+        return await self._pause_navigation_task(firmware_version)
 
-    async def resume_navigation_task(self) -> bool:
+    async def resume_navigation_task(self, firmware_version: str) -> bool:
         """Resumes the navigation task"""
-        return await self._resume_navigation_task()
+        return await self._resume_navigation_task(firmware_version)
 
-    async def cancel_navigation_task(self) -> bool:
+    async def cancel_navigation_task(self, firmware_version: str) -> bool:
         """Cancels the navigation task"""
-        return await self._cancel_navigation_task()
+        return await self._cancel_navigation_task(firmware_version)
 
     def _success_or_raise(self, response_json: dict) -> dict:
         """Check if a Gaussian Cloud API call was successful or raise an exception that shows the
@@ -314,13 +313,7 @@ class GausiumCloudAPI(BaseRobotAPI):
             dict: The robot info response
         """
         res = await self._get("/gs-robot/info")
-        robot_info = res.json()
-        # Update the firmware version
-        software_version = robot_info.get("data", {}).get("softwareVersion")
-        if software_version:
-            # Extract version number (e.g., from "GS-ES50-OS1604-PRO800-OTA_V2-19-6" get "2-19-6")
-            self._firmware_version = software_version.split("V")[-1]
-        return robot_info
+        return res.json()
 
     async def _get_robot_status(self) -> dict:
         """Fetch the robot status

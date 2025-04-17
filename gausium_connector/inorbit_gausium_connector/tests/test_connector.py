@@ -277,27 +277,44 @@ class TestGausiumConnector:
         callback_kwargs["command_name"] = COMMAND_NAV_GOAL
         callback_kwargs["args"] = [{"x": "1", "y": "2", "theta": "3.14"}]
         await connector._inorbit_command_handler(**callback_kwargs)
-        assert connector.robot_api.send_waypoint.call_args_list == [call(1, 2, math.degrees(3.14))]
+        assert connector.robot_api.send_waypoint.call_args_list == [
+            call(
+                1.0,
+                2.0,
+                math.degrees(3.14),
+                connector.robot_state.current_map.map_name,
+                connector.robot_state.firmware_version,
+            )
+        ]
         callback_kwargs["options"]["result_function"].assert_called_with("0")
 
     @pytest.mark.asyncio
     async def test_command_callback_initial_pose(self, connector, callback_kwargs):
+        connector.robot_state.current_map = MapData(
+            map_name="test_map",
+            map_id="test_map_id",
+            origin_x=0,
+            origin_y=0,
+            resolution=0.05,
+        )
         callback_kwargs["command_name"] = COMMAND_INITIAL_POSE
         callback_kwargs["args"] = [{"x": "1", "y": "2", "theta": "3.1415"}]
-        connector.robot_api.pose = {"x": 0, "y": 0, "yaw": 0}
+        connector.robot_state.pose = {"x": 0, "y": 0, "yaw": 0, "frame_id": "test_map"}
         await connector._inorbit_command_handler(**callback_kwargs)
         callback_kwargs["options"]["result_function"].assert_called_with("0")
         assert connector.robot_api.localize_at.call_args_list[0].args[0] == 1
         assert connector.robot_api.localize_at.call_args_list[0].args[1] == 2
         assert abs(connector.robot_api.localize_at.call_args_list[0].args[2] - 180) < 0.1
+        assert connector.robot_api.localize_at.call_args_list[0].args[3] == "test_map"
         connector.robot_api.localize_at.reset_mock()
         callback_kwargs["args"] = [{"x": "1", "y": "2", "theta": "3.1415"}]
-        connector.robot_api.pose = {"x": 1, "y": 2, "yaw": 3.1415}
+        connector.robot_state.pose = {"x": 1, "y": 2, "yaw": 3.1415, "frame_id": "test_map"}
         await connector._inorbit_command_handler(**callback_kwargs)
         callback_kwargs["options"]["result_function"].assert_called_with("0")
         assert connector.robot_api.localize_at.call_args_list[0].args[0] == 2
         assert connector.robot_api.localize_at.call_args_list[0].args[1] == 4
         assert abs(connector.robot_api.localize_at.call_args_list[0].args[2]) < 0.1
+        assert connector.robot_api.localize_at.call_args_list[0].args[3] == "test_map"
 
     @pytest.mark.asyncio
     async def test_command_callback_inorbit_messages(self, connector, callback_kwargs):
@@ -389,7 +406,11 @@ class TestGausiumConnector:
         callback_kwargs["args"] = ["send_to_named_waypoint", ["position_name", "waypoint_1"]]
         await connector._inorbit_command_handler(**callback_kwargs)
         callback_kwargs["options"]["result_function"].assert_called_with("0")
-        connector.robot_api.send_to_named_waypoint.assert_called_once_with("waypoint_1", None)
+        connector.robot_api.send_to_named_waypoint.assert_called_once_with(
+            "waypoint_1",
+            connector.robot_state.current_map.map_name,
+            connector.robot_state.firmware_version,
+        )
         connector.robot_api.send_to_named_waypoint.reset_mock()
 
         # Test with map name
@@ -399,7 +420,11 @@ class TestGausiumConnector:
         ]
         await connector._inorbit_command_handler(**callback_kwargs)
         callback_kwargs["options"]["result_function"].assert_called_with("0")
-        connector.robot_api.send_to_named_waypoint.assert_called_once_with("waypoint_1", "test_map")
+        connector.robot_api.send_to_named_waypoint.assert_called_once_with(
+            "waypoint_1",
+            "test_map",
+            connector.robot_state.firmware_version,
+        )
 
     @pytest.mark.asyncio
     async def test_command_callback_pause_task_queue(self, connector, callback_kwargs):

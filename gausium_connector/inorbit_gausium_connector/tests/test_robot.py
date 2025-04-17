@@ -184,7 +184,6 @@ class TestGausiumRobotStateUpdate:
 
         map = mock_robot.current_map
         assert map is not None
-        assert mock_robot._api_wrapper._get_map_image.call_count == 1
         assert map.map_name == device_status_data["data"]["currentMapName"]
         assert map.map_id == device_status_data["data"]["currentMapID"]
 

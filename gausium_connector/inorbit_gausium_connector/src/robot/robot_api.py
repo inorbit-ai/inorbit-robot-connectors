@@ -76,7 +76,7 @@ class BaseRobotAPI(ABC):
             return res
         except httpx.RequestError as e:
             self._last_call_successful = False
-            self.logger.error(f"HTTPX GET Error for {endpoint}: {e}")
+            self.logger.error(f"HTTPX GET Error for {endpoint}: {str(e) or e.__class__.__name__}")
             raise e
 
     async def _post(self, endpoint: str, timeout: int | None = None, **kwargs) -> httpx.Response:
@@ -93,7 +93,7 @@ class BaseRobotAPI(ABC):
             return res
         except httpx.RequestError as e:
             self._last_call_successful = False
-            self.logger.error(f"HTTPX POST Error for {endpoint}: {e}")
+            self.logger.error(f"HTTPX POST Error for {endpoint}: {str(e) or e.__class__.__name__}")
             raise e
 
     async def _delete(self, endpoint: str, timeout: int | None = None, **kwargs) -> httpx.Response:
@@ -110,7 +110,9 @@ class BaseRobotAPI(ABC):
             return res
         except httpx.RequestError as e:
             self._last_call_successful = False
-            self.logger.error(f"HTTPX DELETE Error for {endpoint}: {e}")
+            self.logger.error(
+                f"HTTPX DELETE Error for {endpoint}: {str(e) or e.__class__.__name__}"
+            )
             raise e
 
     async def _put(self, endpoint: str, timeout: int | None = None, **kwargs) -> httpx.Response:
@@ -128,7 +130,7 @@ class BaseRobotAPI(ABC):
             return res
         except httpx.RequestError as e:
             self._last_call_successful = False
-            self.logger.error(f"HTTPX PUT Error for {endpoint}: {e}")
+            self.logger.error(f"HTTPX PUT Error for {endpoint}: {str(e) or e.__class__.__name__}")
             raise e
 
 

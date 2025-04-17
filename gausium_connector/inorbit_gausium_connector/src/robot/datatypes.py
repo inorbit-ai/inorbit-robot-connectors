@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 from pydantic import BaseModel
 
@@ -27,9 +27,6 @@ class MapData(BaseModel):
     origin_x: float
     origin_y: float
     resolution: float
-    # Lazy loaded map image
-    # NOTE: Maybe not a great solution, since some maps may be quite large
-    map_image: Optional[bytes] = None
 
 
 class PathData(BaseModel):

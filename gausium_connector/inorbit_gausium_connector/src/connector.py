@@ -126,12 +126,27 @@ class GausiumConnector(Connector):
             )
             try:
                 map_data = self.robot_state.current_map
+
+                if map_data is None:
+                    raise Exception("No map data available")
+                elif map_data.map_name != frame_id:
+                    raise Exception(
+                        f"Available map data doesn't match the requested frame_id: "
+                        f"{map_data.map_name} != {frame_id}"
+                    )
+
+                map_image = self.robot_api.get_map_image_sync(map_data.map_name)
+                if map_image:
+                    self._logger.info(f"Map image size: {len(map_image)} bytes")
+                else:
+                    self._logger.warning("No map image data received from robot")
+
             except Exception as ex:
                 self._logger.error(f"Failed to load map from robot: {ex}")
                 return
             # HACK(b-Tomas): Create a temporary file with .png extension to store the map image
             # It should be possible to avoid this and work with the in-memory bytes instead
-            if map_data and map_data.map_image:
+            if map_data and map_image:
                 # Create a temporary file with .png extension to store the map image
                 fd, temp_path = tempfile.mkstemp(suffix=".png")
                 self._logger.debug(f"Created temporary file: {temp_path}")
@@ -142,7 +157,7 @@ class GausiumConnector(Connector):
                 # Convert the map image bytes to a PIL Image
                 try:
                     # Create an image from the bytes
-                    image = Image.open(io.BytesIO(map_data.map_image))
+                    image = Image.open(io.BytesIO(map_image))
 
                     # Flip the image vertically
                     flipped_image = image.transpose(Image.FLIP_TOP_BOTTOM)
@@ -156,7 +171,7 @@ class GausiumConnector(Connector):
                 except Exception as e:
                     self._logger.error(f"Failed to flip map image: {e}")
                     # If flipping fails, use the original bytes
-                    flipped_bytes = map_data.map_image
+                    flipped_bytes = map_image
                 try:
                     # Write the map image bytes to the temporary file
                     with os.fdopen(fd, "wb") as tmp_file:
@@ -173,13 +188,13 @@ class GausiumConnector(Connector):
                     )
 
                     self._logger.info(f"Added map {frame_id} from robot to configuration")
+                    return super().publish_map(frame_id, is_update)
                 except Exception as e:
                     self._logger.error(f"Failed to create temporary map file: {e}")
                     os.unlink(temp_path)  # Clean up the file in case of error
             else:
                 self._logger.error(f"No map data available for {frame_id}")
                 return
-            self.publish_map(frame_id, is_update)
 
     @override
     async def _inorbit_command_handler(self, command_name, args, options):

@@ -277,17 +277,7 @@ class Robot:
 
     @property
     def current_map(self) -> MapData:
-        """Get the current map.
-        If the map image isn't loaded, it will be lazily fetched from the robot."""
-        if self._current_map is None:
-            return None
-        if self._current_map and self._current_map.map_image is None:
-            # NOTE: beacuse the map image is required within the publish_map method, this method
-            # cannot be async and the image is fetched in a blocking call
-            loop = asyncio.get_event_loop()
-            self._current_map.map_image = loop.call_soon_threadsafe(
-                self._api_wrapper._get_map_image(self._current_map.map_name)
-            )
+        """Get the current map"""
         return self._current_map
 
     @property

@@ -16,6 +16,7 @@ from inorbit_edge.robot import (
 )
 from inorbit_gausium_connector.src.config.connector_model import ConnectorConfig
 from inorbit_gausium_connector.src.connector import GausiumConnector
+from inorbit_gausium_connector.src.robot.datatypes import MapData
 
 
 class TestGausiumConnector:
@@ -80,6 +81,9 @@ class TestGausiumConnector:
         mock_map_config = MagicMock()
         monkeypatch.setattr("inorbit_gausium_connector.src.connector.MapConfig", mock_map_config)
 
+        # Mock the api to return a fake image
+        connector.robot_api.get_map_image_sync = MagicMock(return_value=b"fake_image_data")
+
         # Test case 1: Map exists in config
         # Setup a test map in the config
         connector.config.maps = {"existing_map": MagicMock()}
@@ -93,10 +97,9 @@ class TestGausiumConnector:
 
         # Test case 2: Map doesn't exist in config but robot provides map data
         # Create mock map data from the robot
-        mock_map_data = MagicMock()
+        mock_map_data = MagicMock(MapData)
         mock_map_data.map_id = "robot_map"
         mock_map_data.map_name = "test_map_name"
-        mock_map_data.map_image = b"fake_image_data"
         mock_map_data.origin_x = 10.5
         mock_map_data.origin_y = 20.7
         mock_map_data.resolution = 0.05
@@ -124,7 +127,11 @@ class TestGausiumConnector:
         monkeypatch.setattr("io.BytesIO", Mock(return_value=mock_byte_io))
 
         # Call the method with a non-existing map
+        mock_map_data.map_name = "new_map"
         connector.publish_map("new_map")
+
+        # Verify the map image was fetched from the robot
+        connector.robot_api.get_map_image_sync.assert_called_once_with("new_map")
 
         # Verify temporary file was created and written to
         assert mock_fdopen.call_args.args[0] == mock_fd
@@ -135,7 +142,7 @@ class TestGausiumConnector:
         # Now using the actual property values from mock_map_data
         mock_map_config.assert_called_once_with(
             file=mock_temp_path,
-            map_id="test_map_name",
+            map_id="new_map",
             frame_id="new_map",
             origin_x=mock_map_data.origin_x,
             origin_y=mock_map_data.origin_y,
@@ -165,6 +172,7 @@ class TestGausiumConnector:
         mock_file.__enter__().write.reset_mock()
 
         # Call the method
+        mock_map_data.map_name = "error_map"
         connector.publish_map("error_map")
 
         # Verify original bytes were used when flipping failed

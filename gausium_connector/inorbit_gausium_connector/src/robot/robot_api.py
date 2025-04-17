@@ -483,8 +483,18 @@ class GausiumCloudAPI(BaseRobotAPI):
         image_timeout = max(self.api_req_timeout, 30)  # e.g., 30 seconds
         self.logger.debug(f"Getting map image for {map_name} with timeout {image_timeout}s")
         res = await self._get(f"/gs-robot/data/map_png?map_name={map_name}", timeout=image_timeout)
-        # No json() call for image content
         return res.content
+
+    def get_map_image_sync(self, map_name: str) -> bytes:
+        """Get the map image synchronously"""
+        image_timeout = max(self.api_req_timeout, 30)  # e.g., 30 seconds. See note above
+        with httpx.Client(base_url=self.base_url) as client:
+            res = client.get(
+                f"/gs-robot/data/map_png?map_name={map_name}",
+                timeout=image_timeout,
+            )
+            self._handle_status(res, None)
+            return res.content
 
     async def _get_waypoint_coordinates(self, map_name: str, path_name: str) -> dict:
         """Get the coordinates of waypoints for the specified path

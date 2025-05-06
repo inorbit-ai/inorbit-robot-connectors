@@ -347,15 +347,6 @@ class TestGausiumConnector:
         await connector._inorbit_command_handler(**callback_kwargs)
         callback_kwargs["options"]["result_function"].assert_called_with("1", "Invalid arguments")
 
-        # Test with robot unavailable
-        connector.robot_api._last_call_successful = False
-        connector.status = {"online": False}
-        callback_kwargs["args"] = ["script_name", ["param1", "value1"]]
-        await connector._inorbit_command_handler(**callback_kwargs)
-        callback_kwargs["options"]["result_function"].assert_called_with(
-            "1", "Robot is not available"
-        )
-
     @pytest.mark.asyncio
     async def test_command_callback_start_task_queue(self, connector, callback_kwargs):
         callback_kwargs["command_name"] = COMMAND_CUSTOM_COMMAND
@@ -539,47 +530,6 @@ class TestGausiumConnector:
 
         # Verify the robot API method was called
         connector.robot_api.cancel_navigation_task.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_command_callback_robot_unavailable(self, connector, callback_kwargs):
-        # Set up the robot to be unavailable
-        connector.robot_api._last_call_successful = False
-        connector.status = {"online": False}
-
-        # Test each command with an unavailable robot
-        commands = [
-            "pause_task_queue",
-            "resume_task_queue",
-            "cancel_task_queue",
-            "pause_navigation_task",
-            "resume_navigation_task",
-            "cancel_navigation_task",
-        ]
-
-        for command in commands:
-            # Reset the result function mock
-            callback_kwargs["options"]["result_function"].reset_mock()
-            # Reset the robot API method mock
-            method_name = command
-            robot_api_method = getattr(connector.robot_api, method_name)
-            robot_api_method.reset_mock()
-
-            # Configure the custom command
-            callback_kwargs["command_name"] = COMMAND_CUSTOM_COMMAND
-            callback_kwargs["args"] = [command, []]
-
-            # Call the handler
-            await connector._inorbit_command_handler(**callback_kwargs)
-
-            # Verify the result function was called with error code
-            callback_kwargs["options"]["result_function"].assert_called_with(
-                "1", "Robot is not available"
-            )
-
-            # Verify the robot API method was NOT called
-            assert (
-                not robot_api_method.called
-            ), f"Robot API method {method_name} was called when robot was unavailable"
 
     @pytest.mark.asyncio
     async def test_execution_loop(

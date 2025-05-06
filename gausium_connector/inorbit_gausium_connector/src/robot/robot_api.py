@@ -8,6 +8,7 @@ from typing import List
 
 import httpx
 from pydantic import HttpUrl
+from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 
 from inorbit_gausium_connector.src.robot.datatypes import MapData
 from inorbit_gausium_connector.src.robot.utils import coordinate_to_grid_units
@@ -44,6 +45,29 @@ class BaseRobotAPI(ABC):
         """Closes the httpx client session."""
         await self.api_client.aclose()
         self.logger.info("HTTPX client closed.")
+
+    @staticmethod
+    def retry(func):
+        """Utility decorator to retry the function upon API failure. It retries if the call fails
+        due to a RequestError, but does not retry if the call is successful, regardless of the
+        status code or other response characteristics.
+
+        Args:
+            func (function): The function to retry.
+        """
+        return retry(
+            reraise=True,
+            retry=retry_if_exception_type(httpx.RequestError),
+            # TODO: Replace the log calls with the global logger once implemented
+            before_sleep=lambda retry_state: logging.getLogger(func.__name__).warning(
+                f"Retrying {func.__name__} in {retry_state.next_action.sleep} seconds"
+            ),
+            after=lambda retry_state: logging.getLogger(func.__name__).warning(
+                f"Retried {func.__name__} {retry_state.attempt_number} times"
+            ),
+            stop=stop_after_attempt(3),
+            wait=wait_fixed(0.5),
+        )(func)
 
     @property
     def last_call_successful(self) -> bool:
@@ -159,6 +183,9 @@ class GausiumCloudAPI(BaseRobotAPI):
         """Check if the robot is initialized"""
         return self._is_initialized
 
+    # ---- Public methods for calling within the Connector ---- #
+
+    @BaseRobotAPI.retry
     async def send_waypoint(
         self, x: float, y: float, orientation: float, map_name: str, firmware_version: str
     ) -> bool:
@@ -180,10 +207,12 @@ class GausiumCloudAPI(BaseRobotAPI):
             map_name, firmware_version, grid_x, grid_y, orientation
         )
 
+    @BaseRobotAPI.retry
     async def localize_at(self, x: float, y: float, orientation: float, map_name: str) -> bool:
         """Requests the robot to localize at the given coordinates within the same map"""
         return await self._initialize_at_custom_position(map_name, x, y, orientation)
 
+    @BaseRobotAPI.retry
     async def pause(self, firmware_version: str) -> bool:
         """Requests the robot to pause whatever it is doing.
         It fetches the state of cleaning and navigation and the pauses whichever is running"""
@@ -200,6 +229,7 @@ class GausiumCloudAPI(BaseRobotAPI):
             self._last_pause_command = "cleaning"
             return await self._pause_cleaning_task()
 
+    @BaseRobotAPI.retry
     async def resume(self, firmware_version: str) -> bool:
         """Requests the robot to resume a previously paused task"""
         # In firmware version lower than v3-6-6, navigation and cleaning resume commands are the
@@ -219,6 +249,7 @@ class GausiumCloudAPI(BaseRobotAPI):
         else:
             raise Exception("No previously paused command found")
 
+    @BaseRobotAPI.retry
     async def start_task_queue(
         self,
         task_queue_name: str,
@@ -239,18 +270,22 @@ class GausiumCloudAPI(BaseRobotAPI):
         """
         return await self._start_cleaning_task(map_name, task_queue_name, loop, loop_count)
 
+    @BaseRobotAPI.retry
     async def pause_task_queue(self) -> bool:
         """Pauses the cleaning task"""
         return await self._pause_task_queue()
 
+    @BaseRobotAPI.retry
     async def resume_task_queue(self) -> bool:
         """Resumes the cleaning task"""
         return await self._resume_task_queue()
 
+    @BaseRobotAPI.retry
     async def cancel_task_queue(self) -> bool:
         """Cancels the cleaning task"""
         return await self._cancel_cleaning_task()
 
+    @BaseRobotAPI.retry
     async def send_to_named_waypoint(
         self, position_name: str, map_name: str, firmware_version: str
     ) -> bool:
@@ -265,14 +300,17 @@ class GausiumCloudAPI(BaseRobotAPI):
         """
         return await self._navigate_to_named_waypoint(map_name, position_name, firmware_version)
 
+    @BaseRobotAPI.retry
     async def pause_navigation_task(self, firmware_version: str) -> bool:
         """Pauses the navigation task"""
         return await self._pause_navigation_task(firmware_version)
 
+    @BaseRobotAPI.retry
     async def resume_navigation_task(self, firmware_version: str) -> bool:
         """Resumes the navigation task"""
         return await self._resume_navigation_task(firmware_version)
 
+    @BaseRobotAPI.retry
     async def cancel_navigation_task(self, firmware_version: str) -> bool:
         """Cancels the navigation task"""
         return await self._cancel_navigation_task(firmware_version)
@@ -324,12 +362,15 @@ class GausiumCloudAPI(BaseRobotAPI):
         res = await self._get("/gs-robot/real_time_data/robot_status")
         return res.json()
 
-    def _is_firmware_post_v3_6_6(self, firmware_version: str) -> bool:
+    def _is_firmware_post_v3_6_6(self, firmware_version: str | None) -> bool:
         """Check if the firmware version is v3-6-6 or higher
 
         Returns:
             bool: True if firmware is v3-6-6 or higher, False otherwise
         """
+        if firmware_version is None:
+            raise ValueError("Firmware version is None")
+
         # Extract version number parts
         version_parts = firmware_version.split("-")
         if len(version_parts) >= 3:

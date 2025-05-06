@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
+import asyncio
 from enum import Enum
 import io
 import math
@@ -211,11 +212,14 @@ class GausiumConnector(Connector):
 
         # InOrbit custom commands (RunScript actions)
         if command_name == COMMAND_CUSTOM_COMMAND:
-            if not self.is_robot_available():
-                self._logger.error("Robot is unavailable")
-                return options["result_function"](
-                    CommandResultCode.FAILURE, "Robot is not available"
-                )
+            # If the robot is not available, wait for it to become available
+            # If it doesn't become available in time, continue anyway at risk of failure
+            interval_secs = 0.1
+            max_wait_secs = 3
+            for i in range(0, int(max_wait_secs / interval_secs)):
+                if self.is_robot_available():
+                    break
+                await asyncio.sleep(interval_secs)
 
             # Parse command name and arguments
             script_name = args[0]

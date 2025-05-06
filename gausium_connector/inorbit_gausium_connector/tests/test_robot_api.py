@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
+import httpx
 import pytest
 from unittest.mock import patch, Mock, AsyncMock
 from pydantic import HttpUrl
@@ -257,3 +258,56 @@ class TestGausiumCloudAPIPauseResume:
             # Resume cleaning
             await mock_robot_api.resume(...)
             assert mock_robot_api._last_pause_command is None
+
+
+class TestGausiumCloudAPIRetry:
+    """Tests for the GausiumCloudAPI retry() method."""
+
+    @pytest.fixture
+    def mock_robot_api(self, robot_info):
+        """Create a mock GausiumCloudAPI instance for testing pause/resume."""
+        api = GausiumCloudAPI(
+            base_url=HttpUrl("http://example.com/"),
+            loglevel="DEBUG",
+        )
+
+        # Mock components to prevent actual HTTP requests
+        api.logger = Mock()
+        api.api_session = Mock()
+
+        return api
+
+    @pytest.mark.asyncio
+    async def test_retry_decorator(self, mock_robot_api):
+        """Test that the retry decorator works correctly."""
+
+        mock = AsyncMock()
+
+        @GausiumCloudAPI.retry
+        async def mock_api_method_req_error():
+            await mock()
+            raise httpx.RequestError("Test error")
+
+        @GausiumCloudAPI.retry
+        async def mock_api_method_http_error():
+            await mock()
+            raise httpx.HTTPStatusError(
+                "Test error",
+                request=httpx.Request("GET", "https://example.com"),
+                response=httpx.Response(status_code=500),
+            )
+
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            # Call the method that should be retried
+            # The exception should eventually be re-raised
+            with pytest.raises(httpx.RequestError):
+                await mock_api_method_req_error()
+
+            # Check that the method was called 3 times
+            assert mock.call_count == 3
+
+            # Other exceptions should not be retried
+            mock.reset_mock()
+            with pytest.raises(httpx.HTTPStatusError):
+                await mock_api_method_http_error()
+            assert mock.call_count == 1

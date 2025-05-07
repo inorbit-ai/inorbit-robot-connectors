@@ -41,6 +41,10 @@ class BaseRobotAPI(ABC):
         # Initialize httpx.AsyncClient
         self.api_client = httpx.AsyncClient(base_url=self.base_url, timeout=self.api_req_timeout)
 
+        # If the log level is INFO, reduce the verbosity of httpx
+        if loglevel == "INFO":
+            logging.getLogger("httpx").setLevel(logging.WARNING)
+
     async def close(self):
         """Closes the httpx client session."""
         await self.api_client.aclose()

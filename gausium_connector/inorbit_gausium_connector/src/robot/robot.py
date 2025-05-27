@@ -218,12 +218,11 @@ class Robot:
             return None
 
     @property
-    def path(self) -> dict | None:
+    def path(self) -> PathData | None:
         return self._path_from_robot_status(self._robot_status, self.frame_id)
 
-    def _path_from_robot_status(self, robot_status_data: dict, frame_id: str) -> PathData:
+    def _path_from_robot_status(self, robot_status_data: dict, frame_id: str) -> PathData | None:
         """Get the path of the robot from the robot status data"""
-
         work_type = robot_status_data.get("robotStatus", {}).get("workType")
         path_points = []
 
@@ -237,7 +236,6 @@ class Robot:
             )
             if not target_pose.get("x") or not target_pose.get("y"):
                 self._logger.warning("No target pose found for path while navigating")
-                path_points = []
             else:
                 path_points = [
                     (self.pose["x"], self.pose["y"]),
@@ -249,15 +247,44 @@ class Robot:
             # Current map data must be set in order to convert grid units to coordinates
             if not self.current_map:
                 self._logger.warning("No current map data available, skipping task path")
-                path_points = []
+
             else:
                 task_segments = robot_status_data.get("statusData", {}).get("taskSegments", [])
-                for segment in task_segments:
-                    data = segment.get("data", [])
+                current_path = (
+                    robot_status_data.get("statusData", {})
+                    .get("task", {})
+                    .get("start_param", {})
+                    .get("path_name")
+                )
+                if not current_path:
+                    self._logger.warning("No current path found for task path")
+
+                else:
+                    # Filter the task segments by the current path
+                    task_segments = [
+                        segment
+                        for segment in task_segments
+                        if segment.get("pathName") == current_path
+                    ]
+
+                    # Order the segments within the path by groupPathName to give the points the
+                    # correct order.
+                    # Each segment has a groupPathName like "__AREA_PATH_0", which doesn't help with
+                    # alphabetical sort.
+                    task_segments.sort(
+                        key=lambda x: int(x.get("groupPathName").split("__AREA_PATH_")[1])
+                    )
+
+                    # Reduce each path to a single path
+                    path = []
+                    for segment in task_segments:
+                        data = segment.get("data", [])
+                        path.extend(data)
+
                     path_points.extend(
                         [
                             grid_units_to_coordinate(point["x"], point["y"], self.current_map)
-                            for point in data
+                            for point in path
                         ]
                     )
 

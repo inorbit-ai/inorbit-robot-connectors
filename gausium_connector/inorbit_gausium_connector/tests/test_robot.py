@@ -36,7 +36,6 @@ class TestGausiumRobotStateUpdate:
         robot = Robot(
             api_wrapper=AsyncMock(GausiumCloudAPI),
             allowed_model_types=["Scrubber 50H"],
-            loglevel="DEBUG",
         )
         robot._logger = Mock()
 
@@ -105,7 +104,6 @@ class TestGausiumRobotStateUpdate:
         robot = Robot(
             api_wrapper=AsyncMock(GausiumCloudAPI),
             allowed_model_types=[],  # Empty list means no validation
-            loglevel="DEBUG",
         )
         robot._logger = Mock()
 
@@ -246,7 +244,6 @@ class TestGausiumRobotPaths:
         robot = Robot(
             api_wrapper=AsyncMock(GausiumCloudAPI),
             allowed_model_types=[],
-            loglevel="DEBUG",
             default_polling_freq=0.0,
         )
 

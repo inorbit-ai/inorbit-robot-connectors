@@ -153,6 +153,11 @@ class TestConfigValidation:
         with config_path.open() as f:
             example_config = yaml.safe_load(f)
 
+        # Update the example config to match the new logging schema
+        example_config["my-example-robot"]["logging"] = {
+            "log_level": "INFO",
+        }
+
         assert (
             example_config["my-example-robot"] == default_config
         ), "Default config doesn't match the example"

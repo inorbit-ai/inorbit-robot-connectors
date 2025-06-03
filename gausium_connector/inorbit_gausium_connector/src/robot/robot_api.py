@@ -20,18 +20,15 @@ class BaseRobotAPI(ABC):
     def __init__(
         self,
         base_url: HttpUrl,
-        loglevel: str = "INFO",
         api_req_timeout: int = 10,
     ):
         """Initializes the connection with the Gausium Phantas robot
 
         Args:
             base_url (HttpUrl): Base URL of the robot API. e.g. "http://192.168.0.256:80/"
-            loglevel (str, optional): Defaults to "INFO"
             api_req_timeout (int, optional): Default timeout for API requests. Defaults to 10.
         """
         self.logger = logging.getLogger(name=self.__class__.__name__)
-        self.logger.setLevel(loglevel)
         # Use str(base_url) because httpx requires string URLs
         self.base_url = str(base_url)
         self.api_req_timeout = api_req_timeout
@@ -42,7 +39,7 @@ class BaseRobotAPI(ABC):
         self.api_client = httpx.AsyncClient(base_url=self.base_url, timeout=self.api_req_timeout)
 
         # If the log level is INFO, reduce the verbosity of httpx
-        if loglevel == "INFO":
+        if self.logger.getEffectiveLevel() == logging.INFO:
             logging.getLogger("httpx").setLevel(logging.WARNING)
 
     async def close(self):
@@ -168,17 +165,15 @@ class GausiumCloudAPI(BaseRobotAPI):
     def __init__(
         self,
         base_url: HttpUrl,
-        loglevel: str = "INFO",
         api_req_timeout: int = 10,
     ):
         """Initialize the Gausium Cloud API wrapper.
 
         Args:
             base_url (HttpUrl): Base URL for the Gausium Cloud API.
-            loglevel (str, optional): Logging level. Defaults to "INFO".
             api_req_timeout (int, optional): Default timeout for API requests. Defaults to 10.
         """
-        super().__init__(base_url, loglevel, api_req_timeout)
+        super().__init__(base_url, api_req_timeout)
         self._is_initialized: bool = False
         self._last_pause_command: str | None = None
 

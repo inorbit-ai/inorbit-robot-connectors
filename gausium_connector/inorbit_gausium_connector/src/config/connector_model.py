@@ -18,10 +18,12 @@ CONNECTOR_TYPES = list(ROBOT_API_CLASSES.keys())
 # that gets added automatically looks.
 default_config = {
     "location_tz": "America/Los_Angeles",
-    "log_level": "INFO",
     "connector_type": CONNECTOR_TYPES[0],
     "connector_config": {
         "base_url": "http://ip_and_port",
+    },
+    "logging": {
+        "log_level": "INFO",
     },
 }
 

@@ -24,7 +24,6 @@ class Robot:
         self,
         api_wrapper: GausiumCloudAPI,
         allowed_model_types: List[str] = [],
-        loglevel: str = "INFO",
         default_polling_freq: float = 5,
     ):
         """Initialize the Robot class.
@@ -33,11 +32,9 @@ class Robot:
             api_wrapper (GausiumRobotAPI): The API wrapper to use.
             allowed_model_types (List[str], optional): The allowed model types. Defaults to an
                 empty list.
-            loglevel (str, optional): The log level to use. Defaults to "INFO".
             default_polling_freq (float, optional): The default polling frequency. Defaults to 5hz.
         """
         self._logger = logging.getLogger(__name__)
-        self._logger.setLevel(loglevel)
         self._allowed_model_types: List[str] = allowed_model_types
 
         # Already initialized API wrapper

@@ -28,16 +28,12 @@ class TestRobotFactory:
         with patch.object(
             Vaccum40RobotAPI, "__init__", return_value=None
         ) as mock_api_init, patch.object(Robot, "__init__", return_value=None) as mock_robot_init:
-            api, robot = create_robot(
-                connector_type="V40", base_url=HttpUrl("http://example.com/"), loglevel="DEBUG"
-            )
+            api, robot = create_robot(connector_type="V40", base_url=HttpUrl("http://example.com/"))
             mock_api_init.assert_called_once_with(
                 base_url=HttpUrl("http://example.com/"),
-                loglevel="DEBUG",
             )
             mock_robot_init.assert_called_once_with(
                 api_wrapper=api,
-                loglevel="DEBUG",
                 allowed_model_types=CLOUD_APIS_ALLOWED_MODEL_TYPES["V40"],
             )
             assert isinstance(api, Vaccum40RobotAPI)
@@ -49,7 +45,6 @@ class TestRobotFactory:
             create_robot(
                 connector_type="InvalidType",
                 base_url=HttpUrl("http://example.com/"),
-                loglevel="INFO",
             )
         assert "Unsupported connector_type: InvalidType" in str(excinfo.value)
         # Check that the error message includes all supported types
@@ -64,11 +59,9 @@ class TestRobotFactory:
             api, robot = create_robot(connector_type="V40", base_url=HttpUrl("http://example.com/"))
             mock_api_init.assert_called_once_with(
                 base_url=HttpUrl("http://example.com/"),
-                loglevel="INFO",
             )
             mock_robot_init.assert_called_once_with(
                 api_wrapper=api,
-                loglevel="INFO",
                 allowed_model_types=CLOUD_APIS_ALLOWED_MODEL_TYPES["V40"],
             )
             assert isinstance(api, Vaccum40RobotAPI)
@@ -88,11 +81,9 @@ class TestRobotFactory:
             # Check that the allowed model types were passed correctly
             mock_api_init.assert_called_with(
                 base_url=HttpUrl("http://example.com/"),
-                loglevel="INFO",
             )
             mock_robot_init.assert_called_with(
                 api_wrapper=api,
-                loglevel="INFO",
                 allowed_model_types=CLOUD_APIS_ALLOWED_MODEL_TYPES["V40"],
             )
             assert isinstance(api, Vaccum40RobotAPI)
@@ -110,11 +101,9 @@ class TestRobotFactory:
             # Check that empty allowed model types were passed
             mock_api_init.assert_called_with(
                 base_url=HttpUrl("http://example.com/"),
-                loglevel="INFO",
             )
             mock_robot_init.assert_called_with(
                 api_wrapper=api,
-                loglevel="INFO",
                 allowed_model_types=[],
             )
             assert isinstance(api, Vaccum40RobotAPI)

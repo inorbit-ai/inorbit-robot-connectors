@@ -64,7 +64,6 @@ class GausiumConnector(Connector):
         self.robot_api, self.robot_state = create_robot(
             connector_type=config.connector_type,
             base_url=config.connector_config.base_url,
-            loglevel=config.log_level.value,
             ignore_model_type_validation=config.connector_config.ignore_model_type_validation,
         )
         self.mission_tracking = MissionTracking(self.publish_mission_tracking)

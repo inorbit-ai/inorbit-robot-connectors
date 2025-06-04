@@ -33,7 +33,6 @@ class TestGausiumCloudAPIPauseResume:
         """Create a mock GausiumCloudAPI instance for testing pause/resume."""
         api = GausiumCloudAPI(
             base_url=HttpUrl("http://example.com/"),
-            loglevel="DEBUG",
         )
 
         # Mock components to prevent actual HTTP requests
@@ -268,7 +267,6 @@ class TestGausiumCloudAPIRetry:
         """Create a mock GausiumCloudAPI instance for testing pause/resume."""
         api = GausiumCloudAPI(
             base_url=HttpUrl("http://example.com/"),
-            loglevel="DEBUG",
         )
 
         # Mock components to prevent actual HTTP requests

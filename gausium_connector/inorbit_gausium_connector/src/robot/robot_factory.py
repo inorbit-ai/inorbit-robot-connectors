@@ -26,7 +26,6 @@ CLOUD_APIS_ALLOWED_MODEL_TYPES: Dict[str, List[str]] = {
 def create_robot(
     connector_type: str,
     base_url: HttpUrl,
-    loglevel: str = "INFO",
     ignore_model_type_validation: bool = False,
 ) -> Tuple[GausiumCloudAPI, Robot]:
     """
@@ -36,7 +35,6 @@ def create_robot(
     Args:
         connector_type (str): The type of connector specified in the configuration.
         base_url (HttpUrl): Base URL of the robot API.
-        loglevel (str, optional): Log level for the robot API. Defaults to "INFO".
         ignore_model_type_validation (bool, optional): If True, the model type validation will be
             ignored. Defaults to False.
     Returns:
@@ -61,8 +59,6 @@ def create_robot(
         else []
     )
 
-    robot_api = api_class(base_url=base_url, loglevel=loglevel)
-    robot_state = Robot(
-        api_wrapper=robot_api, loglevel=loglevel, allowed_model_types=allowed_model_types
-    )
+    robot_api = api_class(base_url=base_url)
+    robot_state = Robot(api_wrapper=robot_api, allowed_model_types=allowed_model_types)
     return robot_api, robot_state

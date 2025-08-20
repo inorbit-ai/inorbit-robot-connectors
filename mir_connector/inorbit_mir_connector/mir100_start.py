@@ -4,12 +4,25 @@
 
 import argparse
 import logging
+import signal
 import sys
-from inorbit_connector.utils import read_yaml
-from inorbit_mir_connector.src.connector import Mir100Connector
-from inorbit_mir_connector.config.mir100_model import load_and_validate
-from inorbit_mir_connector.config.mir100_model import default_mir100_config
-from inorbit_mir_connector.config.utils import write_yaml
+
+from dotenv import find_dotenv
+from dotenv import load_dotenv
+
+# Attempts to load environment variables from config/.env file relative to the current working
+# directory. If the file is not found, a message will be printed out and the program will
+# continue. If not using this file, the evironment variables can be set manually anyway
+# This must be done before importing from inorbit_connector, which will pick up the environment
+# TODO(b-Tomas): Fix inorbit_connector to not use environment variables at import time
+# TODO(b-Tomas): Remove `noqa: E402` after fixing the above
+load_dotenv(find_dotenv("config/.env", usecwd=True), verbose=True, override=True)
+
+from inorbit_connector.utils import read_yaml  # noqa: E402
+from inorbit_mir_connector.src.connector import Mir100Connector  # noqa: E402
+from inorbit_mir_connector.config.mir100_model import load_and_validate  # noqa: E402
+from inorbit_mir_connector.config.mir100_model import default_mir100_config  # noqa: E402
+from inorbit_mir_connector.config.utils import write_yaml  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger(__name__)
@@ -64,7 +77,9 @@ def start():
 
     mir_connector = Mir100Connector(robot_id, mir_config)
     try:
+        LOGGER.info("Starting connector...")
         mir_connector.start()
+        signal.signal(signal.SIGINT, lambda sig, frame: mir_connector.stop())
         mir_connector.join()
     except KeyboardInterrupt:
         LOGGER.info("Received SIGINT, stopping connector")

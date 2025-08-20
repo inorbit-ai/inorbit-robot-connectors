@@ -11,6 +11,7 @@ import requests
 from tenacity import retry, wait_exponential_jitter, before_sleep_log, retry_if_exception_type
 from threading import Thread, Lock
 from inorbit_connector.connector import Connector
+from inorbit_connector.connector import CommandResultCode
 from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND
 from inorbit_edge.robot import COMMAND_MESSAGE
 from inorbit_edge.robot import COMMAND_NAV_GOAL
@@ -19,6 +20,7 @@ from .mir_api import MirApiV2
 from .mir_api import MirWebSocketV2
 from .mission import MirInorbitMissionTracking
 from ..config.mir100_model import MiR100Config
+from .robot.robot import Robot
 
 
 # Available MiR states to select via actions
@@ -62,6 +64,13 @@ class Mir100Connector(Connector):
         self.tmp_missions_group_id = None
         self.tmp_missions_group_id_lock = Lock()
 
+        # Resolve log level from config supporting deprecated 'log_level' and new 'logging.log_level'
+        effective_log_level = getattr(
+            getattr(config, "logging", None), "log_level", None
+        ) or getattr(config, "log_level", None)
+        if hasattr(effective_log_level, "value"):
+            effective_log_level = effective_log_level.value
+
         # Configure the connection to the robot
         self.mir_api = MirApiV2(
             mir_host_address=config.connector_config.mir_host_address,
@@ -69,7 +78,13 @@ class Mir100Connector(Connector):
             mir_password=config.connector_config.mir_password,
             mir_host_port=config.connector_config.mir_host_port,
             mir_use_ssl=config.connector_config.mir_use_ssl,
-            loglevel=config.log_level.value,
+            loglevel=effective_log_level,
+        )
+
+        # Async robot wrapper managing polling
+        self.robot = Robot(
+            mir_api=self.mir_api,
+            default_update_freq=1.0,  # 1 Hz status by default
         )
 
         # Configure the ws connection to the robot
@@ -79,7 +94,7 @@ class Mir100Connector(Connector):
                 mir_host_address=config.connector_config.mir_host_address,
                 mir_ws_port=config.connector_config.mir_ws_port,
                 mir_use_ssl=config.connector_config.mir_use_ssl,
-                loglevel=config.log_level.value,
+                loglevel=effective_log_level,
             )
 
         # Configure the timezone
@@ -96,14 +111,14 @@ class Mir100Connector(Connector):
             mir_api=self.mir_api,
             inorbit_sess=self._robot_session,
             robot_tz_info=self.robot_tz_info,
-            loglevel=config.log_level.value,
+            loglevel=effective_log_level,
             enable_io_mission_tracking=config.connector_config.enable_mission_tracking,
         )
 
         # Get or create the required missions and mission groups
         Thread(target=self.setup_connector_missions, daemon=True).start()
 
-    def _inorbit_command_handler(self, command_name, args, options):
+    async def _inorbit_command_handler(self, command_name, args, options):
         """Callback method for command messages.
 
         The callback signature is `callback(command_name, args, options)`
@@ -126,7 +141,8 @@ class Mir100Connector(Connector):
             if len(args) < 2:
                 self._logger.error("Invalid number of arguments: ", args)
                 options["result_function"](
-                    "1", execution_status_details="Invalid number of arguments"
+                    CommandResultCode.FAILURE,
+                    execution_status_details="Invalid number of arguments",
                 )
                 return
             script_name = args[0]
@@ -155,7 +171,9 @@ class Mir100Connector(Connector):
                     if not state_id.isdigit() or int(state_id) not in MIR_STATE.keys():
                         error = f"Invalid `state_id` '{state_id}'"
                         self._logger.error(error)
-                        options["result_function"]("1", execution_status_details=error)
+                        options["result_function"](
+                            CommandResultCode.FAILURE, execution_status_details=error
+                        )
                         return
                     state_id = int(state_id)
                     self._logger.info(
@@ -192,15 +210,17 @@ class Mir100Connector(Connector):
                     self.mir_api.set_status(status)
                 else:
                     self._logger.error("Invalid arguments for 'localize' command")
-                    options["result_function"]("1", execution_status_details="Invalid arguments")
+                    options["result_function"](
+                        CommandResultCode.FAILURE, execution_status_details="Invalid arguments"
+                    )
                     return
             else:
                 # Other kind if custom commands may be handled by the edge-sdk (e.g. user_scripts)
                 # and not by the connector code itself
                 # Do not return any result and leave it to the edge-sdk to handle it
                 return
-            # Return '0' for success
-            options["result_function"]("0")
+            # Return success
+            options["result_function"](CommandResultCode.SUCCESS)
         elif command_name == COMMAND_NAV_GOAL:
             pose = args[0]
             self.send_waypoint_over_missions(pose)
@@ -213,33 +233,38 @@ class Mir100Connector(Connector):
         else:
             self._logger.info(f"Received unknown command '{command_name}'!. {args}")
 
-    def _connect(self) -> None:
-        """Connect to the robot services and to InOrbit"""
-        super()._connect()
+    async def _connect(self) -> None:
+        """Connect to the robot services and initialize background tasks."""
         # If enabled, initiate the websockets client
         if self.ws_enabled:
             self.mir_ws.connect()
+        # Start robot polling loops
+        self.robot.start()
         # Start garbage collection for missions
         # Running with daemon=True will kill the thread when the main thread is done executing
         Thread(target=self._missions_garbage_collector, daemon=True).start()
 
-    def _disconnect(self):
+    async def _disconnect(self):
         """Disconnect from any external services"""
-        super()._disconnect()
         self.cleanup_connector_missions()
         if self.ws_enabled:
             self.mir_ws.disconnect()
+        await self.robot.stop()
 
-    def _execution_loop(self):
+    async def _execution_loop(self):
         """The main execution loop for the connector"""
 
         try:
-            # TODO(Elvio): Move this logic to another class to make it easier to maintain and
-            # scale in the future
-            self.status = self.mir_api.get_status()
-            # TODO(Elvio): Move this logic to another class to make it easier to maintain and
-            # scale in the future
-            self.metrics = self.mir_api.get_metrics()
+            # Read latest robot data from Robot wrapper
+            status = self.robot.status
+            metrics = self.robot.metrics
+            # Fallback to direct API calls if robot hasn't populated data yet
+            if not status:
+                status = self.mir_api.get_status()
+            if not metrics:
+                metrics = self.mir_api.get_metrics()
+            self.status = status
+            self.metrics = metrics
         except Exception as ex:
             self._logger.error(f"Failed to get robot API data: {ex}")
             self.publish_api_error()
@@ -276,7 +301,7 @@ class Mir100Connector(Connector):
             "battery percent": self.status["battery_percentage"],
             "battery_time_remaining": self.status["battery_time_remaining"],
             "uptime": self.status["uptime"],
-            "localization_score": self.metrics.get("mir_robot_localization_score"),
+            "localization_score": (self.metrics or {}).get("mir_robot_localization_score"),
             "robot_name": self.status["robot_name"],
             "errors": self.status["errors"],
             "distance_to_next_target": self.status["distance_to_next_target"],
@@ -307,7 +332,7 @@ class Mir100Connector(Connector):
 
         # publish mission data
         try:
-            self.mission_tracking.report_mission(self.status, self.metrics)
+            self.mission_tracking.report_mission(self.status, self.metrics or {})
         except Exception:
             self._logger.exception("Error reporting mission")
 
@@ -323,7 +348,13 @@ class Mir100Connector(Connector):
         firmware_version = self.config.connector_config.mir_firmware_version
 
         if not self.tmp_missions_group_id:
-            raise Exception("Connector missions group not set up")
+            # Ensure missions group is created if not yet initialized by background thread
+            try:
+                self.setup_connector_missions()
+            except Exception as ex:
+                self._logger.error(f"Failed to setup connector missions: {ex}")
+            if not self.tmp_missions_group_id:
+                raise Exception("Connector missions group not set up")
 
         self.mir_api.create_mission(
             group_id=self.tmp_missions_group_id,

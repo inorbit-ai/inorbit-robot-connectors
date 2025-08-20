@@ -8,7 +8,7 @@ from setuptools import setup
 requirements = [
     "requests>=2.31,<3.0",
     "inorbit-edge[video]>=1.17",
-    "inorbit-connector==0.4.0",
+    "inorbit-connector~=1.2.1",
     "prometheus-client>=0.14.1",
     "pytz>=2022.7",
     # NOTE: both pyyaml and ruamel.yaml packages are included here. Otherwise, the
@@ -16,11 +16,11 @@ requirements = [
     # to ruamel.yaml or fix the dependency issue and them remove pyyaml from here.
     "pyyaml>=6.0,<6.1",
     "ruamel.yaml>=0.18,<0.19",
-    "pydantic>=2.5",
+    "pydantic>=2.6,<3.0",
     "psutil==5.9",
     "websocket-client==1.7.0",
-    "uuid==1.30",
-    "tenacity==9.0.0",
+    "tenacity>=9.1.2",
+    "python-dotenv==1",
 ]
 
 test_requirements = [
@@ -72,7 +72,7 @@ setup(
             "inorbit-mir100-connector=inorbit_mir_connector.mir100_start:start",
         ]
     },
-    python_requires=">=3.7",
+    python_requires=">=3.10",
     # Do not edit this string manually, always use bump-my-version. See
     # https://github.com/inorbit-ai/inorbit-robot-connectors/tree/main/mir_connector#version-bump
     version="0.2.2",

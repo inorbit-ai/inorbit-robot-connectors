@@ -7,12 +7,14 @@ import time
 import pytest
 import websocket
 import uuid
+import asyncio
 from unittest.mock import MagicMock, Mock, call
 from inorbit_edge.robot import RobotSession
 from inorbit_mir_connector.src.mir_api import MirApiV2
 from inorbit_mir_connector.src.connector import Mir100Connector
 from inorbit_mir_connector.config.mir100_model import MiR100Config
 from .. import get_module_version
+from inorbit_connector.connector import CommandResultCode
 
 
 @pytest.fixture
@@ -67,11 +69,15 @@ def callback_kwargs():
 
 def test_command_callback_unknown_command(connector, callback_kwargs):
     callback_kwargs["command_name"] = "unknown"
-    connector._inorbit_command_handler(**callback_kwargs)
+    asyncio.get_event_loop().run_until_complete(
+        connector._inorbit_command_handler(**callback_kwargs)
+    )
     assert not callback_kwargs["options"]["result_function"].called
     callback_kwargs["command_name"] = "customCommand"
     callback_kwargs["args"] = ["unknown_command", ["arg1", "arg2"]]
-    connector._inorbit_command_handler(**callback_kwargs)
+    asyncio.get_event_loop().run_until_complete(
+        connector._inorbit_command_handler(**callback_kwargs)
+    )
     assert not callback_kwargs["options"]["result_function"].called
 
 
@@ -85,38 +91,46 @@ def test_command_callback_missions(connector, callback_kwargs):
     assert connector.mission_tracking.mir_mission_tracking_enabled is False
     callback_kwargs["command_name"] = "customCommand"
     callback_kwargs["args"] = ["queue_mission", ["--mission_id", "1"]]
-    connector._inorbit_command_handler(**callback_kwargs)
+    asyncio.get_event_loop().run_until_complete(
+        connector._inorbit_command_handler(**callback_kwargs)
+    )
     assert connector.mission_tracking.mir_mission_tracking_enabled is False
     assert connector.mir_api.queue_mission.call_args == call("1")
-    callback_kwargs["options"]["result_function"].assert_called_with("0")
+    callback_kwargs["options"]["result_function"].assert_called_with(CommandResultCode.SUCCESS)
     reset_mock()
 
     # Queue mission
     connector._robot_session.missions_module.executor.wait_until_idle = Mock(return_value=True)
     callback_kwargs["command_name"] = "customCommand"
     callback_kwargs["args"] = ["queue_mission", ["--mission_id", "2"]]
-    connector._inorbit_command_handler(**callback_kwargs)
+    asyncio.get_event_loop().run_until_complete(
+        connector._inorbit_command_handler(**callback_kwargs)
+    )
     assert connector.mission_tracking.mir_mission_tracking_enabled is True
     assert connector.mir_api.queue_mission.call_args == call("2")
-    callback_kwargs["options"]["result_function"].assert_called_with("0")
+    callback_kwargs["options"]["result_function"].assert_called_with(CommandResultCode.SUCCESS)
     reset_mock()
 
     # Run mission now
     callback_kwargs["command_name"] = "customCommand"
     callback_kwargs["args"] = ["run_mission_now", ["--mission_id", "3"]]
-    connector._inorbit_command_handler(**callback_kwargs)
+    asyncio.get_event_loop().run_until_complete(
+        connector._inorbit_command_handler(**callback_kwargs)
+    )
     assert connector.mir_api.abort_all_missions.call_args == call()
     assert connector.mir_api.queue_mission.call_args == call("3")
-    callback_kwargs["options"]["result_function"].assert_called_with("0")
+    callback_kwargs["options"]["result_function"].assert_called_with(CommandResultCode.SUCCESS)
     reset_mock()
 
     # Abort all
     callback_kwargs["command_name"] = "customCommand"
     callback_kwargs["args"] = ["abort_missions", []]
-    connector._inorbit_command_handler(**callback_kwargs)
+    asyncio.get_event_loop().run_until_complete(
+        connector._inorbit_command_handler(**callback_kwargs)
+    )
     assert connector._robot_session.missions_module.executor.cancel_mission.call_args == call("*")
     assert connector.mir_api.abort_all_missions.call_args == call()
-    callback_kwargs["options"]["result_function"].assert_called_with("0")
+    callback_kwargs["options"]["result_function"].assert_called_with(CommandResultCode.SUCCESS)
     reset_mock()
 
 
@@ -183,23 +197,29 @@ def test_command_callback_state(connector, callback_kwargs):
     callback_kwargs["command_name"] = "customCommand"
     for id, state in MIR_STATE.items():
         callback_kwargs["args"] = ["set_state", ["--state_id", str(id)]]
-        connector._inorbit_command_handler(**callback_kwargs)
-        callback_kwargs["options"]["result_function"].assert_called_with("0")
+        asyncio.get_event_loop().run_until_complete(
+            connector._inorbit_command_handler(**callback_kwargs)
+        )
+        callback_kwargs["options"]["result_function"].assert_called_with(CommandResultCode.SUCCESS)
         connector.mir_api.set_state.assert_called_with(id)
         connector.mir_api.set_state.reset_mock()
         callback_kwargs["options"]["result_function"].reset_mock()
 
     callback_kwargs["args"] = ["set_state", ["--state_id", "123"]]
-    connector._inorbit_command_handler(**callback_kwargs)
+    asyncio.get_event_loop().run_until_complete(
+        connector._inorbit_command_handler(**callback_kwargs)
+    )
     callback_kwargs["options"]["result_function"].assert_called_with(
-        "1", execution_status_details="Invalid `state_id` '123'"
+        CommandResultCode.FAILURE, execution_status_details="Invalid `state_id` '123'"
     )
     assert not connector.mir_api.set_state.called
 
     callback_kwargs["args"] = ["set_state", ["--state_id", "abc"]]
-    connector._inorbit_command_handler(**callback_kwargs)
+    asyncio.get_event_loop().run_until_complete(
+        connector._inorbit_command_handler(**callback_kwargs)
+    )
     callback_kwargs["options"]["result_function"].assert_called_with(
-        "1", execution_status_details="Invalid `state_id` 'abc'"
+        CommandResultCode.FAILURE, execution_status_details="Invalid `state_id` 'abc'"
     )
     assert not connector.mir_api.set_state.called
 
@@ -208,7 +228,9 @@ def test_command_callback_nav_goal(connector, callback_kwargs):
     callback_kwargs["command_name"] = "navGoal"
     callback_kwargs["args"] = [{"x": "1", "y": "2", "theta": "3.14"}]
     connector.send_waypoint_over_missions = Mock()
-    connector._inorbit_command_handler(**callback_kwargs)
+    asyncio.get_event_loop().run_until_complete(
+        connector._inorbit_command_handler(**callback_kwargs)
+    )
     connector.send_waypoint_over_missions.assert_called_with({"x": "1", "y": "2", "theta": "3.14"})
 
 
@@ -257,7 +279,9 @@ def test_command_callback_inorbit_messages(connector, callback_kwargs):
     callback_kwargs["command_name"] = "message"
     for message, code in {"inorbit_pause": 4, "inorbit_resume": 3}.items():
         callback_kwargs["args"] = [message]
-        connector._inorbit_command_handler(**callback_kwargs)
+        asyncio.get_event_loop().run_until_complete(
+            connector._inorbit_command_handler(**callback_kwargs)
+        )
         assert connector.mir_api.set_state.call_args == call(code)
 
 
@@ -265,10 +289,12 @@ def test_command_callback_change_map(connector, callback_kwargs):
     callback_kwargs["command_name"] = "customCommand"
     # test invalid args
     callback_kwargs["args"] = ["localize", ["--map_id", "map_id"]]
-    connector._inorbit_command_handler(**callback_kwargs)
+    asyncio.get_event_loop().run_until_complete(
+        connector._inorbit_command_handler(**callback_kwargs)
+    )
     connector.mir_api.change_map.assert_not_called()
     callback_kwargs["options"]["result_function"].assert_called_with(
-        "1", execution_status_details="Invalid arguments"
+        CommandResultCode.FAILURE, execution_status_details="Invalid arguments"
     )
     # test valid args
     callback_kwargs["args"] = [
@@ -284,7 +310,9 @@ def test_command_callback_change_map(connector, callback_kwargs):
             "map_id",
         ],
     ]
-    connector._inorbit_command_handler(**callback_kwargs)
+    asyncio.get_event_loop().run_until_complete(
+        connector._inorbit_command_handler(**callback_kwargs)
+    )
     connector.mir_api.set_status.assert_called_with(
         {
             "position": {
@@ -301,7 +329,7 @@ def test_connector_loop(connector, monkeypatch):
     connector.mission_tracking.report_mission = Mock()
 
     def run_loop_once():
-        connector._execution_loop()
+        asyncio.get_event_loop().run_until_complete(connector._execution_loop())
 
     connector.mir_api.get_status.return_value = {
         "joystick_low_speed_mode_enabled": False,

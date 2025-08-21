@@ -7,7 +7,7 @@ import logging
 import signal
 import sys
 
-from inorbit_mir_connector.src.connector import Mir100Connector
+from inorbit_mir_connector.src.connector import MirConnector
 from inorbit_mir_connector.config.connector_model import load_and_validate
 
 logging.basicConfig(level=logging.INFO)
@@ -22,7 +22,6 @@ class CustomParser(argparse.ArgumentParser):
         sys.exit(2)
 
 
-# TODO(Elvio): Make sure start() has a unit test!
 def start():
     """This command takes as input file the MiR connector configuration and starts the connector."""
 
@@ -56,7 +55,7 @@ def start():
         )
         exit(1)
 
-    connector = Mir100Connector(robot_id, mir_config)
+    connector = MirConnector(robot_id, mir_config)
 
     LOGGER.info("Starting connector...")
     connector.start()

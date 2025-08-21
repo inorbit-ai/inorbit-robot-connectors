@@ -20,7 +20,7 @@ def example_configuration_dict():
 
 
 @pytest.fixture
-def example_mir100_configuration_dict(example_configuration_dict):
+def example_mir_configuration_dict(example_configuration_dict):
     return example_configuration_dict | {
         "connector_config": {
             "mir_host_address": "localhost",
@@ -37,36 +37,36 @@ def example_mir100_configuration_dict(example_configuration_dict):
     }
 
 
-def test_mir100_validator(example_mir100_configuration_dict, example_configuration_dict):
+def test_mir_validator(example_mir_configuration_dict, example_configuration_dict):
     """
-    Test that the mir100 config validator can be used
+    Test that the mir config validator can be used
     """
     # Should pass
-    ConnectorConfig(**example_mir100_configuration_dict)
+    ConnectorConfig(**example_mir_configuration_dict)
     # Should fail because of an invalid base field
     with pytest.raises(ValidationError):
-        ConnectorConfig(**example_mir100_configuration_dict | {"location_tz": "La Plata"})
-    # Should fail because of an invalid mir100 specific field
+        ConnectorConfig(**example_mir_configuration_dict | {"location_tz": "La Plata"})
+    # Should fail because of an invalid mir specific field
     with pytest.raises(ValidationError):
         ConnectorConfig(
             **example_configuration_dict | {"connector_config": {"missing_fields": True}}
         )
     # Should fail because of a version mismatch
     with pytest.raises(ValidationError):
-        ConnectorConfig(**example_mir100_configuration_dict | {"connector_type": "001rim"})
+        ConnectorConfig(**example_mir_configuration_dict | {"connector_type": "001rim"})
     with pytest.raises(ValidationError):
         ConnectorConfig(
-            **example_mir100_configuration_dict
+            **example_mir_configuration_dict
             | {
-                "connector_config": example_mir100_configuration_dict["connector_config"]
+                "connector_config": example_mir_configuration_dict["connector_config"]
                 | {"mir_api_version": "v1.0"}
             }
         )
     # Should allow leaving out the user_scripts field. The connector should set it to its default
-    broken_config = deepcopy(example_mir100_configuration_dict)
+    broken_config = deepcopy(example_mir_configuration_dict)
     broken_config["connector_config"]["mir_host_address"] = 123
     with pytest.raises(ValidationError):
         ConnectorConfig(**broken_config)
-    default_user_scripts = deepcopy(example_mir100_configuration_dict)
+    default_user_scripts = deepcopy(example_mir_configuration_dict)
     default_user_scripts.pop("user_scripts")
     ConnectorConfig(**default_user_scripts)

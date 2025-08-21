@@ -9,7 +9,7 @@ import websocket
 import uuid
 from unittest.mock import MagicMock, Mock, call, AsyncMock
 from inorbit_edge.robot import RobotSession
-from inorbit_mir_connector.src.connector import Mir100Connector
+from inorbit_mir_connector.src.connector import MirConnector
 from inorbit_mir_connector.config.connector_model import ConnectorConfig
 from .. import get_module_version
 from inorbit_connector.connector import CommandResultCode
@@ -21,7 +21,7 @@ def connector(monkeypatch, tmp_path):
     monkeypatch.setattr(websocket, "WebSocketApp", MagicMock())
     monkeypatch.setattr(RobotSession, "connect", MagicMock())
 
-    connector = Mir100Connector(
+    connector = MirConnector(
         "mir100-1",
         ConnectorConfig(
             inorbit_robot_key="robot_key",
@@ -162,7 +162,7 @@ def test_enable_ws_flag(monkeypatch, tmp_path):
         },
         user_scripts_dir=tmp_path,
     )
-    connector = Mir100Connector("mir100-1", config)
+    connector = MirConnector("mir100-1", config)
     assert connector.ws_enabled is False
     assert not hasattr(connector, "mir_ws")
 
@@ -186,7 +186,7 @@ def test_enable_ws_flag(monkeypatch, tmp_path):
         },
         user_scripts_dir=tmp_path,
     )
-    connector = Mir100Connector("mir100-1", config)
+    connector = MirConnector("mir100-1", config)
     assert connector.ws_enabled is True
     assert hasattr(connector, "mir_ws")
 

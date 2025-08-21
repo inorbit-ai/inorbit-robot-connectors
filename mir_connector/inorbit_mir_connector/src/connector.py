@@ -37,20 +37,19 @@ MIR_MOVE_DISTANCE_THRESHOLD = 0.1
 MISSIONS_GARBAGE_COLLECTION_INTERVAL_SECS = 12 * 60 * 60
 
 
-# TODO(b-Tomas): Rename all MiR100* to MiR* to make more generic
-class Mir100Connector(Connector):
-    """MiR100 connector.
+class MirConnector(Connector):
+    """MiR connector.
 
-    This class handles by-directional interaction between a MiR100 robot and
+    This class handles by-directional interaction between a MiR robot and
     the InOrbit platform using mainly the InOrbit python EdgeSDK.
 
     Arguments:
-        robot_id (str): The ID of the MiR100 robot.
-        config (MiR100Config): The configuration object for the MiR100 connector.
+        robot_id (str): The ID of the MiR robot.
+        config (ConnectorConfig): The configuration object for the MiR connector.
     """
 
     def __init__(self, robot_id: str, config: ConnectorConfig) -> None:
-        """Initialize the MiR100 connector."""
+        """Initialize the MiR connector."""
         super().__init__(
             robot_id=robot_id,
             config=config,

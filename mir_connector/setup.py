@@ -69,7 +69,7 @@ setup(
     keywords=["connector", "edge-sdk", "inorbit", "robops", "mir"],
     entry_points={
         "console_scripts": [
-            "inorbit-mir100-connector=inorbit_mir_connector.mir100_start:start",
+            "inorbit_mir_connector=inorbit_mir_connector.inorbit_mir_connector:start",
         ]
     },
     python_requires=">=3.10",

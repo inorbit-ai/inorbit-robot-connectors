@@ -67,13 +67,13 @@ Configure the Connector:
 ## Deployment
 
 Once all dependencies are installed and the configuration is complete, the Connector can be run as a bash command.
-With the Python virtual environment activated run `inorbit-mir100-connector -c <path to config.yaml> -id <robot_id>`:
+With the Python virtual environment activated run `inorbit_mir_connector -c <path to config.yaml> -id <robot_id>`:
 
 ```sh
 # Activate the virtual environment and run the Connector
 # Environment variables from config/.env will be automatically loaded if present prefixed with INORBIT_MIR_ (i.e. INORBIT_MIR_MIR_HOST_ADDRESS)
 # Other variables such as INORBIT_API_KEY need manual loading if not already set in the environment
-source config/.env && inorbit-mir100-connector -c config/my_fleet.example.yaml -id ${MY_INORBIT_ID}
+source config/.env && inorbit_mir_connector -c config/my_fleet.example.yaml -id ${MY_INORBIT_ID}
 ```
 
 ### Systemd

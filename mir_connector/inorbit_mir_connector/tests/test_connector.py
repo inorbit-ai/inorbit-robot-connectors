@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, Mock, call
 from inorbit_edge.robot import RobotSession
 from inorbit_mir_connector.src.mir_api import MirApiV2
 from inorbit_mir_connector.src.connector import Mir100Connector
-from inorbit_mir_connector.config.mir100_model import ConnectorConfig
+from inorbit_mir_connector.config.connector_model import ConnectorConfig
 from .. import get_module_version
 from inorbit_connector.connector import CommandResultCode
 
@@ -30,7 +30,7 @@ def connector(monkeypatch, tmp_path):
         ConnectorConfig(
             inorbit_robot_key="robot_key",
             location_tz="UTC",
-            log_level="INFO",
+            logging={"log_level": "INFO"},
             connector_type="MiR100",
             connector_version="0.1.0",
             connector_config={

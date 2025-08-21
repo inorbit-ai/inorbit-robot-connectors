@@ -19,7 +19,7 @@ from inorbit_mir_connector import get_module_version
 from .mir_api import MirApiV2
 from .mir_api import MirWebSocketV2
 from .mission import MirInorbitMissionTracking
-from ..config.mir100_model import ConnectorConfig
+from ..config.connector_model import ConnectorConfig
 from .robot.robot import Robot
 
 
@@ -64,13 +64,6 @@ class Mir100Connector(Connector):
         self.tmp_missions_group_id = None
         self.tmp_missions_group_id_lock = Lock()
 
-        # Resolve log level from config supporting deprecated 'log_level' and new 'logging.log_level'
-        effective_log_level = getattr(
-            getattr(config, "logging", None), "log_level", None
-        ) or getattr(config, "log_level", None)
-        if hasattr(effective_log_level, "value"):
-            effective_log_level = effective_log_level.value
-
         # Configure the connection to the robot
         self.mir_api = MirApiV2(
             mir_host_address=config.connector_config.mir_host_address,
@@ -78,7 +71,6 @@ class Mir100Connector(Connector):
             mir_password=config.connector_config.mir_password,
             mir_host_port=config.connector_config.mir_host_port,
             mir_use_ssl=config.connector_config.mir_use_ssl,
-            loglevel=effective_log_level,
         )
 
         # Async robot wrapper managing polling
@@ -94,7 +86,6 @@ class Mir100Connector(Connector):
                 mir_host_address=config.connector_config.mir_host_address,
                 mir_ws_port=config.connector_config.mir_ws_port,
                 mir_use_ssl=config.connector_config.mir_use_ssl,
-                loglevel=effective_log_level,
             )
 
         # Configure the timezone
@@ -111,7 +102,6 @@ class Mir100Connector(Connector):
             mir_api=self.mir_api,
             inorbit_sess=self._robot_session,
             robot_tz_info=self.robot_tz_info,
-            loglevel=effective_log_level,
             enable_io_mission_tracking=config.connector_config.enable_mission_tracking,
         )
 

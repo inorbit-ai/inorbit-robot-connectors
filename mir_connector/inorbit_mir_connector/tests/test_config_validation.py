@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 import pytest
-from inorbit_mir_connector.config.mir100_model import ConnectorConfig
+from inorbit_mir_connector.config.connector_model import ConnectorConfig
 from pydantic import ValidationError
 from copy import deepcopy
 
@@ -14,7 +14,7 @@ def example_configuration_dict():
         "inorbit_robot_key": "1234567890",
         "location_tz": "America/Los_Angeles",
         "connector_type": "MiR100",
-        "log_level": "INFO",
+        "logging": {"log_level": "INFO"},
         "user_scripts": {"path": "/path/to/scripts", "env_vars": {"name": "value"}},
     }
 

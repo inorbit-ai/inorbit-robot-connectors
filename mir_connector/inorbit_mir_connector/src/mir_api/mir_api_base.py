@@ -9,9 +9,9 @@ import logging
 
 
 class MirApiBaseClass(ABC):
-    def __init__(self, loglevel):
+
+    def __init__(self):
         self.logger = logging.getLogger(name=self.__class__.__name__)
-        self.logger.setLevel(loglevel)
 
     def _handle_status(self, res, request_args):
         """Log and raise an exception if the request failed."""

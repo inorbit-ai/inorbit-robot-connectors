@@ -25,7 +25,6 @@ def mir_api(requests_mock, monkeypatch):
         mir_use_ssl=False,
         mir_username="user",
         mir_password="pass",
-        loglevel="INFO",
     )
     return api
 
@@ -39,7 +38,6 @@ def mir_websocket(monkeypatch):
         mir_host_address=mir_host_address,
         mir_ws_port=mir_ws_port,
         mir_use_ssl=False,
-        loglevel="INFO",
     )
     return ws
 

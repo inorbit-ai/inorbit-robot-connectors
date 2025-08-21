@@ -12,16 +12,15 @@ MISSION_STATE_ABORT = "Abort"
 
 
 class MirInorbitMissionTracking:
+
     def __init__(
         self,
         mir_api,
         inorbit_sess,
         robot_tz_info,
-        loglevel="INFO",
         enable_io_mission_tracking=True,
     ):
         self.logger = logging.getLogger(name=self.__class__.__name__)
-        self.logger.setLevel(loglevel)
         # Use for mission tracking
         # If set to False, mission tracking data will not be published to InOrbit
         self.io_mission_tracking_enabled = enable_io_mission_tracking

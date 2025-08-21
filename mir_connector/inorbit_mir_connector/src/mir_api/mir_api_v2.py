@@ -25,6 +25,7 @@ STATUS_ENDPOINT_V2 = "status"
 
 
 class MirApiV2(MirApiBaseClass):
+
     def __init__(
         self,
         mir_host_address,
@@ -32,9 +33,8 @@ class MirApiV2(MirApiBaseClass):
         mir_password,
         mir_host_port=80,
         mir_use_ssl=False,
-        loglevel="INFO",
     ):
-        super().__init__(loglevel=loglevel)
+        super().__init__()
         self.mir_base_url = (
             f"{'https' if mir_use_ssl else 'http'}://{mir_host_address}:{mir_host_port}"
         )
@@ -283,9 +283,9 @@ class MirApiV2(MirApiBaseClass):
 
 
 class MirWebSocketV2:
-    def __init__(self, mir_host_address, mir_ws_port=9090, mir_use_ssl=False, loglevel="INFO"):
+
+    def __init__(self, mir_host_address, mir_ws_port=9090, mir_use_ssl=False):
         self.logger = logging.getLogger(name=self.__class__.__name__)
-        self.logger.setLevel(loglevel)
 
         self.mir_ws_url = f"{'wss' if mir_use_ssl else 'ws'}://{mir_host_address}:{mir_ws_port}/"
         # Store the last diagnostics_agg message (raw)

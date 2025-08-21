@@ -8,7 +8,7 @@ import signal
 import sys
 
 from inorbit_mir_connector.src.connector import Mir100Connector
-from inorbit_mir_connector.config.mir100_model import load_and_validate
+from inorbit_mir_connector.config.connector_model import load_and_validate
 
 logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ class CustomParser(argparse.ArgumentParser):
 def start():
     """This command takes as input file the MiR connector configuration and starts the connector."""
 
-    parser = CustomParser(prog="inorbit-mir100-connector")
+    parser = CustomParser(prog="inorbit_mir_connector")
     parser.add_argument(
         "-c",
         "--config",

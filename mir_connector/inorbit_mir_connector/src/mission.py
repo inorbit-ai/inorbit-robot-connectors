@@ -37,6 +37,21 @@ class MirInorbitMissionTracking:
         self.inorbit_sess = inorbit_sess
         self.robot_tz_info = robot_tz_info
 
+    def _safe_localize_timestamp(self, timestamp_str: str) -> float:
+        """Safely localize a timestamp string, handling both naive and timezone-aware datetimes."""
+        try:
+            dt = datetime.fromisoformat(timestamp_str)
+            # If datetime already has timezone info, just convert to timestamp
+            if dt.tzinfo is not None:
+                return dt.timestamp()
+            # If datetime is naive, localize it to robot timezone
+            else:
+                return self.robot_tz_info.localize(dt).timestamp()
+        except Exception as e:
+            self.logger.warning(f"Failed to parse timestamp '{timestamp_str}': {e}")
+            # Return current time as fallback
+            return datetime.now().timestamp()
+
     async def get_current_mission(self):
         """Return the current mission, it's either executing or just ended"""
         mission = None
@@ -77,10 +92,7 @@ class MirInorbitMissionTracking:
                 "inProgress": mission["state"] == MISSION_STATE_EXECUTING,
                 "state": mission["state"],
                 "label": mission["definition"]["name"],
-                "startTs": self.robot_tz_info.localize(
-                    datetime.fromisoformat(mission["started"])
-                ).timestamp()
-                * 1000,
+                "startTs": self._safe_localize_timestamp(mission["started"]) * 1000,
                 "data": {
                     "Total Distance (m)": metrics.get(
                         "mir_robot_distance_moved_meters_total", "N/A"
@@ -96,10 +108,7 @@ class MirInorbitMissionTracking:
             }
             if mission.get("finished") is not None:
                 mission_values["endTs"] = (
-                    self.robot_tz_info.localize(
-                        datetime.fromisoformat(mission["finished"])
-                    ).timestamp()
-                    * 1000
+                    self._safe_localize_timestamp(mission["finished"]) * 1000
                 )
                 mission_values["completedPercent"] = 1
                 mission_values["status"] = (

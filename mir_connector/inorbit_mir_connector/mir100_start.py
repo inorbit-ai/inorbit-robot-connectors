@@ -7,22 +7,8 @@ import logging
 import signal
 import sys
 
-from dotenv import find_dotenv
-from dotenv import load_dotenv
-
-# Attempts to load environment variables from config/.env file relative to the current working
-# directory. If the file is not found, a message will be printed out and the program will
-# continue. If not using this file, the evironment variables can be set manually anyway
-# This must be done before importing from inorbit_connector, which will pick up the environment
-# TODO(b-Tomas): Fix inorbit_connector to not use environment variables at import time
-# TODO(b-Tomas): Remove `noqa: E402` after fixing the above
-load_dotenv(find_dotenv("config/.env", usecwd=True), verbose=True, override=True)
-
-from inorbit_connector.utils import read_yaml  # noqa: E402
-from inorbit_mir_connector.src.connector import Mir100Connector  # noqa: E402
-from inorbit_mir_connector.config.mir100_model import load_and_validate  # noqa: E402
-from inorbit_mir_connector.config.mir100_model import default_mir100_config  # noqa: E402
-from inorbit_mir_connector.config.utils import write_yaml  # noqa: E402
+from inorbit_mir_connector.src.connector import Mir100Connector
+from inorbit_mir_connector.config.mir100_model import load_and_validate
 
 logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger(__name__)
@@ -66,13 +52,8 @@ def start():
         exit(1)
     except IndexError:
         LOGGER.info(
-            f"Missing configuration section for robot_id '{robot_id}'. Creating "
-            "a skeleton configuration for it."
+            f"Missing configuration section for robot_id '{robot_id}' within {config_filename}."
         )
-        config_dict = read_yaml(config_filename)
-        config_dict[robot_id] = default_mir100_config
-        write_yaml(config_filename, config_dict)
-        LOGGER.info("Configuration file updated. Please fill in the missing values.")
         exit(1)
 
     mir_connector = Mir100Connector(robot_id, mir_config)

@@ -2,36 +2,14 @@
 #
 # SPDX-License-Identifier: MIT
 
-from pydantic import BaseModel, field_validator
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from inorbit_connector.models import InorbitConnectorConfig
 from inorbit_connector.utils import read_yaml
 
-# TODO: leverage ruamel.yaml capabilities to add comments to
-# the yaml and improve how the default configuration section
-# that gets added automatically looks.
-default_mir100_config = {
-    "inorbit_robot_key": "",
-    "account_id": "",
-    "location_tz": "America/Los_Angeles",
-    "log_level": "INFO",
-    "cameras": [],
-    "connector_type": "MiR100",
-    "user_scripts_dir": "path/to/user/scripts",
-    "env_vars": {"ENV_VAR_NAME": "env_var_value"},
-    "maps": {},
-    "connector_config": {
-        "mir_host_address": "localhost",
-        "mir_host_port": 80,
-        "mir_ws_port": 9090,
-        "mir_use_ssl": False,
-        "mir_enable_ws": True,
-        "mir_username": "",
-        "mir_password": "",
-        "mir_firmware_version": "v2",
-        "enable_mission_tracking": True,
-        "mir_api_version": "v2.0",
-    },
-}
+# Default environment file, relative to the directory the connector is executed from. If using a
+# different .env file, make sure to source it before running the connector.
+DEFAULT_ENV_FILE = "config/.env"
 
 # Expected values
 CONNECTOR_TYPES = ["MiR100", "MiR250"]
@@ -39,11 +17,21 @@ FIRMWARE_VERSIONS = ["v2", "v3"]
 MIR_API_VERSION = "v2.0"
 
 
-# TODO(b-Tomas): Rename all MiR100* to MiR* to make more generic
-class MiR100ConfigModel(BaseModel):
+class MirConnectorConfig(BaseSettings):
     """
-    Specific configuration for MiR100 connector.
+    Specific configuration for MiR connector.
+    If any field is missing, the initializer will attempt to replace it by reading from the
+    environment. Every field can be ignored if set in the env with the prefix INORBIT_MIR_
+    (e.g. mir_host_address -> INORBIT_MIR_MIR_HOST_ADDRESS)
     """
+
+    model_config = SettingsConfigDict(
+        env_prefix="INORBIT_MIR_",
+        env_ignore_empty=True,
+        case_sensitive=False,
+        env_file=DEFAULT_ENV_FILE,
+        extra="allow",
+    )
 
     mir_host_address: str
     mir_host_port: int
@@ -74,12 +62,12 @@ class MiR100ConfigModel(BaseModel):
         return mir_firmware_version
 
 
-class MiR100Config(InorbitConnectorConfig):
+class ConnectorConfig(InorbitConnectorConfig):
     """
-    MiR100 connector configuration schema.
+    MiR connector configuration schema.
     """
 
-    connector_config: MiR100ConfigModel
+    connector_config: MirConnectorConfig
 
     @field_validator("connector_type")
     def connector_type_validation(cls, connector_type):
@@ -90,11 +78,23 @@ class MiR100Config(InorbitConnectorConfig):
         return connector_type
 
 
-def load_and_validate(config_filename: str, robot_id: str) -> MiR100Config:
-    """
-    Loads the configuration file and returns a valid and complete configuration object.
-    raises an exception if the arguments or configuration are invalid
+def load_and_validate(config_filename: str, robot_id: str) -> ConnectorConfig:
+    """Loads and validates the configuration file.
+
+    Raises an exception if the arguments or configuration are invalid.
+
+    Args:
+        config_filename (str): The YAML file to load the configuration from.
+        robot_id (str): The InOrbit robot ID for robot to load the configuration for.
+
+    Returns:
+        ConnectorConfig: The configuration object with the loaded values.
+
+    Raises:
+        FileNotFoundError: If the configuration file does not exist.
+        IndexError: If the configuration file does not contain the robot_id.
+        yaml.YAMLError: If the configuration file is not valid YAML.
     """
 
     config = read_yaml(config_filename, robot_id)
-    return MiR100Config(**config)
+    return ConnectorConfig(**config)

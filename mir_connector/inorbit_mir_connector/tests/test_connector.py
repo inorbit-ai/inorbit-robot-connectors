@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, Mock, call
 from inorbit_edge.robot import RobotSession
 from inorbit_mir_connector.src.mir_api import MirApiV2
 from inorbit_mir_connector.src.connector import Mir100Connector
-from inorbit_mir_connector.config.mir100_model import MiR100Config
+from inorbit_mir_connector.config.mir100_model import ConnectorConfig
 from .. import get_module_version
 from inorbit_connector.connector import CommandResultCode
 
@@ -27,7 +27,7 @@ def connector(monkeypatch, tmp_path):
 
     connector = Mir100Connector(
         "mir100-1",
-        MiR100Config(
+        ConnectorConfig(
             inorbit_robot_key="robot_key",
             location_tz="UTC",
             log_level="INFO",
@@ -142,7 +142,7 @@ def test_enable_ws_flag(monkeypatch, tmp_path):
     monkeypatch.setattr(RobotSession, "connect", MagicMock())
     monkeypatch.setattr(time, "sleep", Mock())
 
-    config = MiR100Config(
+    config = ConnectorConfig(
         inorbit_robot_key="robot_key",
         location_tz="UTC",
         log_level="INFO",
@@ -166,7 +166,7 @@ def test_enable_ws_flag(monkeypatch, tmp_path):
     assert connector.ws_enabled is False
     assert not hasattr(connector, "mir_ws")
 
-    config = MiR100Config(
+    config = ConnectorConfig(
         inorbit_robot_key="robot_key",
         location_tz="UTC",
         log_level="INFO",

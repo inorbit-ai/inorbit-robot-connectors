@@ -19,7 +19,7 @@ from inorbit_mir_connector import get_module_version
 from .mir_api import MirApiV2
 from .mir_api import MirWebSocketV2
 from .mission import MirInorbitMissionTracking
-from ..config.mir100_model import MiR100Config
+from ..config.mir100_model import ConnectorConfig
 from .robot.robot import Robot
 
 
@@ -50,7 +50,7 @@ class Mir100Connector(Connector):
         config (MiR100Config): The configuration object for the MiR100 connector.
     """
 
-    def __init__(self, robot_id: str, config: MiR100Config) -> None:
+    def __init__(self, robot_id: str, config: ConnectorConfig) -> None:
         """Initialize the MiR100 connector."""
         super().__init__(
             robot_id=robot_id,

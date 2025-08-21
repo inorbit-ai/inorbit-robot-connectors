@@ -17,10 +17,10 @@ requirements = [
     "pyyaml>=6.0,<6.1",
     "ruamel.yaml>=0.18,<0.19",
     "pydantic>=2.6,<3.0",
+    "pydantic-settings>=2.6,<3.0",
     "psutil==5.9",
     "websocket-client==1.7.0",
     "tenacity>=9.1.2",
-    "python-dotenv==1",
 ]
 
 test_requirements = [

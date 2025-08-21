@@ -60,6 +60,7 @@ Configure the Connector:
 
 -   Copy `config/example.env` to `config/.env` and set the environment variables following the instructions in the same file.
     You can get the `INORBIT_KEY` for your account from InOrbit's [Developer Console](https://developer.inorbit.ai/docs#configuring-environment-variables).
+    Environment variables use the prefix `INORBIT_MIR_` for MiR-specific settings (e.g., `INORBIT_MIR_MIR_HOST_ADDRESS`).
 
 -   Also apply the Configuration as Code manifests under the `cac_examples` folder, through the [InOrbit CLI](https://developer.inorbit.ai/docs#using-the-inorbit-cli).
 
@@ -69,9 +70,10 @@ Once all dependencies are installed and the configuration is complete, the Conne
 With the Python virtual environment activated run `inorbit-mir100-connector -c <path to config.yaml> -id <robot_id>`:
 
 ```sh
-# Add the environment variables, activate the virtual environment and run the Connector
-export $(grep -v '^#' config/.env | xargs) && \
-inorbit-mir100-connector -c ../my_fleet.example.yaml -id ${MY_INORBIT_ID}
+# Activate the virtual environment and run the Connector
+# Environment variables from config/.env will be automatically loaded if present prefixed with INORBIT_MIR_ (i.e. INORBIT_MIR_MIR_HOST_ADDRESS)
+# Other variables such as INORBIT_API_KEY need manual loading if not already set in the environment
+source config/.env && inorbit-mir100-connector -c config/my_fleet.example.yaml -id ${MY_INORBIT_ID}
 ```
 
 ### Systemd

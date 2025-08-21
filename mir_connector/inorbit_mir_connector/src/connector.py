@@ -106,6 +106,9 @@ class MirConnector(Connector):
         # Background tasks
         self._bg_tasks: list[asyncio.Task] = []
 
+        # Initialize status as None to prevent publishing before the robot is connected
+        self.status = None
+
     async def _inorbit_command_handler(self, command_name, args, options):
         """Callback method for command messages.
 
@@ -249,65 +252,58 @@ class MirConnector(Connector):
     async def _execution_loop(self):
         """The main execution loop for the connector"""
 
-        try:
-            # Read latest robot data from Robot wrapper
-            status = self.robot.status
-            metrics = self.robot.metrics
-            # Fallback to direct API calls if robot hasn't populated data yet
-            if not status:
-                status = await self.mir_api.get_status()
-            if not metrics:
-                metrics = await self.mir_api.get_metrics()
-            self.status = status
-            self.metrics = metrics
-        except Exception as ex:
-            self._logger.error(f"Failed to get robot API data: {ex}")
-            self.publish_api_error()
+        # Read latest robot data from Robot wrapper
+        status = self.robot.status
+        metrics = self.robot.metrics
+        if not status and self.status is None:
             return
+        self.status = status
+        self.metrics = metrics
+
         # publish pose
         pose_data = {
-            "x": self.status["position"]["x"],
-            "y": self.status["position"]["y"],
-            "yaw": math.radians(self.status["position"]["orientation"]),
-            "frame_id": self.status["map_id"],
+            "x": self.status.get("position", {}).get("x", 0),
+            "y": self.status.get("position", {}).get("y", 0),
+            "yaw": math.radians(self.status.get("position", {}).get("orientation", 0)),
+            "frame_id": self.status.get("map_id", ""),
         }
         self._logger.debug(f"Publishing pose: {pose_data}")
         self.publish_pose(**pose_data)
 
         # publish odometry
         odometry = {
-            "linear_speed": self.status["velocity"]["linear"],
-            "angular_speed": math.radians(self.status["velocity"]["angular"]),
+            "linear_speed": self.status.get("velocity", {}).get("linear", 0),
+            "angular_speed": math.radians(self.status.get("velocity", {}).get("angular", 0)),
         }
         self._logger.debug(f"Publishing odometry: {odometry}")
         self._robot_session.publish_odometry(**odometry)
+
+        # publish key values
         if self._robot_session.missions_module.executor.wait_until_idle(0):
-            mode_text = self.status["mode_text"]
-            state_text = self.status["state_text"]
-            mission_text = self.status["mission_text"]
+            mode_text = self.status.get("mode_text")
+            state_text = self.status.get("state_text")
+            mission_text = self.status.get("mission_text")
         else:
             mode_text = "Mission"
             state_text = "Executing"
             mission_text = "Mission"
-        # publish key values
+
         # TODO(Elvio): Move key values to a "values.py" and represent them with constants
         key_values = {
             "connector_version": get_module_version(),
-            "battery percent": self.status["battery_percentage"],
-            "battery_time_remaining": self.status["battery_time_remaining"],
-            "uptime": self.status["uptime"],
+            "battery percent": self.status.get("battery_percentage"),
+            "battery_time_remaining": self.status.get("battery_time_remaining"),
+            "uptime": self.status.get("uptime"),
             "localization_score": (self.metrics or {}).get("mir_robot_localization_score"),
-            "robot_name": self.status["robot_name"],
-            "errors": self.status["errors"],
-            "distance_to_next_target": self.status["distance_to_next_target"],
+            "robot_name": self.status.get("robot_name"),
+            "errors": self.status.get("errors"),
+            "distance_to_next_target": self.status.get("distance_to_next_target"),
             "mission_text": mission_text,
             "state_text": state_text,
             "mode_text": mode_text,
-            "robot_model": self.status["robot_model"],
+            "robot_model": self.status.get("robot_model"),
             "waiting_for": self.mission_tracking.waiting_for_text,
-            # See self.publish_api_error()
-            # This clears the error without publishing a separate message
-            "api_connected": True,
+            "api_connected": self.robot.api_connected,
         }
         self._logger.debug(f"Publishing key values: {key_values}")
         self._robot_session.publish_key_values(key_values)

@@ -11,7 +11,7 @@ class MirApiBaseClass(ABC):
 
     def __init__(
         self,
-        base_url: str | None = None,
+        base_url: str,
         auth: tuple[str, str] | None = None,
         default_headers: dict | None = None,
         timeout: int = 10,
@@ -19,20 +19,17 @@ class MirApiBaseClass(ABC):
         self.logger = logging.getLogger(name=self.__class__.__name__)
         self._base_url = base_url
         self._timeout = timeout
-        self._async_client: httpx.AsyncClient | None = None
-        if base_url is not None:
-            self._async_client = httpx.AsyncClient(
-                base_url=base_url,
-                timeout=timeout,
-                auth=auth,
-                headers=default_headers or {},
-            )
+        self._async_client = httpx.AsyncClient(
+            base_url=base_url,
+            timeout=timeout,
+            auth=auth,
+            headers=default_headers or {},
+        )
         # If the log level is INFO, reduce the verbosity of httpx
         if self.logger.getEffectiveLevel() == logging.INFO:
             logging.getLogger("httpx").setLevel(logging.WARNING)
 
     async def _get(self, endpoint: str, **kwargs) -> httpx.Response:
-        assert self._async_client is not None, "Async client not initialized"
         res = await self._async_client.get(endpoint, **kwargs)
         try:
             res.raise_for_status()
@@ -45,7 +42,6 @@ class MirApiBaseClass(ABC):
         return res
 
     async def _post(self, endpoint: str, **kwargs) -> httpx.Response:
-        assert self._async_client is not None, "Async client not initialized"
         res = await self._async_client.post(endpoint, **kwargs)
         try:
             res.raise_for_status()
@@ -58,7 +54,6 @@ class MirApiBaseClass(ABC):
         return res
 
     async def _put(self, endpoint: str, **kwargs) -> httpx.Response:
-        assert self._async_client is not None, "Async client not initialized"
         res = await self._async_client.put(endpoint, **kwargs)
         try:
             res.raise_for_status()
@@ -71,7 +66,6 @@ class MirApiBaseClass(ABC):
         return res
 
     async def _delete(self, endpoint: str, **kwargs) -> httpx.Response:
-        assert self._async_client is not None, "Async client not initialized"
         res = await self._async_client.delete(endpoint, **kwargs)
         try:
             res.raise_for_status()
@@ -84,11 +78,7 @@ class MirApiBaseClass(ABC):
         return res
 
     async def close(self):
-        if self._async_client is not None:
-            try:
-                await self._async_client.aclose()
-            except Exception:
-                pass
+        await self._async_client.aclose()
 
     @abstractmethod
     async def send_waypoint(self, pose):

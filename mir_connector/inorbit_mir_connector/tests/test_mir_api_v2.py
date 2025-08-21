@@ -3,10 +3,8 @@
 # SPDX-License-Identifier: MIT
 
 import pytest
-import websocket
 import json
 from inorbit_mir_connector.src.mir_api import MirApiV2
-from inorbit_mir_connector.src.mir_api import MirWebSocketV2
 from deepdiff import DeepDiff
 import httpx
 from unittest.mock import MagicMock
@@ -17,7 +15,6 @@ import math
 def mir_api(monkeypatch):
     mir_host_address = "example.com"
     mir_host_port = 8080
-    monkeypatch.setattr(websocket, "WebSocketApp", MagicMock())
     api = MirApiV2(
         mir_host_address=mir_host_address,
         mir_host_port=mir_host_port,
@@ -26,19 +23,6 @@ def mir_api(monkeypatch):
         mir_password="pass",
     )
     return api
-
-
-@pytest.fixture
-def mir_websocket(monkeypatch):
-    mir_host_address = "example.com"
-    mir_ws_port = 9999
-    monkeypatch.setattr(websocket, "WebSocketApp", MagicMock())
-    ws = MirWebSocketV2(
-        mir_host_address=mir_host_address,
-        mir_ws_port=mir_ws_port,
-        mir_use_ssl=False,
-    )
-    return ws
 
 
 @pytest.mark.asyncio
@@ -139,45 +123,3 @@ mir_robot_wifi_access_point_frequency_hertz 0.0
     metrics = await mir_api.get_metrics()
 
     assert DeepDiff(expected_output, metrics) == {}
-
-
-def test_websocket_connection(mir_websocket):
-    mir_websocket.connect()
-    # Check WebSocketApp run_forever loop is called
-    mir_websocket.ws.run_forever.assert_called_once()
-
-    # Check subscriptionn to diagnostics_agg
-    mir_websocket.ws.send.assert_called_once_with(
-        (
-            '{"op": "subscribe", "id": "subscribe:/diagnostics_agg:1", '
-            '"type": "diagnostic_msgs/DiagnosticArray", "topic": "/diagnostics_agg", '
-            '"compression": "none", "throttle_rate": 0, "queue_length": 0}'
-        )
-    )
-
-    # Check disconnect closes ws
-    mir_websocket.disconnect()
-    mir_websocket.ws.close.assert_called_once()
-
-
-def test_websocket_diagnostics_agg_msg(mir_websocket, sample_mir_diagnostics_agg_data):
-    # Test non-json messages are ignored
-    mir_websocket.on_message(mir_websocket.ws, "fail json parse")
-    assert not mir_websocket.last_diagnostics_agg_msg
-
-    # Process expected message
-    mir_websocket.on_message(mir_websocket.ws, json.dumps(sample_mir_diagnostics_agg_data))
-    assert DeepDiff(sample_mir_diagnostics_agg_data, mir_websocket.last_diagnostics_agg_msg) == {}
-
-    # Make sure invalid message won't override last_diagnostics_agg_msg
-    mir_websocket.on_message(mir_websocket.ws, "fail json parse")
-    assert DeepDiff(sample_mir_diagnostics_agg_data, mir_websocket.last_diagnostics_agg_msg) == {}
-
-    # Test methods for getting relevant values
-    cpu_usage = float(mir_websocket.get_cpu_usage())
-    assert math.isclose(cpu_usage, 0.492, abs_tol=0.0001)
-
-    # Process message with missing data
-    mir_websocket.on_message(mir_websocket.ws, json.dumps({"topic": "/diagnostics_agg"}))
-    assert DeepDiff({"topic": "/diagnostics_agg"}, mir_websocket.last_diagnostics_agg_msg) == {}
-    assert mir_websocket.get_cpu_usage() is None

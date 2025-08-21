@@ -6,10 +6,7 @@ import hashlib
 from prometheus_client import parser
 import json
 import math
-import websocket
 import logging
-import threading
-from time import sleep
 import httpx
 from .mir_api_base import MirApiBaseClass
 from inorbit_edge.missions import MISSION_STATE_EXECUTING
@@ -34,6 +31,7 @@ class MirApiV2(MirApiBaseClass):
         mir_password,
         mir_host_port=80,
         mir_use_ssl=False,
+        verify_ssl=True,
     ):
         self.logger = logging.getLogger(name=self.__class__.__name__)
         self.mir_base_url = (
@@ -42,6 +40,7 @@ class MirApiV2(MirApiBaseClass):
         self.mir_api_base_url = f"{self.mir_base_url}{API_V2_CONTEXT_URL}"
         self.mir_username = mir_username
         self.mir_password = mir_password
+        self._verify_ssl = verify_ssl  # Store for use in sync methods
         m_async = hashlib.sha256()
         m_async.update(self.mir_password.encode())
         self._auth = (self.mir_username, m_async.hexdigest())
@@ -50,6 +49,7 @@ class MirApiV2(MirApiBaseClass):
             auth=self._auth,
             default_headers={"Accept-Language": "en_US"},
             timeout=10,
+            verify_ssl=verify_ssl,
         )
 
     async def get_metrics(self):
@@ -256,8 +256,12 @@ class MirApiV2(MirApiBaseClass):
         # Timeout for the second part of the request, where the actual image is downloaded
         image_timeout = max(self._timeout, 30)
 
-        # Download the image
-        with httpx.Client(base_url=self._base_url, timeout=image_timeout) as client:
+        # Download the image - use the same SSL verification settings as the async client
+        with httpx.Client(
+            base_url=self._base_url, 
+            timeout=image_timeout, 
+            verify=self._verify_ssl,  # Use the same SSL verification setting
+        ) as client:
             try:
                 response = client.get(
                     f"maps/{map_id}", headers={"Accept-Language": "en_US"}, auth=self._auth
@@ -268,139 +272,3 @@ class MirApiV2(MirApiBaseClass):
                 raise e
 
             return response.json()
-
-
-class MirWebSocketV2:
-
-    def __init__(self, mir_host_address, mir_ws_port=9090, mir_use_ssl=False):
-        self.logger = logging.getLogger(name=self.__class__.__name__)
-
-        self.mir_ws_url = f"{'wss' if mir_use_ssl else 'ws'}://{mir_host_address}:{mir_ws_port}/"
-        # Store the last diagnostics_agg message (raw)
-        self.last_diagnostics_agg_msg = {}
-
-        # Create WebSocket object
-        self.ws = websocket.WebSocketApp(
-            url=self.mir_ws_url, on_message=self.on_message, on_close=self.on_close
-        )
-
-    def on_close(self, ws, close_status_code, close_msg):
-        self.logger.info("Disconnected from server")
-
-    def on_message(self, ws, message):
-        try:
-            json_msg = json.loads(message)
-        except ValueError:
-            self.logger.debug(f"Ignored malformed message: {message}")
-        else:
-            topic = json_msg.get("topic")
-            if topic == "/diagnostics_agg":
-                self.handle_diagnostics_agg_msg(json_msg)
-
-    def connect(self):
-        # Start listening to web socket on a daemon thread.
-        self.ws_thread = threading.Thread(target=self.ws.run_forever, daemon=True)
-        self.ws_thread.start()
-
-        conn_retries = 5
-        while not self.ws.sock or not self.ws.sock.connected:
-            conn_retries -= 1
-            self.logger.info(f"Waiting for ws connection: '{self.mir_ws_url}")
-            sleep(1)
-            if not conn_retries:
-                raise RuntimeError(f"Failed to connect to ws: '{self.mir_ws_url}")
-
-        self.subscribe_diagnostics_agg()
-
-    def disconnect(self):
-        self.logger.info("Closing ws connection")
-        self.ws.close()
-        self.logger.info("Waiting for ws thread to finish")
-        self.ws_thread.join()
-
-    def subscribe_diagnostics_agg(self):
-        self.logger.info("Subscribing to 'diagnostics_agg' topic")
-        # This is the same command the MiR web UI sends
-        msg = json.dumps(
-            {
-                "op": "subscribe",
-                "id": "subscribe:/diagnostics_agg:1",
-                "type": "diagnostic_msgs/DiagnosticArray",
-                "topic": "/diagnostics_agg",
-                "compression": "none",
-                "throttle_rate": 0,
-                "queue_length": 0,
-            }
-        )
-
-        self.logger.debug(f"Sending message: {msg}")
-        self.ws.send(msg)
-
-    def handle_diagnostics_agg_msg(self, message):
-        self.logger.debug(f"Got diagnostics_agg message: {message}")
-        self.last_diagnostics_agg_msg = message
-
-    def get_diagnostics_agg_value(self, status_name, key_name):
-        status_list = self.last_diagnostics_agg_msg.get("msg", {}).get("status", [])
-        status = next((status for status in status_list if status["name"] == status_name), None)
-        # Caller should handle 'None' return values and ignore them
-        if not status:
-            return None
-        values = status.get("values", [])
-        # Finally, look for the key/value dictionary having key = key_name (fn param)
-        status_kv = next((value for value in values if value["key"] == key_name), None)
-        if not status_kv:
-            return None
-        return status_kv.get("value")
-
-    def get_cpu_usage(self):
-        cpu_status_name = "/Computer/PC/CPU Load"
-        average_cpu_load_key_name = "Average CPU load"
-        average_cpu_load = self.get_diagnostics_agg_value(
-            status_name=cpu_status_name, key_name=average_cpu_load_key_name
-        )
-        if average_cpu_load:
-            return float(average_cpu_load) / 100
-        else:
-            return None
-
-    def get_disk_usage(self):
-        hdd_status_name = "/Computer/PC/Harddrive"
-        hdd_total_size_key_name = '{"message": "Total size %(unit)s", "args": {"unit":"[GB]"}}'
-        hdd_used_size_key_name = '{"message": "Used %(unit)s", "args": {"unit":"[GB]"}}'
-        hdd_total_size = self.get_diagnostics_agg_value(
-            status_name=hdd_status_name, key_name=hdd_total_size_key_name
-        )
-        hdd_used_size = self.get_diagnostics_agg_value(
-            status_name=hdd_status_name, key_name=hdd_used_size_key_name
-        )
-        if not hdd_total_size or not hdd_used_size:
-            return None
-        try:
-            hdd_used_percentage = ((float(hdd_used_size) * 100) / float(hdd_total_size)) / 100
-            return hdd_used_percentage
-        except ZeroDivisionError:
-            # Adding extra validation in case for some reason the hdd_total_size equals 0
-            return None
-
-    def get_memory_usage(self):
-        memory_status_name = "/Computer/PC/Memory"
-        memory_total_size_key_name = '{"message": "Total size %(unit)s", "args": {"unit":"[GB]"}}'
-        memory_used_size_key_name = '{"message": "Used %(unit)s", "args": {"unit":"[GB]"}}'
-        memory_total_size = self.get_diagnostics_agg_value(
-            status_name=memory_status_name, key_name=memory_total_size_key_name
-        )
-        memory_used_size = self.get_diagnostics_agg_value(
-            status_name=memory_status_name, key_name=memory_used_size_key_name
-        )
-
-        if not memory_used_size or not memory_total_size:
-            return None
-        try:
-            memory_used_percentage = (
-                (float(memory_used_size) * 100) / float(memory_total_size)
-            ) / 100
-            return memory_used_percentage
-        except ZeroDivisionError:
-            # Adding extra validation in case for some reason the memory_total_size equals 0
-            return None

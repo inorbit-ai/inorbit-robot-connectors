@@ -35,9 +35,8 @@ class MirConnectorConfig(BaseSettings):
 
     mir_host_address: str
     mir_host_port: int
-    mir_enable_ws: bool
-    mir_ws_port: int
     mir_use_ssl: bool
+    verify_ssl: bool = True  # Default to True, can be overridden in config
     mir_username: str
     mir_password: str
     mir_api_version: str

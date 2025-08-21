@@ -56,12 +56,14 @@ def start():
         )
         exit(1)
 
-    mir_connector = Mir100Connector(robot_id, mir_config)
-    try:
-        LOGGER.info("Starting connector...")
-        mir_connector.start()
-        signal.signal(signal.SIGINT, lambda sig, frame: mir_connector.stop())
-        mir_connector.join()
-    except KeyboardInterrupt:
-        LOGGER.info("Received SIGINT, stopping connector")
-        mir_connector.stop()
+    connector = Mir100Connector(robot_id, mir_config)
+
+    LOGGER.info("Starting connector...")
+    connector.start()
+
+    # Register a signal handler for graceful shutdown
+    # When a keyboard interrupt is received (Ctrl+C), the connector will be stopped
+    signal.signal(signal.SIGINT, lambda sig, frame: connector.stop())
+
+    # Wait for the connector to finish
+    connector.join()

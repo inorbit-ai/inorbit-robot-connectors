@@ -15,6 +15,7 @@ class MirApiBaseClass(ABC):
         auth: tuple[str, str] | None = None,
         default_headers: dict | None = None,
         timeout: int = 10,
+        verify_ssl: bool = True,
     ):
         self.logger = logging.getLogger(name=self.__class__.__name__)
         self._base_url = base_url
@@ -24,6 +25,7 @@ class MirApiBaseClass(ABC):
             timeout=timeout,
             auth=auth,
             headers=default_headers or {},
+            verify=verify_ssl,
         )
         # If the log level is INFO, reduce the verbosity of httpx
         if self.logger.getEffectiveLevel() == logging.INFO:

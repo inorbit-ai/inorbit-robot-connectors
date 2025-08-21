@@ -19,9 +19,8 @@
   connector_config:
     mir_host_address: localhost
     mir_host_port: 80
-    mir_enable_ws: True
-    mir_ws_port: 9090
     mir_use_ssl: False
+    verify_ssl: false  # Disable SSL certificate verification for self-signed certs
     mir_username: username
     mir_password: password
     mir_api_version: v2.0

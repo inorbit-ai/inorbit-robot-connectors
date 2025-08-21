@@ -234,7 +234,7 @@ class MirConnector(Connector):
 
     async def _disconnect(self):
         """Disconnect from any external services"""
-        self.cleanup_connector_missions()
+        await self.cleanup_connector_missions()
         if self.ws_enabled:
             self.mir_ws.disconnect()
         await self.robot.stop()

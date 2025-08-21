@@ -27,6 +27,9 @@ class MirApiBaseClass(ABC):
                 auth=auth,
                 headers=default_headers or {},
             )
+        # If the log level is INFO, reduce the verbosity of httpx
+        if self.logger.getEffectiveLevel() == logging.INFO:
+            logging.getLogger("httpx").setLevel(logging.WARNING)
 
     async def _get(self, endpoint: str, **kwargs) -> httpx.Response:
         assert self._async_client is not None, "Async client not initialized"

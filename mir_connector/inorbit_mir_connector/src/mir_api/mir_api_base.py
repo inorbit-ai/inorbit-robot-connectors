@@ -211,3 +211,13 @@ class MirApiBaseClass(ABC):
         }
         """
         pass
+
+    @abstractmethod
+    async def get_diagnostics(self):
+        """Queries /experimental/diagnostics endpoint"""
+        pass
+
+    @abstractmethod
+    async def get_map(self, map_id: str):
+        """Queries /maps/{map_id} endpoint"""
+        pass

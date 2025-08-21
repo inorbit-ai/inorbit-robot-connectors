@@ -22,6 +22,7 @@ MISSION_QUEUE_ENDPOINT_V2 = "mission_queue"
 MISSION_GROUPS_ENDPOINT_V2 = "mission_groups"
 MISSIONS_ENDPOINT_V2 = "missions"
 STATUS_ENDPOINT_V2 = "status"
+DIAGNOSTICS_ENDPOINT_V2 = "experimental/diagnostics"
 
 
 class MirApiV2(MirApiBaseClass):
@@ -240,6 +241,15 @@ class MirApiV2(MirApiBaseClass):
     async def get_status(self):
         status_api_url = f"/{STATUS_ENDPOINT_V2}"
         response = await self._get(status_api_url)
+        return response.json()
+
+    async def get_diagnostics(self):
+        response = await self._get(DIAGNOSTICS_ENDPOINT_V2)
+        return response.json()
+
+    async def get_map(self, map_id: str):
+        """Queries /maps/{map_id} endpoint"""
+        response = await self._get(f"/maps/{map_id}")
         return response.json()
 
 

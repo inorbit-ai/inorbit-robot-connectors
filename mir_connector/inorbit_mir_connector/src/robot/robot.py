@@ -7,6 +7,8 @@ import asyncio
 import logging
 from typing import Coroutine
 
+from inorbit_mir_connector.src.mir_api.mir_api_base import MirApiBaseClass
+
 
 class Robot:
     """
@@ -17,7 +19,7 @@ class Robot:
 
     def __init__(
         self,
-        mir_api,
+        mir_api: MirApiBaseClass,
         default_update_freq: float,
     ):
         self.logger = logging.getLogger(name=self.__class__.__name__)
@@ -25,6 +27,7 @@ class Robot:
         self._stop_event = asyncio.Event()
         self._status: dict = {}
         self._metrics: dict = {}
+        self._diagnostics: dict = {}
         self._default_update_freq = default_update_freq
         self._running_tasks: list[asyncio.Task] = []
         self._last_call_successful: bool = True
@@ -37,6 +40,8 @@ class Robot:
         self._run_in_loop(self._update_status)
         # Start metrics polling at a lower frequency (every 2 seconds)
         self._run_in_loop(self._update_metrics, frequency=0.5)
+        # Start diagnostics polling at a lower frequency (every 2 seconds)
+        self._run_in_loop(self._update_diagnostics, frequency=0.5)
 
         self.logger.debug(f"Started {len(self._running_tasks)} polling tasks")
 
@@ -96,6 +101,18 @@ class Robot:
             self.logger.error(f"Error fetching robot metrics: {e}")
             # Keep the last known metrics on error
 
+    async def _update_diagnostics(self) -> None:
+        """Fetch robot diagnostics from the API asynchronously."""
+        try:
+            diagnostics = await self._mir_api.get_diagnostics()
+            self._diagnostics = diagnostics
+            self._last_call_successful = True
+            self.logger.debug("Robot diagnostics updated successfully")
+        except Exception as e:
+            self._last_call_successful = False
+            self.logger.error(f"Error fetching robot diagnostics: {e}")
+            # Keep the last known diagnostics on error
+
     @property
     def status(self) -> dict:
         """Return the latest robot status"""
@@ -105,6 +122,11 @@ class Robot:
     def metrics(self) -> dict:
         """Return the latest robot metrics"""
         return self._metrics
+
+    @property
+    def diagnostics(self) -> dict:
+        """Return the latest robot diagnostics"""
+        return self._diagnostics
 
     @property
     def api_connected(self) -> bool:

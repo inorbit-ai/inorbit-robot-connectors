@@ -254,11 +254,12 @@ class MirConnector(Connector):
 
         # Read latest robot data from Robot wrapper
         status = self.robot.status
-        metrics = self.robot.metrics
         if not status and self.status is None:
             return
         self.status = status
-        self.metrics = metrics
+        self.metrics = self.robot.metrics
+        # TODO(b-Tomas): there is a lot of valuable data here. Make sure to parse it and publish it
+        self.diagnostics = self.robot.diagnostics
 
         # publish pose
         pose_data = {

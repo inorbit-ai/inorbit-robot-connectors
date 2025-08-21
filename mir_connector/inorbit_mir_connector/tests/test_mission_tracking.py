@@ -4,7 +4,7 @@
 
 import pytest
 import pytz
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock, Mock, AsyncMock
 from inorbit_edge.robot import RobotSession
 from inorbit_mir_connector.src.mir_api import MirApiV2
 from inorbit_mir_connector.src.mission import MirInorbitMissionTracking
@@ -23,45 +23,48 @@ def mission_tracking():
     return mission_tracking
 
 
-def test_get_current_mission(mission_tracking):
+@pytest.mark.asyncio
+async def test_get_current_mission(mission_tracking):
     # Only missions with "Executing" state should be stored in executing_mission_id
     assert mission_tracking.executing_mission_id is None
     dummy_data = {"state": "Executing"}
     id = 1
-    mission_tracking.mir_api.get_executing_mission_id = Mock(return_value=id)
-    mission_tracking.mir_api.get_mission = Mock(return_value=dummy_data)
-    assert mission_tracking.get_current_mission() == dummy_data
+    mission_tracking.mir_api.get_executing_mission_id = AsyncMock(return_value=id)
+    mission_tracking.mir_api.get_mission = AsyncMock(return_value=dummy_data)
+    assert await mission_tracking.get_current_mission() == dummy_data
     assert mission_tracking.executing_mission_id == 1
 
     dummy_data = {"state": "Completed"}
-    mission_tracking.mir_api.get_mission = Mock(return_value=dummy_data)
-    assert mission_tracking.get_current_mission() == dummy_data
+    mission_tracking.mir_api.get_mission = AsyncMock(return_value=dummy_data)
+    assert await mission_tracking.get_current_mission() == dummy_data
     assert mission_tracking.executing_mission_id is None
 
 
-def test_toggle_mir_tracking(
+@pytest.mark.asyncio
+async def test_toggle_mir_tracking(
     mission_tracking, sample_metrics_data, sample_status_data, sample_mir_mission_data
 ):
-    mission_tracking.get_current_mission = Mock(return_value=sample_mir_mission_data)
+    mission_tracking.get_current_mission = AsyncMock(return_value=sample_mir_mission_data)
 
     # MiR tracking should be disabled
     assert mission_tracking.mir_mission_tracking_enabled is False
-    mission_tracking.report_mission(sample_status_data, sample_metrics_data)
+    await mission_tracking.report_mission(sample_status_data, sample_metrics_data)
     assert len(mission_tracking.get_current_mission.call_args_list) == 0
 
     # Enable tracking. This is ussually set by the connector
     mission_tracking.mir_mission_tracking_enabled = True
-    mission_tracking.report_mission(sample_status_data, sample_metrics_data)
+    await mission_tracking.report_mission(sample_status_data, sample_metrics_data)
     assert len(mission_tracking.get_current_mission.call_args_list) == 1
 
 
-def test_report_mission(
+@pytest.mark.asyncio
+async def test_report_mission(
     mission_tracking, sample_metrics_data, sample_status_data, sample_mir_mission_data
 ):
     mission_tracking.mir_mission_tracking_enabled = True
     mission_tracking.io_mission_tracking_enabled = True
-    mission_tracking.get_current_mission = Mock(return_value=sample_mir_mission_data)
-    mission_tracking.report_mission(sample_status_data, sample_metrics_data)
+    mission_tracking.get_current_mission = AsyncMock(return_value=sample_mir_mission_data)
+    await mission_tracking.report_mission(sample_status_data, sample_metrics_data)
     reported_mission = mission_tracking.inorbit_sess.publish_key_values.call_args.kwargs[
         "key_values"
     ]
@@ -92,20 +95,21 @@ def test_report_mission(
     assert DeepDiff(reported_mission, should_be) == {}
 
 
-def test_toggle_inorbit_tracking(
+@pytest.mark.asyncio
+async def test_toggle_inorbit_tracking(
     mission_tracking, sample_metrics_data, sample_status_data, sample_mir_mission_data
 ):
     # Enable MiR tracking. This is ussually set by the connector
     mission_tracking.mir_mission_tracking_enabled = True
-    mission_tracking.get_current_mission = Mock(return_value=sample_mir_mission_data)
+    mission_tracking.get_current_mission = AsyncMock(return_value=sample_mir_mission_data)
 
     # Should be enabled
-    mission_tracking.report_mission(sample_status_data, sample_metrics_data)
+    await mission_tracking.report_mission(sample_status_data, sample_metrics_data)
     assert len(mission_tracking.get_current_mission.call_args_list) == 1
     assert len(mission_tracking.inorbit_sess.publish_key_values.call_args_list) == 1
 
     # Disable InOrbit Mission Tracking
     mission_tracking.enable_io_mission_tracking = False
-    mission_tracking.report_mission(sample_status_data, sample_metrics_data)
+    await mission_tracking.report_mission(sample_status_data, sample_metrics_data)
     assert len(mission_tracking.get_current_mission.call_args_list) == 2
     assert len(mission_tracking.inorbit_sess.publish_key_values.call_args_list) == 1

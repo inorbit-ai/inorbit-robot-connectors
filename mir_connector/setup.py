@@ -7,6 +7,7 @@ from setuptools import setup
 
 requirements = [
     "requests>=2.31,<3.0",
+    "httpx>=0.27,<0.28",
     "inorbit-edge[video]>=1.17",
     "inorbit-connector~=1.2.1",
     "prometheus-client>=0.14.1",
@@ -27,6 +28,8 @@ test_requirements = [
     "pytest>=3",
     "requests_mock==1.11",
     "deepdiff==6.7",
+    "pytest-asyncio>=0.23",
+    "pytest-httpx>=0.30",
 ]
 
 dev_requirements = {

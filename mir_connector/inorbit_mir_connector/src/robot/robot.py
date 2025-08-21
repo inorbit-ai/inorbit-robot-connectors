@@ -73,9 +73,9 @@ class Robot:
         self.logger.info("Polling loops stopped")
 
     async def _update_status(self) -> None:
-        """Fetch the robot status from the API (in a thread)."""
+        """Fetch the robot status from the API asynchronously."""
         try:
-            status = await asyncio.to_thread(self._mir_api.get_status)
+            status = await self._mir_api.get_status()
             self._status = status
             self._last_call_successful = True
             self.logger.debug("Robot status updated successfully")
@@ -85,9 +85,9 @@ class Robot:
             # Keep the last known status on error
 
     async def _update_metrics(self) -> None:
-        """Fetch robot metrics from the API (in a thread)."""
+        """Fetch robot metrics from the API asynchronously."""
         try:
-            metrics = await asyncio.to_thread(self._mir_api.get_metrics)
+            metrics = await self._mir_api.get_metrics()
             self._metrics = metrics
             self._last_call_successful = True
             self.logger.debug("Robot metrics updated successfully")

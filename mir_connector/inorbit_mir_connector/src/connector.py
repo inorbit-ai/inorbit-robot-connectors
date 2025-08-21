@@ -2,14 +2,12 @@
 #
 # SPDX-License-Identifier: MIT
 
-from time import sleep
 import pytz
 import math
 import uuid
+import asyncio
 import logging
-import requests
-from tenacity import retry, wait_exponential_jitter, before_sleep_log, retry_if_exception_type
-from threading import Thread, Lock
+import httpx
 from inorbit_connector.connector import Connector
 from inorbit_connector.connector import CommandResultCode
 from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND
@@ -21,6 +19,7 @@ from .mir_api import MirWebSocketV2
 from .mission import MirInorbitMissionTracking
 from ..config.connector_model import ConnectorConfig
 from .robot.robot import Robot
+from tenacity import retry, wait_exponential_jitter, before_sleep_log, retry_if_exception_type
 
 
 # Available MiR states to select via actions
@@ -62,7 +61,7 @@ class Mir100Connector(Connector):
         # Missions group id for temporary missions
         # If None, it indicates the missions group has not been set up
         self.tmp_missions_group_id = None
-        self.tmp_missions_group_id_lock = Lock()
+        self.tmp_missions_group_id_lock = asyncio.Lock()
 
         # Configure the connection to the robot
         self.mir_api = MirApiV2(
@@ -105,8 +104,8 @@ class Mir100Connector(Connector):
             enable_io_mission_tracking=config.connector_config.enable_mission_tracking,
         )
 
-        # Get or create the required missions and mission groups
-        Thread(target=self.setup_connector_missions, daemon=True).start()
+        # Background tasks
+        self._bg_tasks: list[asyncio.Task] = []
 
     async def _inorbit_command_handler(self, command_name, args, options):
         """Callback method for command messages.
@@ -145,16 +144,16 @@ class Mir100Connector(Connector):
                 self.mission_tracking.mir_mission_tracking_enabled = (
                     self._robot_session.missions_module.executor.wait_until_idle(0)
                 )
-                self.mir_api.queue_mission(script_args[1])
+                await self.mir_api.queue_mission(script_args[1])
             elif script_name == "run_mission_now" and script_args[0] == "--mission_id":
                 self.mission_tracking.mir_mission_tracking_enabled = (
                     self._robot_session.missions_module.executor.wait_until_idle(0)
                 )
-                self.mir_api.abort_all_missions()
-                self.mir_api.queue_mission(script_args[1])
+                await self.mir_api.abort_all_missions()
+                await self.mir_api.queue_mission(script_args[1])
             elif script_name == "abort_missions":
                 self._robot_session.missions_module.executor.cancel_mission("*")
-                self.mir_api.abort_all_missions()
+                await self.mir_api.abort_all_missions()
             elif script_name == "set_state":
                 if script_args[0] == "--state_id":
                     state_id = script_args[1]
@@ -169,10 +168,10 @@ class Mir100Connector(Connector):
                     self._logger.info(
                         f"Setting robot state to state {state_id}: {MIR_STATE[state_id]}"
                     )
-                    self.mir_api.set_state(state_id)
+                    await self.mir_api.set_state(state_id)
                 if script_args[0] == "--clear_error":
                     self._logger.info("Clearing error state")
-                    self.mir_api.clear_error()
+                    await self.mir_api.clear_error()
             elif script_name == "set_waiting_for" and script_args[0] == "--text":
                 self._logger.info(f"Setting 'waiting for' value to {script_args[1]}")
                 self.mission_tracking.waiting_for_text = script_args[1]
@@ -197,7 +196,7 @@ class Mir100Connector(Connector):
                         "map_id": script_args[7],
                     }
                     self._logger.info(f"Changing map to {script_args[7]}")
-                    self.mir_api.set_status(status)
+                    await self.mir_api.set_status(status)
                 else:
                     self._logger.error("Invalid arguments for 'localize' command")
                     options["result_function"](
@@ -213,13 +212,13 @@ class Mir100Connector(Connector):
             options["result_function"](CommandResultCode.SUCCESS)
         elif command_name == COMMAND_NAV_GOAL:
             pose = args[0]
-            self.send_waypoint_over_missions(pose)
+            await self.send_waypoint_over_missions(pose)
         elif command_name == COMMAND_MESSAGE:
             msg = args[0]
             if msg == "inorbit_pause":
-                self.mir_api.set_state(4)
+                await self.mir_api.set_state(4)
             elif msg == "inorbit_resume":
-                self.mir_api.set_state(3)
+                await self.mir_api.set_state(3)
         else:
             self._logger.info(f"Received unknown command '{command_name}'!. {args}")
 
@@ -230,9 +229,9 @@ class Mir100Connector(Connector):
             self.mir_ws.connect()
         # Start robot polling loops
         self.robot.start()
-        # Start garbage collection for missions
-        # Running with daemon=True will kill the thread when the main thread is done executing
-        Thread(target=self._missions_garbage_collector, daemon=True).start()
+        # Start async setup and garbage collection for missions
+        self._bg_tasks.append(asyncio.create_task(self.setup_connector_missions()))
+        self._bg_tasks.append(asyncio.create_task(self._missions_garbage_collector()))
 
     async def _disconnect(self):
         """Disconnect from any external services"""
@@ -240,6 +239,13 @@ class Mir100Connector(Connector):
         if self.ws_enabled:
             self.mir_ws.disconnect()
         await self.robot.stop()
+        await self.mir_api.close()
+        # Cancel background tasks
+        for t in self._bg_tasks:
+            t.cancel()
+        if self._bg_tasks:
+            await asyncio.gather(*self._bg_tasks, return_exceptions=True)
+        self._bg_tasks.clear()
 
     async def _execution_loop(self):
         """The main execution loop for the connector"""
@@ -250,9 +256,9 @@ class Mir100Connector(Connector):
             metrics = self.robot.metrics
             # Fallback to direct API calls if robot hasn't populated data yet
             if not status:
-                status = self.mir_api.get_status()
+                status = await self.mir_api.get_status()
             if not metrics:
-                metrics = self.mir_api.get_metrics()
+                metrics = await self.mir_api.get_metrics()
             self.status = status
             self.metrics = metrics
         except Exception as ex:
@@ -322,7 +328,7 @@ class Mir100Connector(Connector):
 
         # publish mission data
         try:
-            self.mission_tracking.report_mission(self.status, self.metrics or {})
+            await self.mission_tracking.report_mission(self.status, self.metrics or {})
         except Exception:
             self._logger.exception("Error reporting mission")
 
@@ -331,7 +337,7 @@ class Mir100Connector(Connector):
         This value can be used for setting up status and incidents in InOrbit"""
         self._robot_session.publish_key_values({"api_connected": False})
 
-    def send_waypoint_over_missions(self, pose):
+    async def send_waypoint_over_missions(self, pose):
         """Use the connector's mission group to create a move mission to a designated pose."""
         mission_id = str(uuid.uuid4())
         connector_type = self.config.connector_type
@@ -340,13 +346,13 @@ class Mir100Connector(Connector):
         if not self.tmp_missions_group_id:
             # Ensure missions group is created if not yet initialized by background thread
             try:
-                self.setup_connector_missions()
+                await self.setup_connector_missions()
             except Exception as ex:
                 self._logger.error(f"Failed to setup connector missions: {ex}")
             if not self.tmp_missions_group_id:
                 raise Exception("Connector missions group not set up")
 
-        self.mir_api.create_mission(
+        await self.mir_api.create_mission(
             group_id=self.tmp_missions_group_id,
             name="Move to waypoint",
             guid=mission_id,
@@ -377,37 +383,37 @@ class Mir100Connector(Connector):
             {"value": v, "input_name": None, "guid": str(uuid.uuid4()), "id": k}
             for k, v in param_values.items()
         ]
-        self.mir_api.add_action_to_mission(
+        await self.mir_api.add_action_to_mission(
             action_type="move_to_position",
             mission_id=mission_id,
             parameters=action_parameters,
             priority=1,
         )
-        self.mir_api.queue_mission(mission_id)
+        await self.mir_api.queue_mission(mission_id)
 
     @retry(
         wait=wait_exponential_jitter(max=10),
         before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING),
-        retry=retry_if_exception_type(requests.exceptions.ConnectionError),
+        retry=retry_if_exception_type(httpx.RequestError),
     )
-    def setup_connector_missions(self):
+    async def setup_connector_missions(self):
         """Find and store the required missions and mission groups, or create them if they don't
         exist."""
-        with self.tmp_missions_group_id_lock:
+        async with self.tmp_missions_group_id_lock:
             # If the missions group is not None it means it was already setup or it was deleted
             # intentionally and should not be set up again
             if self.tmp_missions_group_id is not None:
                 return
         self._logger.info("Setting up connector missions")
         # Find or create the missions group
-        mission_groups: list[dict] = self.mir_api.get_mission_groups()
+        mission_groups: list[dict] = await self.mir_api.get_mission_groups()
         group = next(
             (x for x in mission_groups if x["name"] == MIR_INORBIT_MISSIONS_GROUP_NAME), None
         )
         self.tmp_missions_group_id = group["guid"] if group is not None else str(uuid.uuid4())
         if group is None:
             self._logger.info(f"Creating mission group '{MIR_INORBIT_MISSIONS_GROUP_NAME}'")
-            group = self.mir_api.create_mission_group(
+            group = await self.mir_api.create_mission_group(
                 feature=".",
                 icon=".",
                 name=MIR_INORBIT_MISSIONS_GROUP_NAME,
@@ -421,9 +427,9 @@ class Mir100Connector(Connector):
                 f"guid '{self.tmp_missions_group_id}'"
             )
 
-    def cleanup_connector_missions(self):
+    async def cleanup_connector_missions(self):
         """Delete the missions group created at startup"""
-        with self.tmp_missions_group_id_lock:
+        async with self.tmp_missions_group_id_lock:
             # If the missions group id is None, it means it was not set up and there is nothing to
             # clean up. Change its value to indicate it should not be set up, in case there is a
             # running setup thread.
@@ -432,17 +438,17 @@ class Mir100Connector(Connector):
                 return
         self._logger.info("Cleaning up connector missions")
         self._logger.info(f"Deleting missions group {self.tmp_missions_group_id}")
-        self.mir_api.delete_mission_group(self.tmp_missions_group_id)
+        await self.mir_api.delete_mission_group(self.tmp_missions_group_id)
 
-    def _delete_unused_missions(self):
+    async def _delete_unused_missions(self):
         """Delete all missions definitions in the temporary group that are not associated to
         pending or executing missions"""
         try:
-            mission_defs = self.mir_api.get_mission_group_missions(self.tmp_missions_group_id)
-            missions_queue = self.mir_api.get_missions_queue()
+            mission_defs = await self.mir_api.get_mission_group_missions(self.tmp_missions_group_id)
+            missions_queue = await self.mir_api.get_missions_queue()
             # Do not delete definitions of missions that are pending or executing
             protected_mission_defs = [
-                self.mir_api.get_mission(mission["id"])["mission_id"]
+                (await self.mir_api.get_mission(mission["id"]))["mission_id"]
                 for mission in missions_queue
                 if mission["state"].lower() in ["pending", "executing"]
             ]
@@ -455,18 +461,17 @@ class Mir100Connector(Connector):
             ]
         except Exception as ex:
             self._logger.error(f"Failed to get missions for garbage collection: {ex}")
-            self.start_missions_garbage_collector()
             return
 
         for mission_id in missions_to_delete:
             try:
                 self._logger.info(f"Deleting mission {mission_id}")
-                self.mir_api.delete_mission_definition(mission_id)
+                await self.mir_api.delete_mission_definition(mission_id)
             except Exception as ex:
                 self._logger.error(f"Failed to delete mission {mission_id}: {ex}")
 
-    def _missions_garbage_collector(self):
+    async def _missions_garbage_collector(self):
         """Delete unused missions preiodically"""
         while True:
-            sleep(MISSIONS_GARBAGE_COLLECTION_INTERVAL_SECS)
-            self._delete_unused_missions()
+            await asyncio.sleep(MISSIONS_GARBAGE_COLLECTION_INTERVAL_SECS)
+            await self._delete_unused_missions()

@@ -2,14 +2,22 @@
 #
 # SPDX-License-Identifier: MIT
 
+import base64
+import os
+import tempfile
 import pytz
 import math
 import uuid
 import asyncio
 import logging
 import httpx
+from PIL import Image
+import io
+
+# from typing import override # TODO(b-Tomas): Uncomment when updating to Python 3.13
 from inorbit_connector.connector import Connector
 from inorbit_connector.connector import CommandResultCode
+from inorbit_connector.models import MapConfig
 from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND
 from inorbit_edge.robot import COMMAND_MESSAGE
 from inorbit_edge.robot import COMMAND_NAV_GOAL
@@ -471,3 +479,94 @@ class MirConnector(Connector):
         while True:
             await asyncio.sleep(MISSIONS_GARBAGE_COLLECTION_INTERVAL_SECS)
             await self._delete_unused_missions()
+
+    # HACK(b-Tomas): This is a hack to publish the map data through the connector.
+    # All of this logic should be moved to the Connector base class.
+    # @override # TODO(b-Tomas): Uncomment when updating to Python 3.13
+    def publish_map(self, frame_id: str, is_update: bool = False) -> None:
+        """Publish a map to InOrbit. If `frame_id` is present in the maps config, it acts normal.
+        If `frame_id` is not present in the maps config, it will attempt to load the map from the
+        robot.
+        """
+        # If a map was provided by the user, publish it as normal
+        if frame_id in self.config.maps:
+            super().publish_map(frame_id, is_update)
+        # Else, attempt to load the map from the robot and publish it instead
+        else:
+            self._logger.info(
+                f"Map with frame_id {frame_id} not found in config, attempting to load from robot"
+            )
+            try:
+                map_id = frame_id
+
+                # Get the map image using the new API method
+                map_data = self.mir_api.get_map_sync(map_id)
+                if not map_data:
+                    self._logger.warning("No map data received from robot")
+                    return
+
+                image = map_data.get("base_map")
+                map_name = map_data.get("name")
+                resolution = map_data.get("resolution")
+                origin_x = map_data.get("origin_x")
+                origin_y = map_data.get("origin_x")
+
+            except Exception as ex:
+                self._logger.error(f"Failed to load map from robot: {ex}")
+                return
+
+            # Process and save the map image
+            if image and map_name and resolution and origin_x is not None and origin_y is not None:
+                # Generate a byte array from the base64 encoded image
+                map_data = base64.b64decode(image)
+                self._logger.info(f"Map image size: {len(map_data)} bytes")
+                # Create a temporary file with .png extension to store the map image
+                fd, temp_path = tempfile.mkstemp(suffix=".png")
+                self._logger.debug(f"Created temporary file: {temp_path}")
+
+                # Flip the map image bytes vertically
+                # NOTE: This is done in order to display the image correctly in the
+                # InOrbit platform, but can be computationally expensive
+                try:
+                    # Create an image from the bytes
+                    image = Image.open(io.BytesIO(map_data))
+
+                    # Flip the image vertically
+                    flipped_image = image.transpose(Image.FLIP_TOP_BOTTOM)
+
+                    # Convert back to bytes
+                    img_byte_arr = io.BytesIO()
+                    flipped_image.save(img_byte_arr, format="PNG")
+                    flipped_bytes = img_byte_arr.getvalue()
+
+                    self._logger.debug("Successfully flipped map image")
+                except Exception as e:
+                    self._logger.error(f"Failed to flip map image: {e}")
+                    # If flipping fails, use the original bytes
+                    flipped_bytes = map_data
+
+                try:
+                    # Write the map image bytes to the temporary file
+                    with os.fdopen(fd, "wb") as tmp_file:
+                        tmp_file.write(flipped_bytes)
+
+                    # Create a new map configuration
+                    # Note: For Gausium robots, we may need to adjust origin and resolution
+                    # based on the robot's coordinate system
+                    self.config.maps[frame_id] = MapConfig(
+                        file=temp_path,
+                        map_id=map_id,
+                        origin_x=origin_x,
+                        origin_y=origin_y,
+                        resolution=resolution,
+                    )
+
+                    self._logger.info(f"Added map {frame_id} from robot to configuration")
+                    return super().publish_map(frame_id, is_update)
+                except Exception as e:
+                    self._logger.error(f"Failed to create temporary map file: {e}")
+                    os.unlink(temp_path)  # Clean up the file in case of error
+            else:
+                self._logger.error(f"No map data available for {frame_id}")
+                self._logger.debug(f"Map data: {map_data}")
+                return

@@ -44,9 +44,10 @@ class MirApiV2(MirApiBaseClass):
         self.mir_password = mir_password
         m_async = hashlib.sha256()
         m_async.update(self.mir_password.encode())
+        self._auth = (self.mir_username, m_async.hexdigest())
         super().__init__(
             base_url=self.mir_api_base_url,
-            auth=(self.mir_username, m_async.hexdigest()),
+            auth=self._auth,
             default_headers={"Accept-Language": "en_US"},
             timeout=10,
         )
@@ -247,10 +248,26 @@ class MirApiV2(MirApiBaseClass):
         response = await self._get(DIAGNOSTICS_ENDPOINT_V2)
         return response.json()
 
-    async def get_map(self, map_id: str):
-        """Queries /maps/{map_id} endpoint"""
-        response = await self._get(f"/maps/{map_id}")
-        return response.json()
+    def get_map_sync(self, map_id: str):
+        """Queries /maps/{map_id} endpoint synchronously
+
+        This is a workaround to the publish_map method in the connnector not being async.
+        """
+        # Timeout for the second part of the request, where the actual image is downloaded
+        image_timeout = max(self._timeout, 30)
+
+        # Download the image
+        with httpx.Client(base_url=self._base_url, timeout=image_timeout) as client:
+            try:
+                response = client.get(
+                    f"maps/{map_id}", headers={"Accept-Language": "en_US"}, auth=self._auth
+                )
+                response.raise_for_status()
+            except Exception as e:
+                self._last_call_successful = False
+                raise e
+
+            return response.json()
 
 
 class MirWebSocketV2:

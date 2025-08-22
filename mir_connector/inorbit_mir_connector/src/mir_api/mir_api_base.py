@@ -2,100 +2,116 @@
 #
 # SPDX-License-Identifier: MIT
 
-from requests import Session, Response
-from requests.exceptions import HTTPError
 from abc import ABC, abstractmethod
 import logging
+import httpx
 
 
 class MirApiBaseClass(ABC):
-    def __init__(self, loglevel):
-        self.logger = logging.getLogger(name=self.__class__.__name__)
-        self.logger.setLevel(loglevel)
 
-    def _handle_status(self, res, request_args):
-        """Log and raise an exception if the request failed."""
+    def __init__(
+        self,
+        base_url: str,
+        auth: tuple[str, str] | None = None,
+        default_headers: dict | None = None,
+        timeout: int = 10,
+    ):
+        self.logger = logging.getLogger(name=self.__class__.__name__)
+        self._base_url = base_url
+        self._timeout = timeout
+        self._async_client = httpx.AsyncClient(
+            base_url=base_url,
+            timeout=timeout,
+            auth=auth,
+            headers=default_headers or {},
+        )
+        # If the log level is INFO, reduce the verbosity of httpx
+        if self.logger.getEffectiveLevel() == logging.INFO:
+            logging.getLogger("httpx").setLevel(logging.WARNING)
+
+    async def _get(self, endpoint: str, **kwargs) -> httpx.Response:
+        res = await self._async_client.get(endpoint, **kwargs)
         try:
             res.raise_for_status()
-        except HTTPError as e:
-            self.logger.error(f"Error making request: {e}\nArguments: {request_args}")
+        except httpx.HTTPStatusError as e:
+            self.logger.error(
+                f"HTTP error making request: {e.response.status_code} - {e.response.text}\n"
+                f"Request: {e.request.method} {e.request.url}\nArguments: {kwargs}"
+            )
             raise e
-
-    def _get(self, url: str, session: Session, **kwargs) -> Response:
-        """Perform a GET request."""
-        self.logger.debug(f"GETting {url}: {kwargs}")
-        res = session.get(url, **kwargs)
-        self._handle_status(res, kwargs)
         return res
 
-    def _post(self, url: str, session: Session, **kwargs) -> Response:
-        """Perform a POST request."""
-        self.logger.debug(f"POSTing {url}: {kwargs}")
-        res = session.post(url, **kwargs)
-        self.logger.debug(f"Response: {res}")
-        self._handle_status(res, kwargs)
+    async def _post(self, endpoint: str, **kwargs) -> httpx.Response:
+        res = await self._async_client.post(endpoint, **kwargs)
+        try:
+            res.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            self.logger.error(
+                f"HTTP error making request: {e.response.status_code} - {e.response.text}\n"
+                f"Request: {e.request.method} {e.request.url}\nArguments: {kwargs}"
+            )
+            raise e
         return res
 
-    def _delete(self, url: str, session: Session, **kwargs) -> Response:
-        """Perform a DELETE request."""
-        self.logger.debug(f"DELETEing {url}: {kwargs}")
-        res = session.delete(url, **kwargs)
-        self.logger.debug(f"Response: {res}")
-        self._handle_status(res, kwargs)
+    async def _put(self, endpoint: str, **kwargs) -> httpx.Response:
+        res = await self._async_client.put(endpoint, **kwargs)
+        try:
+            res.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            self.logger.error(
+                f"HTTP error making request: {e.response.status_code} - {e.response.text}\n"
+                f"Request: {e.request.method} {e.request.url}\nArguments: {kwargs}"
+            )
+            raise e
         return res
 
-    def _put(self, url: str, session: Session, **kwargs) -> Response:
-        """Perform a PUT request."""
-        self.logger.debug(f"PUTing {url}: {kwargs}")
-        res = session.put(url, **kwargs)
-        self.logger.debug(f"Response: {res}")
-        self._handle_status(res, kwargs)
+    async def _delete(self, endpoint: str, **kwargs) -> httpx.Response:
+        res = await self._async_client.delete(endpoint, **kwargs)
+        try:
+            res.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            self.logger.error(
+                f"HTTP error making request: {e.response.status_code} - {e.response.text}\n"
+                f"Request: {e.request.method} {e.request.url}\nArguments: {kwargs}"
+            )
+            raise e
         return res
+
+    async def close(self):
+        await self._async_client.aclose()
 
     @abstractmethod
-    def _create_api_session(self) -> Session:
-        """Configures a session object to interact with the MiR API."""
-        pass
-
-    @abstractmethod
-    def _create_web_session(self) -> Session:
-        """Makes a login request to MiR using stored credentials.
-        This stores cookies on the session, which is required for the subsequent queries to work.
-        """
-        pass
-
-    @abstractmethod
-    def send_waypoint(self, pose):
+    async def send_waypoint(self, pose):
         """Receives a pose and sends a request to command the robot to navigate to the waypoint"""
         pass
 
     @abstractmethod
-    def abort_all_missions(self):
+    async def abort_all_missions(self):
         """Aborts all missions"""
         pass
 
     @abstractmethod
-    def queue_mission(self, mission_id: str):
+    async def queue_mission(self, mission_id: str):
         """Receives a mission ID and sends a request to append it to the robot's mission queue"""
         pass
 
     @abstractmethod
-    def clear_error(self):
+    async def clear_error(self):
         """Clears robot Error status and sets robot state to Ready"""
         pass
 
     @abstractmethod
-    def set_state(self, state_id: int):
+    async def set_state(self, state_id: int):
         """Set the robot state"""
         pass
 
     @abstractmethod
-    def set_status(self, data):
+    async def set_status(self, data):
         """Set the robot status"""
         pass
 
     @abstractmethod
-    def get_status(self):
+    async def get_status(self):
         """Queries /status endpoint
 
         Returns:
@@ -141,28 +157,28 @@ class MirApiBaseClass(ABC):
         pass
 
     @abstractmethod
-    def get_executing_mission_id(self):
+    async def get_executing_mission_id(self):
         """Returns the id of the mission being currently executed by the robot"""
         pass
 
     @abstractmethod
-    def get_mission_actions(self, mission_id):
+    async def get_mission_actions(self, mission_id):
         """Queries a list of actions a mission executes using
         the missions/{mission_id}/actions endpoint"""
         pass
 
     @abstractmethod
-    def get_mission_definition(self, mission_id):
+    async def get_mission_definition(self, mission_id):
         """Queries a mission definition using the missions/{mission_id} endpoint"""
         pass
 
     @abstractmethod
-    def get_mission(self, mission_queue_id):
+    async def get_mission(self, mission_queue_id):
         """Queries a mission using the mission_queue/{mission_id} endpoint"""
         pass
 
     @abstractmethod
-    def get_metrics(self):
+    async def get_metrics(self):
         """Queries /metrics endpoint
 
         Note: this endpoint returns a text/plain OpenMetrics response e.g.
@@ -193,5 +209,29 @@ class MirApiBaseClass(ABC):
             'mir_robot_wifi_access_point_info': 1.0,
             'mir_robot_wifi_access_point_frequency_hertz': 0.0
         }
+        """
+        pass
+
+    @abstractmethod
+    async def get_diagnostics(self):
+        """Queries /experimental/diagnostics endpoint"""
+        pass
+
+    @abstractmethod
+    def get_map_sync(self, map_id: str):
+        """Queries /maps/{map_id} endpoint
+
+        This is a workaround to the publish_map method in the connnector not being async.
+
+        Returns:
+            Map data e.g.
+            {
+                "base_map": "base64 encoded image",
+                "name": "map name",
+                "resolution": "map resolution",
+                "origin_x": "map origin x",
+                "origin_y": "map origin y",
+                ...
+            }
         """
         pass

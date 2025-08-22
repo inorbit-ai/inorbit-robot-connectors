@@ -8,16 +8,15 @@ import json
 from inorbit_mir_connector.src.mir_api import MirApiV2
 from inorbit_mir_connector.src.mir_api import MirWebSocketV2
 from deepdiff import DeepDiff
-from requests.exceptions import HTTPError
+import httpx
 from unittest.mock import MagicMock
 import math
 
 
 @pytest.fixture
-def mir_api(requests_mock, monkeypatch):
+def mir_api(monkeypatch):
     mir_host_address = "example.com"
     mir_host_port = 8080
-    requests_mock.post("http://example.com:8080/?mode=log-in", text="I'm letting you in")
     monkeypatch.setattr(websocket, "WebSocketApp", MagicMock())
     api = MirApiV2(
         mir_host_address=mir_host_address,
@@ -25,7 +24,6 @@ def mir_api(requests_mock, monkeypatch):
         mir_use_ssl=False,
         mir_username="user",
         mir_password="pass",
-        loglevel="INFO",
     )
     return api
 
@@ -39,28 +37,34 @@ def mir_websocket(monkeypatch):
         mir_host_address=mir_host_address,
         mir_ws_port=mir_ws_port,
         mir_use_ssl=False,
-        loglevel="INFO",
     )
     return ws
 
 
-def test_http_error(mir_api, requests_mock):
-    requests_mock.get(f"{mir_api.mir_api_base_url}/metrics", status_code=500)
-    with pytest.raises(HTTPError):
-        mir_api.get_metrics()
+@pytest.mark.asyncio
+async def test_http_error(mir_api, httpx_mock):
+    httpx_mock.add_response(
+        method="GET", url=f"{mir_api.mir_api_base_url}/metrics", status_code=500
+    )
+    with pytest.raises(httpx.HTTPStatusError):
+        await mir_api.get_metrics()
 
 
-def test_get_executing_mission_id(mir_api, requests_mock):
+@pytest.mark.asyncio
+async def test_get_executing_mission_id(mir_api, httpx_mock):
     missions = [
         {"id": 2, "state": "Aborted"},
         {"id": 1, "state": "Executing"},
         {"id": 3, "state": "Completed"},
     ]
-    requests_mock.get(f"{mir_api.mir_api_base_url}/mission_queue", json=missions)
-    assert mir_api.get_executing_mission_id() == 1
+    httpx_mock.add_response(
+        method="GET", url=f"{mir_api.mir_api_base_url}/mission_queue", json=missions
+    )
+    assert await mir_api.get_executing_mission_id() == 1
 
 
-def test_get_metrics(mir_api, requests_mock):
+@pytest.mark.asyncio
+async def test_get_metrics(mir_api, httpx_mock):
     input = """
 # HELP mir_robot_localization_score A measure of the robots position estimate relative to the map. A value of 0 indicates a perfect value and values closer to zero are better.
 # TYPE mir_robot_localization_score gauge
@@ -131,8 +135,8 @@ mir_robot_wifi_access_point_frequency_hertz 0.0
         "mir_robot_wifi_access_point_frequency_hertz": 0.0,
     }
 
-    requests_mock.get(f"{mir_api.mir_api_base_url}/metrics", text=input)
-    metrics = mir_api.get_metrics()
+    httpx_mock.add_response(method="GET", url=f"{mir_api.mir_api_base_url}/metrics", text=input)
+    metrics = await mir_api.get_metrics()
 
     assert DeepDiff(expected_output, metrics) == {}
 

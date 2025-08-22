@@ -26,4 +26,4 @@ ENV PYTHONPATH="/app"
 
 # Run the connector.
 # The configuration file can be set using the CONFIG_FILE environment variable and will default to /config/fleet.yaml
-CMD ["sh", "-c", "inorbit-mir100-connector -c ${CONFIG_FILE:-${DEFAULT_CONFIG_FILE}} -id $ROBOT_ID"]
+CMD ["sh", "-c", "inorbit_mir_connector -c ${CONFIG_FILE:-${DEFAULT_CONFIG_FILE}} -id $ROBOT_ID"]

@@ -12,16 +12,15 @@ MISSION_STATE_ABORT = "Abort"
 
 
 class MirInorbitMissionTracking:
+
     def __init__(
         self,
         mir_api,
         inorbit_sess,
         robot_tz_info,
-        loglevel="INFO",
         enable_io_mission_tracking=True,
     ):
         self.logger = logging.getLogger(name=self.__class__.__name__)
-        self.logger.setLevel(loglevel)
         # Use for mission tracking
         # If set to False, mission tracking data will not be published to InOrbit
         self.io_mission_tracking_enabled = enable_io_mission_tracking
@@ -38,13 +37,13 @@ class MirInorbitMissionTracking:
         self.inorbit_sess = inorbit_sess
         self.robot_tz_info = robot_tz_info
 
-    def get_current_mission(self):
+    async def get_current_mission(self):
         """Return the current mission, it's either executing or just ended"""
         mission = None
         if self.executing_mission_id is None:
-            self.executing_mission_id = self.mir_api.get_executing_mission_id()
+            self.executing_mission_id = await self.mir_api.get_executing_mission_id()
         if self.executing_mission_id:
-            mission = self.mir_api.get_mission(self.executing_mission_id)
+            mission = await self.mir_api.get_mission(self.executing_mission_id)
             if mission["state"] != MISSION_STATE_EXECUTING:
                 # Update executing_mission_id so the next call to this method returns the next
                 # executing mission or None.
@@ -52,7 +51,7 @@ class MirInorbitMissionTracking:
                 self.executing_mission_id = None
         return mission
 
-    def report_mission(self, status, metrics):
+    async def report_mission(self, status, metrics):
         # Hack to allow MiR defined missions and InOrbit missions to co-exist
         # When an InOrbit mission is running, we disable tracking for MiR defined
         # missions
@@ -60,7 +59,7 @@ class MirInorbitMissionTracking:
             self.mir_mission_tracking_enabled = False
         if not self.mir_mission_tracking_enabled:
             return
-        mission = self.get_current_mission()
+        mission = await self.get_current_mission()
         if mission:
             completed_percent = len(mission["actions"]) / len(mission["definition"]["actions"])
             # Merge 'Abort' and 'Aborted' values into a single state

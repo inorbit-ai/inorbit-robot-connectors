@@ -4,12 +4,11 @@
 
 import argparse
 import logging
+import signal
 import sys
-from inorbit_connector.utils import read_yaml
-from inorbit_mir_connector.src.connector import Mir100Connector
-from inorbit_mir_connector.config.mir100_model import load_and_validate
-from inorbit_mir_connector.config.mir100_model import default_mir100_config
-from inorbit_mir_connector.config.utils import write_yaml
+
+from inorbit_mir_connector.src.connector import MirConnector
+from inorbit_mir_connector.config.connector_model import load_and_validate
 
 logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger(__name__)
@@ -23,11 +22,10 @@ class CustomParser(argparse.ArgumentParser):
         sys.exit(2)
 
 
-# TODO(Elvio): Make sure start() has a unit test!
 def start():
     """This command takes as input file the MiR connector configuration and starts the connector."""
 
-    parser = CustomParser(prog="inorbit-mir100-connector")
+    parser = CustomParser(prog="inorbit_mir_connector")
     parser.add_argument(
         "-c",
         "--config",
@@ -53,19 +51,18 @@ def start():
         exit(1)
     except IndexError:
         LOGGER.info(
-            f"Missing configuration section for robot_id '{robot_id}'. Creating "
-            "a skeleton configuration for it."
+            f"Missing configuration section for robot_id '{robot_id}' within {config_filename}."
         )
-        config_dict = read_yaml(config_filename)
-        config_dict[robot_id] = default_mir100_config
-        write_yaml(config_filename, config_dict)
-        LOGGER.info("Configuration file updated. Please fill in the missing values.")
         exit(1)
 
-    mir_connector = Mir100Connector(robot_id, mir_config)
-    try:
-        mir_connector.start()
-        mir_connector.join()
-    except KeyboardInterrupt:
-        LOGGER.info("Received SIGINT, stopping connector")
-        mir_connector.stop()
+    connector = MirConnector(robot_id, mir_config)
+
+    LOGGER.info("Starting connector...")
+    connector.start()
+
+    # Register a signal handler for graceful shutdown
+    # When a keyboard interrupt is received (Ctrl+C), the connector will be stopped
+    signal.signal(signal.SIGINT, lambda sig, frame: connector.stop())
+
+    # Wait for the connector to finish
+    connector.join()

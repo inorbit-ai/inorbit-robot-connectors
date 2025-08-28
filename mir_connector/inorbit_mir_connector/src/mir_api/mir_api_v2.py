@@ -10,6 +10,7 @@ import logging
 import httpx
 from .mir_api_base import MirApiBaseClass
 from inorbit_edge.missions import MISSION_STATE_EXECUTING
+from typing import Optional
 
 API_V2_CONTEXT_URL = "/api/v2.0.0"
 
@@ -32,6 +33,8 @@ class MirApiV2(MirApiBaseClass):
         mir_host_port=80,
         mir_use_ssl=False,
         verify_ssl=True,
+        ssl_ca_bundle: Optional[str] = None,
+        ssl_verify_hostname: bool = True,
     ):
         self.logger = logging.getLogger(name=self.__class__.__name__)
         self.mir_base_url = (
@@ -40,7 +43,6 @@ class MirApiV2(MirApiBaseClass):
         self.mir_api_base_url = f"{self.mir_base_url}{API_V2_CONTEXT_URL}"
         self.mir_username = mir_username
         self.mir_password = mir_password
-        self._verify_ssl = verify_ssl  # Store for use in sync methods
         m_async = hashlib.sha256()
         m_async.update(self.mir_password.encode())
         self._auth = (self.mir_username, m_async.hexdigest())
@@ -50,6 +52,8 @@ class MirApiV2(MirApiBaseClass):
             default_headers={"Accept-Language": "en_US"},
             timeout=10,
             verify_ssl=verify_ssl,
+            ssl_ca_bundle=ssl_ca_bundle,
+            ssl_verify_hostname=ssl_verify_hostname,
         )
 
     async def get_metrics(self):
@@ -256,19 +260,36 @@ class MirApiV2(MirApiBaseClass):
         # Timeout for the second part of the request, where the actual image is downloaded
         image_timeout = max(self._timeout, 30)
 
-        # Download the image - use the same SSL verification settings as the async client
-        with httpx.Client(
-            base_url=self._base_url, 
-            timeout=image_timeout, 
-            verify=self._verify_ssl,  # Use the same SSL verification setting
-        ) as client:
-            try:
-                response = client.get(
-                    f"maps/{map_id}", headers={"Accept-Language": "en_US"}, auth=self._auth
-                )
-                response.raise_for_status()
-            except Exception as e:
-                self._last_call_successful = False
-                raise e
-
-            return response.json()
+        # Download the image - use the same SSL settings as the async client
+        if isinstance(self._ssl_verify, httpx.AsyncHTTPTransport):
+            # For custom transport, create equivalent sync transport with stored SSL context
+            sync_transport = httpx.HTTPTransport(verify=self._ssl_context)
+            with httpx.Client(
+                base_url=self._base_url, 
+                timeout=image_timeout, 
+                transport=sync_transport,
+            ) as client:
+                try:
+                    response = client.get(
+                        f"maps/{map_id}", headers={"Accept-Language": "en_US"}, auth=self._auth
+                    )
+                    response.raise_for_status()
+                except Exception as e:
+                    self._last_call_successful = False
+                    raise e
+        else:
+            with httpx.Client(
+                base_url=self._base_url, 
+                timeout=image_timeout, 
+                verify=self._ssl_verify,
+            ) as client:
+                try:
+                    response = client.get(
+                        f"maps/{map_id}", headers={"Accept-Language": "en_US"}, auth=self._auth
+                    )
+                    response.raise_for_status()
+                except Exception as e:
+                    self._last_call_successful = False
+                    raise e
+        
+        return response.json()

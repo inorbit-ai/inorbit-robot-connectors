@@ -77,6 +77,8 @@ class MirConnector(Connector):
             mir_host_port=config.connector_config.mir_host_port,
             mir_use_ssl=config.connector_config.mir_use_ssl,
             verify_ssl=config.connector_config.verify_ssl,
+            ssl_ca_bundle=config.connector_config.ssl_ca_bundle,
+            ssl_verify_hostname=config.connector_config.ssl_verify_hostname,
         )
 
         # Async robot wrapper managing polling

@@ -5,6 +5,7 @@
 from abc import ABC, abstractmethod
 import logging
 import httpx
+from typing import Union, Tuple, Optional
 
 
 class MirApiBaseClass(ABC):
@@ -16,20 +17,79 @@ class MirApiBaseClass(ABC):
         default_headers: dict | None = None,
         timeout: int = 10,
         verify_ssl: bool = True,
+        ssl_ca_bundle: Optional[str] = None,
+        ssl_verify_hostname: bool = True,
     ):
         self.logger = logging.getLogger(name=self.__class__.__name__)
         self._base_url = base_url
         self._timeout = timeout
-        self._async_client = httpx.AsyncClient(
-            base_url=base_url,
-            timeout=timeout,
-            auth=auth,
-            headers=default_headers or {},
-            verify=verify_ssl,
-        )
+        
+        # Configure SSL settings
+        verify, ssl_context = self._configure_ssl_verify(verify_ssl, ssl_ca_bundle, ssl_verify_hostname)
+        
+        # Handle custom transport for hostname verification bypass
+        if isinstance(verify, httpx.AsyncHTTPTransport):
+            self._async_client = httpx.AsyncClient(
+                base_url=base_url,
+                timeout=timeout,
+                auth=auth,
+                headers=default_headers or {},
+                transport=verify,  # Custom async transport with SSL context
+            )
+        else:
+            self._async_client = httpx.AsyncClient(
+                base_url=base_url,
+                timeout=timeout,
+                auth=auth,
+                headers=default_headers or {},
+                verify=verify,
+            )
+        
+        # Store SSL config for sync clients
+        self._ssl_verify = verify
+        self._ssl_context = ssl_context  # Store SSL context for sync clients
+        
         # If the log level is INFO, reduce the verbosity of httpx
         if self.logger.getEffectiveLevel() == logging.INFO:
             logging.getLogger("httpx").setLevel(logging.WARNING)
+    
+    def _configure_ssl_verify(self, verify_ssl: bool, ssl_ca_bundle: Optional[str], ssl_verify_hostname: bool) -> tuple[Union[bool, str, httpx.AsyncHTTPTransport], Optional[object]]:
+        """Configure SSL verification settings for httpx client.
+        
+        Args:
+            verify_ssl: Whether to verify SSL certificates
+            ssl_ca_bundle: Path to custom CA bundle file
+            ssl_verify_hostname: Whether to verify hostname matches certificate
+            
+        Returns:
+            Tuple of (SSL verification setting for httpx, SSL context for sync clients)
+        """
+        if not verify_ssl:
+            self.logger.warning(
+                "SSL certificate verification is DISABLED. This connection is vulnerable to "
+                "man-in-the-middle attacks. For secure connections, set verify_ssl=true and "
+                "provide ssl_ca_bundle with MiR's certificate."
+            )
+            return False, None
+        elif not ssl_verify_hostname:
+            # Create custom SSL context that verifies cert but not hostname
+            import ssl
+            ssl_context = ssl.create_default_context()
+            if ssl_ca_bundle:
+                ssl_context.load_verify_locations(ssl_ca_bundle)
+                self.logger.info(f"Using custom CA bundle with hostname verification disabled: {ssl_ca_bundle}")
+            else:
+                self.logger.info("Using default CA bundle with hostname verification disabled")
+            ssl_context.check_hostname = False
+            # Create custom async transport with our SSL context
+            return httpx.AsyncHTTPTransport(verify=ssl_context), ssl_context
+        elif ssl_ca_bundle:
+            self.logger.info(f"Using custom CA bundle for SSL verification: {ssl_ca_bundle}")
+            return ssl_ca_bundle, None
+        else:
+            return True, None  # Use default CA bundle
+    
+
 
     async def _get(self, endpoint: str, **kwargs) -> httpx.Response:
         res = await self._async_client.get(endpoint, **kwargs)

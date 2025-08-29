@@ -7,9 +7,10 @@ from setuptools import setup
 
 requirements = [
     "requests>=2.31,<3.0",
-    "httpx>=0.27,<0.28",
+    "httpx",  # >=0.27,<0.28",
     "inorbit-edge[video]>=1.17",
     "inorbit-connector~=1.2.1",
+    "inorbit_edge_executor @ file:///home/tomas/InOrbit/inorbit_edge_executor",
     "prometheus-client>=0.14.1",
     "pytz>=2022.7",
     # NOTE: both pyyaml and ruamel.yaml packages are included here. Otherwise, the
@@ -29,7 +30,7 @@ test_requirements = [
     "requests_mock==1.11",
     "deepdiff==6.7",
     "pytest-asyncio>=0.23",
-    "pytest-httpx>=0.30",
+    "pytest-httpx",  # >=0.30",
 ]
 
 dev_requirements = {

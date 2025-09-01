@@ -13,6 +13,7 @@ import logging
 import httpx
 from PIL import Image
 import io
+from typing import Optional
 
 # from typing import override # TODO(b-Tomas): Uncomment when updating to Python 3.13
 from inorbit_connector.connector import Connector
@@ -24,7 +25,9 @@ from inorbit_edge.robot import COMMAND_NAV_GOAL
 from inorbit_mir_connector import get_module_version
 from .mir_api import MirApiV2
 from .mir_api import MirWebSocketV2
-from .mission import MirInorbitMissionTracking
+from .mission_tracking import MirInorbitMissionTracking
+from .mission_exec import MirMissionExecutor
+from inorbit_edge_executor.inorbit import InOrbitAPI as MissionInOrbitAPI
 from ..config.connector_model import ConnectorConfig
 from .robot.robot import Robot
 from tenacity import retry, wait_exponential_jitter, before_sleep_log, retry_if_exception_type
@@ -104,12 +107,29 @@ class MirConnector(Connector):
             )
 
         # Set up InOrbit Mission Tracking
-        self.mission_tracking = MirInorbitMissionTracking(
-            mir_api=self.mir_api,
-            inorbit_sess=self._robot_session,
-            robot_tz_info=self.robot_tz_info,
-            enable_io_mission_tracking=config.connector_config.enable_mission_tracking,
-        )
+        mission_tracking_enabled = config.connector_config.enable_mission_tracking
+        self.mission_tracking: Optional[MirInorbitMissionTracking] = None
+        if mission_tracking_enabled:
+            self.mission_tracking = MirInorbitMissionTracking(
+                mir_api=self.mir_api,
+                inorbit_sess=self._robot_session,
+                robot_tz_info=self.robot_tz_info,
+                enable_io_mission_tracking=config.connector_config.enable_mission_tracking,
+            )
+
+        # Set up InOrbit Edge Executor for mission execution
+        # TODO(b-Tomas): dynamically enable/disable mission tracking when executing a mission
+        mission_execution_enabled = not mission_tracking_enabled
+        self.mission_executor: Optional[MirMissionExecutor] = None
+        if mission_execution_enabled:
+            self.mission_executor = MirMissionExecutor(
+                robot_id=robot_id,
+                inorbit_api=MissionInOrbitAPI(
+                    base_url=self._robot_session.inorbit_rest_api_endpoint,
+                    api_key=self.config.api_key,
+                ),
+                mir_api=self.mir_api,
+            )
 
         # Background tasks
         self._bg_tasks: list[asyncio.Task] = []
@@ -136,6 +156,7 @@ class MirConnector(Connector):
                 information about the received command request.
         """
         self._logger.info(f"Received '{command_name}'!. {args}")
+
         if command_name == COMMAND_CUSTOM_COMMAND:
             if len(args) < 2:
                 self._logger.error("Invalid number of arguments: ", args)
@@ -144,12 +165,40 @@ class MirConnector(Connector):
                     execution_status_details="Invalid number of arguments",
                 )
                 return
+
+            # Parse command name and arguments
+            # TODO: Use parsed arguments on all custom commands
+            script_name = args[0]
+            args_raw = list(args[1])
+            script_args = {}
+            if (
+                isinstance(args_raw, list)
+                and len(args_raw) % 2 == 0
+                and all(isinstance(key, str) for key in args_raw[::2])
+            ):
+                script_args = dict(zip(args_raw[::2], args_raw[1::2]))
+                self._logger.debug(f"Parsed arguments are: {script_args}")
+            else:
+                return options["result_function"](CommandResultCode.FAILURE, "Invalid arguments")
+
+            # Delegate mission commands to the mission executor
+            if self.mission_executor:
+                handled = await self.mission_executor.handle_command(
+                    script_name, script_args, options
+                )
+                if handled:
+                    self._logger.info(f"Mission executor handled command '{script_name}'")
+                    # The executor handles calling the result function
+                    return
+
+            # TODO: Use parsed arguments on all custom commands
             script_name = args[0]
             script_args = args[1]
             # TODO (Elvio): Needs to be re designed.
             # 1. script_name is not standarized at all
             # 2. Consider implementing a callback for handling mission specific commands
             # 3. Needs an interface for supporting mission related actions
+
             if script_name == "queue_mission" and script_args[0] == "--mission_id":
                 self.mission_tracking.mir_mission_tracking_enabled = (
                     self._robot_session.missions_module.executor.wait_until_idle(0)
@@ -184,7 +233,17 @@ class MirConnector(Connector):
                     await self.mir_api.clear_error()
             elif script_name == "set_waiting_for" and script_args[0] == "--text":
                 self._logger.info(f"Setting 'waiting for' value to {script_args[1]}")
-                self.mission_tracking.waiting_for_text = script_args[1]
+                if self.mission_tracking:
+                    self.mission_tracking.waiting_for_text = script_args[1]
+                else:
+                    self._logger.warning(
+                        "Mission tracking is not enabled, skipping 'waiting for' value"
+                    )
+                    options["result_function"](
+                        CommandResultCode.FAILURE, "Mission tracking is not enabled"
+                    )
+                    return
+
             elif script_name == "localize":
                 # The localize command sets the robot's position and current map
                 # The expected arguments are "x" and "y" in meters and "orientation" in degrees, as
@@ -239,6 +298,16 @@ class MirConnector(Connector):
             self.mir_ws.connect()
         # Start robot polling loops
         self.robot.start()
+
+        # Initialize mission executor
+        if self.mission_executor:
+            try:
+                await self.mission_executor.initialize()
+                self._logger.info("Mission executor initialized successfully")
+            except Exception as e:
+                self._logger.error(f"Failed to initialize mission executor: {e}")
+                self.mission_executor = None
+
         # Start async setup and garbage collection for missions
         self._bg_tasks.append(asyncio.create_task(self.setup_connector_missions()))
         self._bg_tasks.append(asyncio.create_task(self._missions_garbage_collector()))
@@ -250,6 +319,15 @@ class MirConnector(Connector):
             self.mir_ws.disconnect()
         await self.robot.stop()
         await self.mir_api.close()
+
+        # Shutdown mission executor
+        if self.mission_executor:
+            try:
+                await self.mission_executor.shutdown()
+                self._logger.info("Mission executor shut down successfully")
+            except Exception as e:
+                self._logger.error(f"Error shutting down mission executor: {e}")
+
         # Cancel background tasks
         for t in self._bg_tasks:
             t.cancel()
@@ -311,7 +389,9 @@ class MirConnector(Connector):
             "state_text": state_text,
             "mode_text": mode_text,
             "robot_model": self.status.get("robot_model"),
-            "waiting_for": self.mission_tracking.waiting_for_text,
+            "waiting_for": (
+                self.mission_tracking.waiting_for_text if self.mission_tracking else None
+            ),
             "api_connected": self.robot.api_connected,
         }
         self._logger.debug(f"Publishing key values: {key_values}")
@@ -330,11 +410,12 @@ class MirConnector(Connector):
                 ram_usage_percentage=memory_usage,
             )
 
-        # publish mission data
-        try:
-            await self.mission_tracking.report_mission(self.status, self.metrics or {})
-        except Exception:
-            self._logger.exception("Error reporting mission")
+        # publish mission data if available
+        if self.mission_tracking:
+            try:
+                await self.mission_tracking.report_mission(self.status, self.metrics or {})
+            except Exception:
+                self._logger.exception("Error reporting mission")
 
     def publish_api_error(self):
         """Publish an error message when the API call fails.

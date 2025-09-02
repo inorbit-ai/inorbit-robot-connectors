@@ -57,7 +57,6 @@ class MiRWorkerPool(WorkerPool):
         Aborts a mission. If the mission is not found it raises a MissionNotFoundException().
         """
         super().abort_mission(mission_id)
-        # TODO(b-Tomas): add abort methods to the API class or reorganize the code
         await self.mir_api.abort_all_missions()
 
 

@@ -18,7 +18,8 @@ from .mir_api import SetStateId
 # TODO(b-Tomas): Impleemnt proper translation from InOrbit mission definitions into multi-step MiR missions.
 #   - So far, this implements native pause/resume/abort methods for MiR missions.
 
-class MiRWorkerPool(WorkerPool):
+
+class MirWorkerPool(WorkerPool):
 
     def __init__(self, mir_api: MirApiV2, *args, **kwargs):
         self.mir_api = mir_api
@@ -86,7 +87,7 @@ class MirMissionExecutor:
         if not self._initialized:
             # TODO: Make the database filename configurable
             db = await get_db("dummy")
-            self._worker_pool = MiRWorkerPool(
+            self._worker_pool = MirWorkerPool(
                 mir_api=self.mir_api,
                 api=self.inorbit_api,
                 db=db,

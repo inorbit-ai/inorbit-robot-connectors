@@ -1,7 +1,6 @@
 # SPDX-FileCopyrightText: 2024 InOrbit, Inc.
 #
 # SPDX-License-Identifier: MIT
-
 import asyncio
 import logging
 import json
@@ -13,6 +12,10 @@ from inorbit_edge_executor.worker_pool import WorkerPool
 from inorbit_edge_executor.db import get_db
 from .mir_api import MirApiV2
 
+# Edge-mission execution module for MiR robots. It extends the inorbit-edge-executor module for translating missions
+# into MiR language and executing them.
+# TODO(b-Tomas): Impleemnt proper translation from InOrbit mission definitions into multi-step MiR missions.
+#   - So far, this implements native pause/resume/abort methods for MiR missions.
 
 class MiRWorkerPool(WorkerPool):
 

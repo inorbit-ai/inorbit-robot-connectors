@@ -6,6 +6,7 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from inorbit_connector.models import InorbitConnectorConfig
 from inorbit_connector.utils import read_yaml
+from typing import Optional
 
 # Default environment file, relative to the directory the connector is executed from. If using a
 # different .env file, make sure to source it before running the connector.
@@ -35,14 +36,18 @@ class MirConnectorConfig(BaseSettings):
 
     mir_host_address: str
     mir_host_port: int
-    mir_enable_ws: bool
-    mir_ws_port: int
-    mir_use_ssl: bool
+    
     mir_username: str
     mir_password: str
     mir_api_version: str
     mir_firmware_version: str
     enable_mission_tracking: bool
+    
+    # SSL Configuration
+    mir_use_ssl: bool
+    verify_ssl: bool = True  # Verify SSL certificates (set to False for self-signed)
+    ssl_ca_bundle: Optional[str] = None  # Path to CA bundle file for custom CAs
+    ssl_verify_hostname: bool = True  # Verify hostname matches certificate (set to False for FRP/proxy)
 
     @field_validator("mir_api_version")
     def api_version_validation(cls, mir_api_version):

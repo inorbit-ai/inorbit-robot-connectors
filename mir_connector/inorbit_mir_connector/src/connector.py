@@ -23,7 +23,6 @@ from inorbit_edge.robot import COMMAND_MESSAGE
 from inorbit_edge.robot import COMMAND_NAV_GOAL
 from inorbit_mir_connector import get_module_version
 from .mir_api import MirApiV2
-from .mir_api import MirWebSocketV2
 from .mission import MirInorbitMissionTracking
 from ..config.connector_model import ConnectorConfig
 from .robot.robot import Robot
@@ -38,7 +37,7 @@ MIR_STATE = {3: "READY", 4: "PAUSE", 11: "MANUALCONTROL"}
 # At shutdown, the group will be deleted
 MIR_INORBIT_MISSIONS_GROUP_NAME = "InOrbit Temporary Missions Group"
 # Distance threshold for MiR move missions in meters
-# Used in waypoints sent via missions when the WS interface is not enabled
+# Used in waypoints sent via missions
 MIR_MOVE_DISTANCE_THRESHOLD = 0.1
 
 # Remove missions created in the temporary missions group every 12 hours
@@ -77,6 +76,9 @@ class MirConnector(Connector):
             mir_password=config.connector_config.mir_password,
             mir_host_port=config.connector_config.mir_host_port,
             mir_use_ssl=config.connector_config.mir_use_ssl,
+            verify_ssl=config.connector_config.verify_ssl,
+            ssl_ca_bundle=config.connector_config.ssl_ca_bundle,
+            ssl_verify_hostname=config.connector_config.ssl_verify_hostname,
         )
 
         # Async robot wrapper managing polling
@@ -84,15 +86,6 @@ class MirConnector(Connector):
             mir_api=self.mir_api,
             default_update_freq=1.0,  # 1 Hz status by default
         )
-
-        # Configure the ws connection to the robot
-        self.ws_enabled = config.connector_config.mir_enable_ws
-        if self.ws_enabled:
-            self.mir_ws = MirWebSocketV2(
-                mir_host_address=config.connector_config.mir_host_address,
-                mir_ws_port=config.connector_config.mir_ws_port,
-                mir_use_ssl=config.connector_config.mir_use_ssl,
-            )
 
         # Configure the timezone
         self.robot_tz_info = pytz.timezone("UTC")
@@ -234,9 +227,6 @@ class MirConnector(Connector):
 
     async def _connect(self) -> None:
         """Connect to the robot services and initialize background tasks."""
-        # If enabled, initiate the websockets client
-        if self.ws_enabled:
-            self.mir_ws.connect()
         # Start robot polling loops
         self.robot.start()
         # Start async setup and garbage collection for missions
@@ -246,8 +236,6 @@ class MirConnector(Connector):
     async def _disconnect(self):
         """Disconnect from any external services"""
         await self.cleanup_connector_missions()
-        if self.ws_enabled:
-            self.mir_ws.disconnect()
         await self.robot.stop()
         await self.mir_api.close()
         # Cancel background tasks
@@ -319,16 +307,6 @@ class MirConnector(Connector):
 
         # Reporting system stats
         # TODO(b-Tomas): Report more system stats
-
-        if self.ws_enabled:
-            cpu_usage = self.mir_ws.get_cpu_usage()
-            disk_usage = self.mir_ws.get_disk_usage()
-            memory_usage = self.mir_ws.get_memory_usage()
-            self._robot_session.publish_system_stats(
-                cpu_load_percentage=cpu_usage,
-                hdd_usage_percentage=disk_usage,
-                ram_usage_percentage=memory_usage,
-            )
 
         # publish mission data
         try:

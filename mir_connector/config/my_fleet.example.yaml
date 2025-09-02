@@ -19,16 +19,39 @@
   connector_config:
     mir_host_address: localhost
     mir_host_port: 80
-    mir_enable_ws: True
-    mir_ws_port: 9090
-    mir_use_ssl: False
+    mir_use_ssl: false
     mir_username: username
     mir_password: password
     mir_api_version: v2.0
     mir_firmware_version: v2
+    
+    # SSL Configuration - Choose one of these scenarios:
+    
+    # SCENARIO 1: No SSL (HTTP) - Default for local development
+    # mir_use_ssl: false
+    # verify_ssl and other SSL options are ignored when mir_use_ssl is false
+    
+    # SCENARIO 2: SSL with self-signed certificate (quick setup, less secure)
+    # mir_use_ssl: true
+    # verify_ssl: false  # WARNING: Skips all certificate verification
+    
+    # SCENARIO 3: SSL with proper certificate verification (RECOMMENDED)
+    # mir_use_ssl: true
+    verify_ssl: true
+    # ssl_ca_bundle: "/path/to/mir-cert.pem"  # Extract MiR's cert: openssl s_client -connect MIR_IP:443 -showcerts </dev/null 2>/dev/null | openssl x509 -outform PEM > mir-cert.pem
+    # ssl_verify_hostname: true  # Set to false for FRP/proxy/tunnel setups where hostname doesn't match
+    
+    # SCENARIO 4: SSL through FRP/VPN/Proxy tunnel (hostname mismatch)
+    # mir_use_ssl: true
+    # verify_ssl: true
+    # ssl_ca_bundle: "/path/to/mir-cert.pem"  # Extract from tunnel endpoint
+    # ssl_verify_hostname: false  # Bypass hostname verification for tunnels
+    
+    # Mission tracking
     # Toggle InOrbit Mission Tracking features. https://developer.inorbit.ai/tutorials#mission-tracking-tutorial
     # Mission Tracking features are not available on every InOrbit edition.
     enable_mission_tracking: false
+    
   # Configuration for running user scripts
   # Folder where the user scripts are. If not set, "~/.inorbit_connectors/connector-<robot_id>/local/" will be used
   user_scripts_dir: /home/inorbit/mir100_connector/user_scripts_mir100-1

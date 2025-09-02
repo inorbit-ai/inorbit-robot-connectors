@@ -5,7 +5,6 @@
 import math
 import time
 import pytest
-import websocket
 import uuid
 from unittest.mock import MagicMock, Mock, call, AsyncMock
 from inorbit_edge.robot import RobotSession
@@ -18,7 +17,6 @@ from inorbit_connector.connector import CommandResultCode
 @pytest.fixture
 def connector(monkeypatch, tmp_path):
     monkeypatch.setenv("INORBIT_KEY", "abc123")
-    monkeypatch.setattr(websocket, "WebSocketApp", MagicMock())
     monkeypatch.setattr(RobotSession, "connect", MagicMock())
 
     connector = MirConnector(
@@ -32,8 +30,6 @@ def connector(monkeypatch, tmp_path):
             connector_config={
                 "mir_host_address": "example.com",
                 "mir_host_port": 80,
-                "mir_enable_ws": True,
-                "mir_ws_port": 9090,
                 "mir_use_ssl": False,
                 "mir_username": "user",
                 "mir_password": "pass",
@@ -138,7 +134,6 @@ async def test_command_callback_missions(connector, callback_kwargs):
 def test_enable_ws_flag(monkeypatch, tmp_path):
     monkeypatch.setenv("INORBIT_KEY", "abc123")
     # No session creation methods in async version
-    monkeypatch.setattr(websocket, "WebSocketApp", MagicMock())
     monkeypatch.setattr(RobotSession, "connect", MagicMock())
     monkeypatch.setattr(time, "sleep", Mock())
 

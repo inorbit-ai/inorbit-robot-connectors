@@ -3,14 +3,15 @@
 # SPDX-License-Identifier: MIT
 
 import hashlib
-from prometheus_client import parser
-import json
 import math
 import logging
 import httpx
-from .mir_api_base import MirApiBaseClass
-from inorbit_edge.missions import MISSION_STATE_EXECUTING
+from enum import Enum
 from typing import Optional
+from prometheus_client import parser
+
+from inorbit_edge.missions import MISSION_STATE_EXECUTING
+from .mir_api_base import MirApiBaseClass
 
 API_V2_CONTEXT_URL = "/api/v2.0.0"
 
@@ -21,6 +22,13 @@ MISSION_GROUPS_ENDPOINT_V2 = "mission_groups"
 MISSIONS_ENDPOINT_V2 = "missions"
 STATUS_ENDPOINT_V2 = "status"
 DIAGNOSTICS_ENDPOINT_V2 = "experimental/diagnostics"
+
+
+class SetStateId(int, Enum):
+    """Defined states for the set_state method"""
+    READY = 3
+    PAUSE = 4
+    MANUALCONTROL = 11
 
 
 class MirApiV2(MirApiBaseClass):
@@ -197,13 +205,10 @@ class MirApiV2(MirApiBaseClass):
         )
         self.logger.info(response.text)
 
-    async def set_state(self, state_id):
+    async def set_state(self, state_id: int):
         """Set robot state
 
-        Allowed values are:
-            - 3: READY
-            - 4: PAUSE
-            - 11: MANUAL CONTROL
+        Some allowed values are defined in the SetStateId enum
         """
         return await self.set_status({"state_id": state_id})
 
@@ -225,7 +230,7 @@ class MirApiV2(MirApiBaseClass):
         await self.set_status({"clear_error": True})
         # Also setting robot state to Ready because it stays
         # paused after clearing the error state
-        await self.set_state(3)
+        await self.set_state(SetStateId.READY.value)
 
     async def send_waypoint(self, pose):
         """Receives a pose and sends a request to command the robot to navigate to the waypoint"""
@@ -291,5 +296,5 @@ class MirApiV2(MirApiBaseClass):
                 except Exception as e:
                     self._last_call_successful = False
                     raise e
-        
+
         return response.json()

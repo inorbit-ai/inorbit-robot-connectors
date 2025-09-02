@@ -24,6 +24,7 @@ from inorbit_edge.robot import COMMAND_MESSAGE
 from inorbit_edge.robot import COMMAND_NAV_GOAL
 from inorbit_mir_connector import get_module_version
 from .mir_api import MirApiV2
+from .mir_api import SetStateId
 from .mission_tracking import MirInorbitMissionTracking
 from .mission_exec import MirMissionExecutor
 from inorbit_edge_executor.inorbit import InOrbitAPI as MissionInOrbitAPI
@@ -280,9 +281,9 @@ class MirConnector(Connector):
         elif command_name == COMMAND_MESSAGE:
             msg = args[0]
             if msg == "inorbit_pause":
-                await self.mir_api.set_state(4)
+                await self.mir_api.set_state(SetStateId.PAUSE.value)
             elif msg == "inorbit_resume":
-                await self.mir_api.set_state(3)
+                await self.mir_api.set_state(SetStateId.READY.value)
         else:
             self._logger.info(f"Received unknown command '{command_name}'!. {args}")
 

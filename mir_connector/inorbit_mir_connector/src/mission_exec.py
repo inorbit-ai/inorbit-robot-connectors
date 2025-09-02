@@ -11,6 +11,7 @@ from inorbit_edge_executor.mission import Mission
 from inorbit_edge_executor.worker_pool import WorkerPool
 from inorbit_edge_executor.db import get_db
 from .mir_api import MirApiV2
+from .mir_api import SetStateId
 
 # Edge-mission execution module for MiR robots. It extends the inorbit-edge-executor module for translating missions
 # into MiR language and executing them.
@@ -33,8 +34,7 @@ class MiRWorkerPool(WorkerPool):
         """
         await asyncio.gather(
             super().pause_mission(mission_id),
-            # TODO(b-Tomas): add pause/resume methods to the API class or reorganize the code
-            self.mir_api.set_state(4),
+            self.mir_api.set_state(SetStateId.PAUSE.value),
         )
 
     # @override
@@ -47,8 +47,7 @@ class MiRWorkerPool(WorkerPool):
         """
         await asyncio.gather(
             super().resume_mission(mission_id),
-            # TODO(b-Tomas): add pause/resume methods to the API class or reorganize the code
-            self.mir_api.set_state(3),
+            self.mir_api.set_state(SetStateId.READY.value),
         )
 
     # @override

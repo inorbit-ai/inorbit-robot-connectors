@@ -106,7 +106,7 @@ class MirMissionExecutor:
         """Check if the mission executor is initialized."""
         return self._initialized
 
-    async def handle_command(self, script_name: str, script_args: list, options: dict) -> bool:
+    async def handle_command(self, script_name: str, script_args: dict, options: dict) -> bool:
         """
         Handle mission-related custom commands.
 
@@ -176,7 +176,7 @@ class MirMissionExecutor:
                 execution_status_details=str(e),
             )
 
-    async def _handle_cancel_mission(self, script_args: list, options: dict) -> None:
+    async def _handle_cancel_mission(self, script_args: dict, options: dict) -> None:
         """Handle cancelMission command."""
         self.logger.info(f"Handling cancelMission command with arguments: {script_args}")
 
@@ -198,7 +198,7 @@ class MirMissionExecutor:
                 execution_status_details=str(e),
             )
 
-    async def _handle_update_mission_action(self, script_args: list, options: dict) -> None:
+    async def _handle_update_mission_action(self, script_args: dict, options: dict) -> None:
         """Handle updateMissionAction command."""
         self.logger.info(f"Handling updateMissionAction command with arguments: {script_args}")
 

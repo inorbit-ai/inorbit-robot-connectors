@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
+import asyncio
 import logging
 import json
 
@@ -10,33 +11,30 @@ from inorbit_edge_executor.datatypes import MissionRuntimeOptions
 from inorbit_edge_executor.mission import Mission
 from inorbit_edge_executor.worker_pool import WorkerPool
 from inorbit_edge_executor.db import get_db
-from inorbit_edge_executor.exceptions import InvalidMissionStateException, MissionNotFoundException
+from .mir_api import MirApiV2
 
 
 class MiRWorkerPool(WorkerPool):
-    def __init__(self, *args, **kwargs):
+
+    def __init__(self, mir_api: MirApiV2, *args, **kwargs):
+        self.mir_api = mir_api
         super().__init__(*args, **kwargs)
         self.logger = logging.getLogger(name=self.__class__.__name__)
 
+    # @override
     async def pause_mission(self, mission_id):
         """
         Pauses a running mission. If there's no worker for the mission it raises
         MissionNotFoundException(). If the mission is already paused it raises
         InvalidMissionStateException().
         """
-        async with self._mutex:
-            if mission_id not in self._workers:
-                serialized_mission = await self._db.fetch_mission(mission_id=mission_id)
-                if serialized_mission and serialized_mission.state["paused"]:
-                    self.logger.warning(f"Mission {mission_id} is already paused.")
-                    raise InvalidMissionStateException()
-                elif not serialized_mission or serialized_mission.state["finished"]:
-                    self.logger.warning(f"Mission {mission_id} not found or it's already finished")
-                    raise MissionNotFoundException()
-            else:
-                await self._workers[mission_id].pause()
-                del self._workers[mission_id]
+        await asyncio.gather(
+            super().pause_mission(mission_id),
+            # TODO(b-Tomas): add pause/resume methods to the API class or reorganize the code
+            self.mir_api.set_state(4),
+        )
 
+    # @override
     async def resume_mission(self, mission_id):
         """
         Resumes a paused mission. Paused missions are retrieved from the db, they are serialized
@@ -44,14 +42,20 @@ class MiRWorkerPool(WorkerPool):
         the db it raises a MissionNotFoundException(). If the mission is not paused it raises
         InvalidMissionStateException().
         """
-        serialized_mission = await self._db.fetch_mission(mission_id=mission_id)
-        if not serialized_mission or serialized_mission.state["finished"]:
-            self.logger.warning(f"Mission {mission_id} not found or it's already finished.")
-            raise MissionNotFoundException()
-        if not serialized_mission.state["paused"]:
-            self.logger.warning(f"Mission {mission_id} is not paused. It will not be resumed")
-            raise InvalidMissionStateException()
-        await self.execute_serialized_worker(serialized_mission)
+        await asyncio.gather(
+            super().resume_mission(mission_id),
+            # TODO(b-Tomas): add pause/resume methods to the API class or reorganize the code
+            self.mir_api.set_state(3),
+        )
+
+    # @override
+    async def abort_mission(self, mission_id):
+        """
+        Aborts a mission. If the mission is not found it raises a MissionNotFoundException().
+        """
+        super().abort_mission(mission_id)
+        # TODO(b-Tomas): add abort methods to the API class or reorganize the code
+        await self.mir_api.abort_all_missions()
 
 
 class MirMissionExecutor:
@@ -82,6 +86,7 @@ class MirMissionExecutor:
             # TODO: Use a proper database
             db = await get_db("dummy")
             self._worker_pool = MiRWorkerPool(
+                mir_api=self.mir_api,
                 api=self.inorbit_api,
                 db=db,
             )

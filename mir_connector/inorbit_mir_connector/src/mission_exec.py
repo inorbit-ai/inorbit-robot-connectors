@@ -85,7 +85,7 @@ class MirMissionExecutor:
     async def initialize(self):
         """Initialize the worker pool if not already done."""
         if not self._initialized:
-            # TODO: Use a proper database
+            # TODO: Make the database filename configurable
             db = await get_db("dummy")
             self._worker_pool = MiRWorkerPool(
                 mir_api=self.mir_api,

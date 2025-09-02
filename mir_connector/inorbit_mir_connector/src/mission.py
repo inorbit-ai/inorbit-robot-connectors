@@ -38,7 +38,11 @@ class MirInorbitMissionTracking:
         self.robot_tz_info = robot_tz_info
 
     def _safe_localize_timestamp(self, timestamp_str: str) -> float:
-        """Safely localize a timestamp string, handling both naive and timezone-aware datetimes."""
+        """Convert ISO timestamp string to Unix timestamp, handling timezone conversion.
+        
+        If timestamp lacks timezone info, applies robot's timezone.
+        If timestamp already has timezone info, uses it directly.
+        """
         try:
             dt = datetime.fromisoformat(timestamp_str)
             # If datetime already has timezone info, just convert to timestamp

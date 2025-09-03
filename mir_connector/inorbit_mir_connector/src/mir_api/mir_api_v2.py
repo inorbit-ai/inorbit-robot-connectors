@@ -183,30 +183,12 @@ class MirApiV2(MirApiBaseClass):
         executing = [m for m in missions if m["state"] == MISSION_STATE_EXECUTING]
         return executing[0]["id"] if len(executing) else None
 
-    async def queue_mission(
-        self,
-        mission_id: str,
-        message: Optional[str] = None,
-        parameters: Optional[list] = None,
-        priority: Optional[int] = 0,
-        fleet_schedule_guid: Optional[str] = None,
-        description: Optional[str] = None,
-    ):
+    async def queue_mission(self, mission_id):
         """Receives a mission ID and sends a request to append it to the robot's mission queue"""
         queue_mission_url = f"/{MISSION_QUEUE_ENDPOINT_V2}"
         mission_queues = {
             "mission_id": mission_id,
         }
-        if message:
-            mission_queues["message"] = message
-        if parameters:
-            mission_queues["parameters"] = parameters
-        if priority:
-            mission_queues["priority"] = priority
-        if fleet_schedule_guid:
-            mission_queues["fleet_schedule_guid"] = fleet_schedule_guid
-        if description:
-            mission_queues["description"] = description
 
         response = await self._post(
             queue_mission_url,

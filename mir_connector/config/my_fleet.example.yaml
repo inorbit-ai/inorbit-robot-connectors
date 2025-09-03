@@ -51,12 +51,6 @@
     # Toggle InOrbit Mission Tracking features. https://developer.inorbit.ai/tutorials#mission-tracking-tutorial
     # Mission Tracking features are not available on every InOrbit edition.
     enable_mission_tracking: false
-
-    # Use a temporary misisons group for waypoints. Defaults is true
-    enable_temporary_mission_group: true
-
-    # Default waypoint mission id, used if temporary mission group is not enabled
-    default_waypoint_mission_id:
     
   # Configuration for running user scripts
   # Folder where the user scripts are. If not set, "~/.inorbit_connectors/connector-<robot_id>/local/" will be used

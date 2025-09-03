@@ -118,7 +118,7 @@ async def test_toggle_inorbit_tracking(
 
 class TestSafeLocalizeTimestamp:
     """Test suite for the _safe_localize_timestamp function."""
-    
+
     @pytest.fixture
     def pst_mission_tracking(self):
         """Mission tracking with PST timezone."""
@@ -128,45 +128,45 @@ class TestSafeLocalizeTimestamp:
             robot_tz_info=pytz.timezone("America/Los_Angeles"),
             enable_io_mission_tracking=True,
         )
-    
+
     def test_timestamp_without_timezone_info(self, pst_mission_tracking):
         """Test handling of timestamp without timezone (applies robot timezone)."""
         # ISO timestamp without timezone info
         timestamp_str = "2023-12-07T15:07:51"
         result = pst_mission_tracking._safe_localize_timestamp(timestamp_str)
-        
+
         # Should apply PST timezone and convert to Unix timestamp
         expected_dt = pytz.timezone("America/Los_Angeles").localize(
             datetime.fromisoformat(timestamp_str)
         )
         expected = expected_dt.timestamp()
-        
+
         assert result == expected
-    
+
     def test_timestamp_with_timezone_info(self, pst_mission_tracking):
         """Test handling of timestamp with timezone info (uses existing timezone)."""
         # ISO timestamp with UTC timezone
         timestamp_str = "2023-12-07T23:07:51+00:00"
         result = pst_mission_tracking._safe_localize_timestamp(timestamp_str)
-        
+
         # Should use the provided timezone directly
         expected_dt = datetime.fromisoformat(timestamp_str)
         expected = expected_dt.timestamp()
-        
+
         assert result == expected
-    
+
     def test_timestamp_with_different_timezone(self, pst_mission_tracking):
         """Test timestamp with non-UTC timezone."""
         # ISO timestamp with Eastern timezone
         timestamp_str = "2023-12-07T18:07:51-05:00"
         result = pst_mission_tracking._safe_localize_timestamp(timestamp_str)
-        
+
         # Should use the provided timezone directly
         expected_dt = datetime.fromisoformat(timestamp_str)
         expected = expected_dt.timestamp()
-        
+
         assert result == expected
-    
+
     def test_utc_mission_tracking(self):
         """Test with UTC robot timezone."""
         utc_mission_tracking = MirInorbitMissionTracking(
@@ -175,60 +175,58 @@ class TestSafeLocalizeTimestamp:
             robot_tz_info=pytz.timezone("UTC"),
             enable_io_mission_tracking=True,
         )
-        
+
         # Timestamp without timezone should get UTC applied
         timestamp_str = "2023-12-07T23:07:51"
         result = utc_mission_tracking._safe_localize_timestamp(timestamp_str)
-        
-        expected_dt = pytz.timezone("UTC").localize(
-            datetime.fromisoformat(timestamp_str)
-        )
+
+        expected_dt = pytz.timezone("UTC").localize(datetime.fromisoformat(timestamp_str))
         expected = expected_dt.timestamp()
-        
+
         assert result == expected
-    
+
     def test_invalid_timestamp_fallback(self, pst_mission_tracking):
         """Test fallback behavior for invalid timestamp strings."""
         # Invalid ISO format
         invalid_timestamp = "not-a-valid-timestamp"
-        
+
         # Should return current time (approximately)
         before_call = datetime.now().timestamp()
         result = pst_mission_tracking._safe_localize_timestamp(invalid_timestamp)
         after_call = datetime.now().timestamp()
-        
+
         # Result should be between before and after call times (within 1 second)
         assert before_call <= result <= after_call + 1
-    
+
     def test_empty_string_fallback(self, pst_mission_tracking):
         """Test fallback behavior for empty string."""
         # Empty string
         result = pst_mission_tracking._safe_localize_timestamp("")
-        
+
         # Should return current time (approximately)
         current_time = datetime.now().timestamp()
         assert abs(result - current_time) < 1  # Within 1 second
-    
+
     def test_microseconds_handling(self, pst_mission_tracking):
         """Test handling of timestamps with microseconds."""
         # ISO timestamp with microseconds and no timezone
         timestamp_str = "2023-12-07T15:07:51.123456"
         result = pst_mission_tracking._safe_localize_timestamp(timestamp_str)
-        
+
         expected_dt = pytz.timezone("America/Los_Angeles").localize(
             datetime.fromisoformat(timestamp_str)
         )
         expected = expected_dt.timestamp()
-        
+
         assert result == expected
-    
+
     def test_microseconds_with_timezone(self, pst_mission_tracking):
         """Test handling of timestamps with microseconds and timezone."""
         # ISO timestamp with microseconds and timezone
         timestamp_str = "2023-12-07T23:07:51.123456+00:00"
         result = pst_mission_tracking._safe_localize_timestamp(timestamp_str)
-        
+
         expected_dt = datetime.fromisoformat(timestamp_str)
         expected = expected_dt.timestamp()
-        
+
         assert result == expected

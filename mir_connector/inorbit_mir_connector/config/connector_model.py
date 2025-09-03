@@ -73,11 +73,13 @@ class MirConnectorConfig(BaseSettings):
     @model_validator(mode="after")
     def check_ssl_and_ca_bundle_compatibility(self):
         """
-        Validator to ensure that if enable_temporary_mission_group is False, default_waypoint_mission_id is set.
+        Validator to ensure that if enable_temporary_mission_group is False,
+        default_waypoint_mission_id is set.
         """
         if not self.enable_temporary_mission_group and not self.default_waypoint_mission_id:
             raise ValueError(
-                "default_waypoint_mission_id should be set when enable_temporary_mission_group is False."
+                "default_waypoint_mission_id should be set when enable_temporary_mission_group "
+                "is False."
             )
         return self
 

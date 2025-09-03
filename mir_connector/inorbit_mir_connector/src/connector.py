@@ -294,7 +294,9 @@ class MirConnector(Connector):
                 self._logger.error("No waypoint mission id or temporary missions group enabled")
                 return options["result_function"](
                     CommandResultCode.FAILURE,
-                    execution_status_details="No waypoint mission id or temporary missions group enabled",
+                    execution_status_details=(
+                        "No waypoint mission id or temporary missions group enabled"
+                    ),
                 )
 
         elif command_name == COMMAND_MESSAGE:

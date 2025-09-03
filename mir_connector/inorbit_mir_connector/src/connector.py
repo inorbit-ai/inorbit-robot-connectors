@@ -269,7 +269,34 @@ class MirConnector(Connector):
             options["result_function"](CommandResultCode.SUCCESS)
         elif command_name == COMMAND_NAV_GOAL:
             pose = args[0]
-            await self.send_waypoint_over_missions(pose)
+            # If the temporary mission group is enabled, send the waypoint over missions
+            # TODO: Make it more generic if/when we support predefined missions groups
+            if self.config.connector_config.enable_temporary_mission_group:
+                await self.send_waypoint_over_missions(pose)
+            elif mission_id := self.config.connector_config.default_waypoint_mission_id:
+                x, y, orientation = (
+                    float(pose["x"]),
+                    float(pose["y"]),
+                    math.degrees(float(pose["theta"])),
+                )
+                await self.mir_api.abort_all_missions()
+                await self.mir_api.queue_mission(
+                    mission_id,
+                    message="InOrbit Waypoint",
+                    parameters=[
+                        {"id": "X", "value": x, "label": f"{x}"},
+                        {"id": "Y", "value": y, "label": f"{y}"},
+                        {"id": "Orientation", "value": orientation, "label": f"{orientation}"},
+                    ],
+                    description="Mission created by InOrbit",
+                )
+            else:
+                self._logger.error("No waypoint mission id or temporary missions group enabled")
+                return options["result_function"](
+                    CommandResultCode.FAILURE,
+                    execution_status_details="No waypoint mission id or temporary missions group enabled",
+                )
+
         elif command_name == COMMAND_MESSAGE:
             msg = args[0]
             if msg == "inorbit_pause":

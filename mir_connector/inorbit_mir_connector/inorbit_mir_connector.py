@@ -7,8 +7,9 @@ import logging
 import signal
 import sys
 
+from pydantic import ValidationError
 from inorbit_mir_connector.src.connector import MirConnector
-from inorbit_mir_connector.config.connector_model import load_and_validate
+from inorbit_mir_connector.config.connector_model import load_and_validate, format_validation_error
 
 logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger(__name__)
@@ -47,12 +48,15 @@ def start():
     try:
         mir_config = load_and_validate(config_filename, robot_id)
     except FileNotFoundError:
-        LOGGER.info("Missing configuration file")
+        LOGGER.error("Missing configuration file")
         exit(1)
     except IndexError:
-        LOGGER.info(
+        LOGGER.error(
             f"Missing configuration section for robot_id '{robot_id}' within {config_filename}."
         )
+        exit(1)
+    except ValidationError as e:
+        LOGGER.error(format_validation_error(e))
         exit(1)
 
     connector = MirConnector(robot_id, mir_config)

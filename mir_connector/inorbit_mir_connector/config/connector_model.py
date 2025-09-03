@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-from pydantic import field_validator
+from pydantic import field_validator, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from inorbit_connector.models import InorbitConnectorConfig
 from inorbit_connector.utils import read_yaml
@@ -99,7 +99,24 @@ def load_and_validate(config_filename: str, robot_id: str) -> ConnectorConfig:
         FileNotFoundError: If the configuration file does not exist.
         IndexError: If the configuration file does not contain the robot_id.
         yaml.YAMLError: If the configuration file is not valid YAML.
+        ValidationError: If the configuration file is not valid.
     """
 
     config = read_yaml(config_filename, robot_id)
     return ConnectorConfig(**config)
+
+
+def format_validation_error(error: ValidationError) -> str:
+    """Format Pydantic validation errors into a user-friendly message."""
+    error_messages = []
+
+    for err in error.errors():
+        field_path = " -> ".join(str(loc) for loc in err["loc"])
+        error_msg = err["msg"]
+
+        if field_path:
+            error_messages.append(f"  • Field '{field_path}': {error_msg}")
+        else:
+            error_messages.append(f"  • {error_msg}")
+
+    return "Config validation failed:\n" + "\n".join(error_messages)

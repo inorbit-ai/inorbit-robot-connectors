@@ -2,7 +2,8 @@
 #
 # SPDX-License-Identifier: MIT
 
-from pydantic import field_validator, ValidationError
+from pydantic import field_validator, model_validator, ValidationError
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from inorbit_connector.models import InorbitConnectorConfig
 from inorbit_connector.utils import read_yaml
@@ -42,6 +43,8 @@ class MirConnectorConfig(BaseSettings):
     mir_api_version: str
     mir_firmware_version: str
     enable_mission_tracking: bool
+    enable_temporary_mission_group: Optional[bool] = True
+    default_waypoint_mission_id: Optional[str] = None
 
     # SSL Configuration
     mir_use_ssl: bool
@@ -67,6 +70,19 @@ class MirConnectorConfig(BaseSettings):
                 f"Expected one of '{FIRMWARE_VERSIONS}'"
             )
         return mir_firmware_version
+
+    @model_validator(mode="after")
+    def check_ssl_and_ca_bundle_compatibility(self):
+        """
+        Validator to ensure that if enable_temporary_mission_group is False,
+        default_waypoint_mission_id is set.
+        """
+        if not self.enable_temporary_mission_group and not self.default_waypoint_mission_id:
+            raise ValueError(
+                "default_waypoint_mission_id should be set when enable_temporary_mission_group "
+                "is False."
+            )
+        return self
 
 
 class ConnectorConfig(InorbitConnectorConfig):

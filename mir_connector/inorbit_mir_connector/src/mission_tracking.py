@@ -39,7 +39,7 @@ class MirInorbitMissionTracking:
 
     def _safe_localize_timestamp(self, timestamp_str: str) -> float:
         """Convert ISO timestamp string to Unix timestamp, handling timezone conversion.
-        
+
         If timestamp lacks timezone info, applies robot's timezone.
         If timestamp already has timezone info, uses it directly.
         """
@@ -110,9 +110,7 @@ class MirInorbitMissionTracking:
                 },
             }
             if mission.get("finished") is not None:
-                mission_values["endTs"] = (
-                    self._safe_localize_timestamp(mission["finished"]) * 1000
-                )
+                mission_values["endTs"] = self._safe_localize_timestamp(mission["finished"]) * 1000
                 mission_values["completedPercent"] = 1
                 mission_values["status"] = (
                     "OK" if mission["state"] == MISSION_STATE_DONE else "error"

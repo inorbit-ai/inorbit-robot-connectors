@@ -3,12 +3,9 @@
 # SPDX-License-Identifier: MIT
 
 import pytest
-import json
 from inorbit_mir_connector.src.mir_api import MirApiV2
 from deepdiff import DeepDiff
 import httpx
-from unittest.mock import MagicMock
-import math
 
 
 @pytest.fixture

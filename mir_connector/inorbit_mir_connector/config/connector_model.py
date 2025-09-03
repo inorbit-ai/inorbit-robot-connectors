@@ -36,18 +36,20 @@ class MirConnectorConfig(BaseSettings):
 
     mir_host_address: str
     mir_host_port: int
-    
+
     mir_username: str
     mir_password: str
     mir_api_version: str
     mir_firmware_version: str
     enable_mission_tracking: bool
-    
+
     # SSL Configuration
     mir_use_ssl: bool
     verify_ssl: bool = True  # Verify SSL certificates (set to False for self-signed)
     ssl_ca_bundle: Optional[str] = None  # Path to CA bundle file for custom CAs
-    ssl_verify_hostname: bool = True  # Verify hostname matches certificate (set to False for FRP/proxy)
+    ssl_verify_hostname: bool = (
+        True  # Verify hostname matches certificate (set to False for FRP/proxy)
+    )
 
     @field_validator("mir_api_version")
     def api_version_validation(cls, mir_api_version):

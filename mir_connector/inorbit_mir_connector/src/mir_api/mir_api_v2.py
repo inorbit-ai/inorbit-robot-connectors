@@ -26,6 +26,7 @@ DIAGNOSTICS_ENDPOINT_V2 = "experimental/diagnostics"
 
 class SetStateId(int, Enum):
     """Defined states for the set_state method"""
+
     READY = 3
     PAUSE = 4
     MANUALCONTROL = 11
@@ -270,8 +271,8 @@ class MirApiV2(MirApiBaseClass):
             # For custom transport, create equivalent sync transport with stored SSL context
             sync_transport = httpx.HTTPTransport(verify=self._ssl_context)
             with httpx.Client(
-                base_url=self._base_url, 
-                timeout=image_timeout, 
+                base_url=self._base_url,
+                timeout=image_timeout,
                 transport=sync_transport,
             ) as client:
                 try:
@@ -284,8 +285,8 @@ class MirApiV2(MirApiBaseClass):
                     raise e
         else:
             with httpx.Client(
-                base_url=self._base_url, 
-                timeout=image_timeout, 
+                base_url=self._base_url,
+                timeout=image_timeout,
                 verify=self._ssl_verify,
             ) as client:
                 try:

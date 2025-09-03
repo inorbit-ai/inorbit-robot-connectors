@@ -14,9 +14,10 @@ from inorbit_edge_executor.db import get_db
 from .mir_api import MirApiV2
 from .mir_api import SetStateId
 
-# Edge-mission execution module for MiR robots. It extends the inorbit-edge-executor module for translating missions
-# into MiR language and executing them.
-# TODO(b-Tomas): Impleemnt proper translation from InOrbit mission definitions into multi-step MiR missions.
+# Edge-mission execution module for MiR robots. It extends the inorbit-edge-executor module for
+# translating missions into MiR language and executing them.
+# TODO(b-Tomas): Impleemnt proper translation from InOrbit mission definitions into multi-step
+# MiR missions.
 #   - So far, this implements native pause/resume/abort methods for MiR missions.
 
 

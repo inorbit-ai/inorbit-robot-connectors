@@ -5,7 +5,7 @@
 from abc import ABC, abstractmethod
 import logging
 import httpx
-from typing import Union, Tuple, Optional
+from typing import Union, Optional
 
 
 class MirApiBaseClass(ABC):
@@ -23,10 +23,12 @@ class MirApiBaseClass(ABC):
         self.logger = logging.getLogger(name=self.__class__.__name__)
         self._base_url = base_url
         self._timeout = timeout
-        
+
         # Configure SSL settings
-        verify, ssl_context = self._configure_ssl_verify(verify_ssl, ssl_ca_bundle, ssl_verify_hostname)
-        
+        verify, ssl_context = self._configure_ssl_verify(
+            verify_ssl, ssl_ca_bundle, ssl_verify_hostname
+        )
+
         # Handle custom transport for hostname verification bypass
         if isinstance(verify, httpx.AsyncHTTPTransport):
             self._async_client = httpx.AsyncClient(
@@ -44,23 +46,25 @@ class MirApiBaseClass(ABC):
                 headers=default_headers or {},
                 verify=verify,
             )
-        
+
         # Store SSL config for sync clients
         self._ssl_verify = verify
         self._ssl_context = ssl_context  # Store SSL context for sync clients
-        
+
         # If the log level is INFO, reduce the verbosity of httpx
         if self.logger.getEffectiveLevel() == logging.INFO:
             logging.getLogger("httpx").setLevel(logging.WARNING)
-    
-    def _configure_ssl_verify(self, verify_ssl: bool, ssl_ca_bundle: Optional[str], ssl_verify_hostname: bool) -> tuple[Union[bool, str, httpx.AsyncHTTPTransport], Optional[object]]:
+
+    def _configure_ssl_verify(
+        self, verify_ssl: bool, ssl_ca_bundle: Optional[str], ssl_verify_hostname: bool
+    ) -> tuple[Union[bool, str, httpx.AsyncHTTPTransport], Optional[object]]:
         """Configure SSL verification settings for httpx client.
-        
+
         Args:
             verify_ssl: Whether to verify SSL certificates
             ssl_ca_bundle: Path to custom CA bundle file
             ssl_verify_hostname: Whether to verify hostname matches certificate
-            
+
         Returns:
             Tuple of (SSL verification setting for httpx, SSL context for sync clients)
         """
@@ -74,10 +78,13 @@ class MirApiBaseClass(ABC):
         elif not ssl_verify_hostname:
             # Create custom SSL context that verifies cert but not hostname
             import ssl
+
             ssl_context = ssl.create_default_context()
             if ssl_ca_bundle:
                 ssl_context.load_verify_locations(ssl_ca_bundle)
-                self.logger.info(f"Using custom CA bundle with hostname verification disabled: {ssl_ca_bundle}")
+                self.logger.info(
+                    f"Using custom CA bundle with hostname verification disabled: {ssl_ca_bundle}"
+                )
             else:
                 self.logger.info("Using default CA bundle with hostname verification disabled")
             ssl_context.check_hostname = False
@@ -88,8 +95,6 @@ class MirApiBaseClass(ABC):
             return ssl_ca_bundle, None
         else:
             return True, None  # Use default CA bundle
-    
-
 
     async def _get(self, endpoint: str, **kwargs) -> httpx.Response:
         res = await self._async_client.get(endpoint, **kwargs)

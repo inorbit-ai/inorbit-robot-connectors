@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-from pydantic import field_validator, model_validator
+from pydantic import field_validator, model_validator, ValidationError
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from inorbit_connector.models import InorbitConnectorConfig

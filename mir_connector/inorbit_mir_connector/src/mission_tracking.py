@@ -73,9 +73,8 @@ class MirInorbitMissionTracking:
     async def report_mission(self, status, metrics):
         # Hack to allow MiR defined missions and InOrbit missions to co-exist
         # When an InOrbit mission is running, we disable tracking for MiR defined
-        # missions
-        if not self.inorbit_sess.missions_module.executor.wait_until_idle(0):
-            self.mir_mission_tracking_enabled = False
+        # missions. if `self.io_mission_tracking_enabled` is False, data will not be
+        # published anyway
         if not self.mir_mission_tracking_enabled:
             return
         mission = await self.get_current_mission()

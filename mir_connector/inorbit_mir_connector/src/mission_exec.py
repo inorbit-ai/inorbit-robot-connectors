@@ -4,6 +4,7 @@
 import asyncio
 import logging
 import json
+from enum import Enum
 
 from inorbit_connector.connector import CommandResultCode
 from inorbit_edge_executor.datatypes import MissionRuntimeOptions
@@ -17,6 +18,14 @@ from .mir_api import SetStateId
 # into MiR language and executing them.
 # TODO(b-Tomas): Impleemnt proper translation from InOrbit mission definitions into multi-step MiR missions.
 #   - So far, this implements native pause/resume/abort methods for MiR missions.
+
+
+class MissionScriptName(Enum):
+    """Mission-related custom commands."""
+
+    EXECUTE_MISSION_ACTION = "executeMissionAction"
+    CANCEL_MISSION_ACTION = "cancelMissionAction"
+    UPDATE_MISSION_ACTION = "updateMissionAction"
 
 
 class MirWorkerPool(WorkerPool):
@@ -111,7 +120,7 @@ class MirMissionExecutor:
         Handle mission-related custom commands.
 
         Args:
-            script_name: The command name (e.g., 'cancelMission', 'updateMissionAction')
+            script_name: The command name (e.g., 'cancelMissionAction', 'updateMissionAction')
             script_args: Command arguments as a dictionary
             options: Dictionary containing result_function and other options
 
@@ -122,13 +131,13 @@ class MirMissionExecutor:
             self.logger.warning("Mission executor not initialized, cannot handle commands")
             return False
 
-        if script_name == "executeMissionAction":
+        if script_name == MissionScriptName.EXECUTE_MISSION_ACTION.value:
             await self._handle_execute_mission_action(script_args, options)
             return True
-        elif script_name == "cancelMission":
+        elif script_name == MissionScriptName.CANCEL_MISSION_ACTION.value:
             await self._handle_cancel_mission(script_args, options)
             return True
-        elif script_name == "updateMissionAction":
+        elif script_name == MissionScriptName.UPDATE_MISSION_ACTION.value:
             await self._handle_update_mission_action(script_args, options)
             return True
         else:
@@ -137,8 +146,6 @@ class MirMissionExecutor:
 
     async def _handle_execute_mission_action(self, script_args: dict, options: dict) -> None:
         """Handle executeMissionAction command."""
-        self.logger.info(f"Handling executeMissionAction command with arguments: {script_args}")
-
         try:
             # Parse arguments
             mission_id = script_args.get("missionId")
@@ -178,8 +185,6 @@ class MirMissionExecutor:
 
     async def _handle_cancel_mission(self, script_args: dict, options: dict) -> None:
         """Handle cancelMission command."""
-        self.logger.info(f"Handling cancelMission command with arguments: {script_args}")
-
         mission_id = script_args.get("missionId")
         self.logger.info(f"Handling cancelMission command for mission {mission_id}")
 
@@ -200,8 +205,6 @@ class MirMissionExecutor:
 
     async def _handle_update_mission_action(self, script_args: dict, options: dict) -> None:
         """Handle updateMissionAction command."""
-        self.logger.info(f"Handling updateMissionAction command with arguments: {script_args}")
-
         mission_id = script_args.get("missionId")
         action = script_args.get("action")
         self.logger.info(

@@ -8,9 +8,6 @@ import tempfile
 import pytz
 import math
 import uuid
-import asyncio
-import logging
-import httpx
 from PIL import Image
 import io
 from typing import Optional
@@ -23,6 +20,10 @@ from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND
 from inorbit_edge.robot import COMMAND_MESSAGE
 from inorbit_edge.robot import COMMAND_NAV_GOAL
 from inorbit_mir_connector import get_module_version
+from inorbit_mir_connector.src.mir_api.missions_group import (
+    NullMissionsGroupHandler,
+    TmpMissionsGroupHandler,
+)
 from .mir_api import MirApiV2
 from .mir_api import SetStateId
 from .mission_tracking import MirInorbitMissionTracking
@@ -30,22 +31,14 @@ from .mission_exec import MirMissionExecutor
 from inorbit_edge_executor.inorbit import InOrbitAPI as MissionInOrbitAPI
 from ..config.connector_model import ConnectorConfig
 from .robot.robot import Robot
-from tenacity import retry, wait_exponential_jitter, before_sleep_log, retry_if_exception_type
 
 
 # Available MiR states to select via actions
 MIR_STATE = {3: "READY", 4: "PAUSE", 11: "MANUALCONTROL"}
 
-# Connector missions group name
-# If a group with this name exists it will be used, otherwise it will be created
-# At shutdown, the group will be deleted
-MIR_INORBIT_MISSIONS_GROUP_NAME = "InOrbit Temporary Missions Group"
 # Distance threshold for MiR move missions in meters
 # Used in waypoints sent via missions
 MIR_MOVE_DISTANCE_THRESHOLD = 0.1
-
-# Remove missions created in the temporary missions group every 12 hours
-MISSIONS_GARBAGE_COLLECTION_INTERVAL_SECS = 12 * 60 * 60
 
 
 class MirConnector(Connector):
@@ -68,10 +61,6 @@ class MirConnector(Connector):
             create_user_scripts_dir=True,
         )
         self.config = config
-        # Missions group id for temporary missions
-        # If None, it indicates the missions group has not been set up
-        self.tmp_missions_group_id = None
-        self.tmp_missions_group_id_lock = asyncio.Lock()
 
         # Configure the connection to the robot
         self.mir_api = MirApiV2(
@@ -125,8 +114,11 @@ class MirConnector(Connector):
                 mir_api=self.mir_api,
             )
 
-        # Background tasks
-        self._bg_tasks: list[asyncio.Task] = []
+        # Set up temporary mission groups
+        if config.connector_config.enable_temporary_mission_group:
+            self.mission_group = TmpMissionsGroupHandler(mir_api=self.mir_api)
+        else:
+            self.mission_group = NullMissionsGroupHandler()
 
         # Initialize status as None to prevent publishing before the robot is connected
         self.status = None
@@ -301,13 +293,13 @@ class MirConnector(Connector):
                 self._logger.error(f"Failed to initialize mission executor: {e}")
                 self.mission_executor = None
 
-        # Start async setup and garbage collection for missions
-        self._bg_tasks.append(asyncio.create_task(self.setup_connector_missions()))
-        self._bg_tasks.append(asyncio.create_task(self._missions_garbage_collector()))
+        # Start temporary mission groups
+        await self.mission_group.start()
 
     async def _disconnect(self):
         """Disconnect from any external services"""
-        await self.cleanup_connector_missions()
+        await self.mission_group.cleanup_connector_missions()
+        await self.mission_group.stop()
         await self.robot.stop()
         await self.mir_api.close()
 
@@ -318,13 +310,6 @@ class MirConnector(Connector):
                 self._logger.info("Mission executor shut down successfully")
             except Exception as e:
                 self._logger.error(f"Error shutting down mission executor: {e}")
-
-        # Cancel background tasks
-        for t in self._bg_tasks:
-            t.cancel()
-        if self._bg_tasks:
-            await asyncio.gather(*self._bg_tasks, return_exceptions=True)
-        self._bg_tasks.clear()
 
     async def _execution_loop(self):
         """The main execution loop for the connector"""
@@ -406,17 +391,17 @@ class MirConnector(Connector):
         connector_type = self.config.connector_type
         firmware_version = self.config.connector_config.mir_firmware_version
 
-        if not self.tmp_missions_group_id:
+        if not self.mission_group.missions_group_id:
             # Ensure missions group is created if not yet initialized by background thread
             try:
-                await self.setup_connector_missions()
+                await self.mission_group.setup_connector_missions()
             except Exception as ex:
                 self._logger.error(f"Failed to setup connector missions: {ex}")
-            if not self.tmp_missions_group_id:
+            if not self.mission_group.missions_group_id:
                 raise Exception("Connector missions group not set up")
 
         await self.mir_api.create_mission(
-            group_id=self.tmp_missions_group_id,
+            group_id=self.mission_group.missions_group_id,
             name="Move to waypoint",
             guid=mission_id,
             description="Mission created by InOrbit",
@@ -453,91 +438,6 @@ class MirConnector(Connector):
             priority=1,
         )
         await self.mir_api.queue_mission(mission_id)
-
-    @retry(
-        wait=wait_exponential_jitter(max=10),
-        before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING),
-        retry=retry_if_exception_type(httpx.RequestError),
-    )
-    async def setup_connector_missions(self):
-        """Find and store the required missions and mission groups, or create them if they don't
-        exist."""
-        async with self.tmp_missions_group_id_lock:
-            # If the missions group is not None it means it was already setup or it was deleted
-            # intentionally and should not be set up again
-            if self.tmp_missions_group_id is not None:
-                return
-        self._logger.info("Setting up connector missions")
-        # Find or create the missions group
-        mission_groups: list[dict] = await self.mir_api.get_mission_groups()
-        group = next(
-            (x for x in mission_groups if x["name"] == MIR_INORBIT_MISSIONS_GROUP_NAME), None
-        )
-        self.tmp_missions_group_id = group["guid"] if group is not None else str(uuid.uuid4())
-        if group is None:
-            self._logger.info(f"Creating mission group '{MIR_INORBIT_MISSIONS_GROUP_NAME}'")
-            group = await self.mir_api.create_mission_group(
-                feature=".",
-                icon=".",
-                name=MIR_INORBIT_MISSIONS_GROUP_NAME,
-                priority=0,
-                guid=self.tmp_missions_group_id,
-            )
-            self._logger.info(f"Mission group created with guid '{self.tmp_missions_group_id}'")
-        else:
-            self._logger.info(
-                f"Found mission group '{MIR_INORBIT_MISSIONS_GROUP_NAME}' with "
-                f"guid '{self.tmp_missions_group_id}'"
-            )
-
-    async def cleanup_connector_missions(self):
-        """Delete the missions group created at startup"""
-        async with self.tmp_missions_group_id_lock:
-            # If the missions group id is None, it means it was not set up and there is nothing to
-            # clean up. Change its value to indicate it should not be set up, in case there is a
-            # running setup thread.
-            if self.tmp_missions_group_id is None:
-                self.tmp_missions_group_id = ""
-                return
-        self._logger.info("Cleaning up connector missions")
-        self._logger.info(f"Deleting missions group {self.tmp_missions_group_id}")
-        await self.mir_api.delete_mission_group(self.tmp_missions_group_id)
-
-    async def _delete_unused_missions(self):
-        """Delete all missions definitions in the temporary group that are not associated to
-        pending or executing missions"""
-        try:
-            mission_defs = await self.mir_api.get_mission_group_missions(self.tmp_missions_group_id)
-            missions_queue = await self.mir_api.get_missions_queue()
-            # Do not delete definitions of missions that are pending or executing
-            protected_mission_defs = [
-                (await self.mir_api.get_mission(mission["id"]))["mission_id"]
-                for mission in missions_queue
-                if mission["state"].lower() in ["pending", "executing"]
-            ]
-            # Delete the missions definitions in the temporary group that are not
-            # associated to pending or executing missions
-            missions_to_delete = [
-                mission["guid"]
-                for mission in mission_defs
-                if mission["guid"] not in protected_mission_defs
-            ]
-        except Exception as ex:
-            self._logger.error(f"Failed to get missions for garbage collection: {ex}")
-            return
-
-        for mission_id in missions_to_delete:
-            try:
-                self._logger.info(f"Deleting mission {mission_id}")
-                await self.mir_api.delete_mission_definition(mission_id)
-            except Exception as ex:
-                self._logger.error(f"Failed to delete mission {mission_id}: {ex}")
-
-    async def _missions_garbage_collector(self):
-        """Delete unused missions preiodically"""
-        while True:
-            await asyncio.sleep(MISSIONS_GARBAGE_COLLECTION_INTERVAL_SECS)
-            await self._delete_unused_missions()
 
     # HACK(b-Tomas): This is a hack to publish the map data through the connector.
     # All of this logic should be moved to the Connector base class.

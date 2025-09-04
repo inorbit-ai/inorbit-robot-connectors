@@ -7,6 +7,7 @@ from pydantic import field_validator, model_validator, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from inorbit_connector.models import InorbitConnectorConfig
 from inorbit_connector.utils import read_yaml
+from .fleet_config_loader import get_robot_config
 from typing import Optional
 
 # Default environment file, relative to the directory the connector is executed from. If using a
@@ -53,6 +54,9 @@ class MirConnectorConfig(BaseSettings):
     ssl_verify_hostname: bool = (
         True  # Verify hostname matches certificate (set to False for FRP/proxy)
     )
+
+    # Database Configuration
+    mission_database_file: Optional[str] = None  # Path to SQLite database file for mission storage
 
     @field_validator("mir_api_version")
     def api_version_validation(cls, mir_api_version):
@@ -102,9 +106,11 @@ class ConnectorConfig(InorbitConnectorConfig):
 
 
 def load_and_validate(config_filename: str, robot_id: str) -> ConnectorConfig:
-    """Loads and validates the configuration file.
+    """Loads and validates the configuration file with inheritance support.
 
-    Raises an exception if the arguments or configuration are invalid.
+    This function supports both legacy and new configuration formats:
+    - Legacy: Direct robot configurations 
+    - New: Fleet-wide defaults with robot-specific overrides
 
     Args:
         config_filename (str): The YAML file to load the configuration from.
@@ -119,8 +125,13 @@ def load_and_validate(config_filename: str, robot_id: str) -> ConnectorConfig:
         yaml.YAMLError: If the configuration file is not valid YAML.
         ValidationError: If the configuration file is not valid.
     """
-
-    config = read_yaml(config_filename, robot_id)
+    try:
+        # Try new format with inheritance first
+        config = get_robot_config(config_filename, robot_id)
+    except (KeyError, AttributeError):
+        # Fallback to legacy format for backward compatibility
+        config = read_yaml(config_filename, robot_id)
+    
     return ConnectorConfig(**config)
 
 

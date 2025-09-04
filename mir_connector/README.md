@@ -4,108 +4,356 @@ SPDX-FileCopyrightText: 2023 InOrbit, Inc.
 SPDX-License-Identifier: MIT
 -->
 
-# MIR <> InOrbit Connector
+# MiR ↔ InOrbit Connector
 
-![MIR <> InOrbit Connector](../assets/mir_inorbit_connector_banner.png)
+![MiR ↔ InOrbit Connector](../assets/mir_inorbit_connector_banner.png)
 
 [![Workflow Status](https://github.com/inorbit-ai/inorbit-robot-connectors/actions/workflows/mir_workflows.yml/badge.svg)](https://github.com/inorbit-ai/inorbit-robot-connectors/actions)
 
 ## Overview
 
-This repository contains the [InOrbit](https://inorbit.ai/) Robot Connector for [MiR Motors](https://directory.inorbit.ai/connect/Mobile-Industrial-Robots-A/S) AMRs. Making use of MiR REST APIs as well as InOrbit's [Edge SDK](https://developer.inorbit.ai/docs#edge-sdk), the Connector allows the integration of MiR robots with your fleet on InOrbit, unlocking interoperability.
+The [InOrbit](https://inorbit.ai/) Robot Connector for [MiR Motors](https://directory.inorbit.ai/connect/Mobile-Industrial-Robots-A/S) AMRs integrates MiR robots with InOrbit's fleet management platform. Using MiR's REST APIs and InOrbit's [Edge SDK](https://developer.inorbit.ai/docs#edge-sdk), this connector enables seamless robot fleet management and monitoring.
 
-This integration requires the Connector to be configured following the instructions below. A single instance of the Connector is capable of controlling a single robot.
+**🔧 One Connector Per Robot**: Each MiR robot requires its own connector instance for optimal performance and isolation. The connector supports simplified fleet-wide configuration with per-robot overrides.
 
-## Features
+## ✨ Features
 
-By integrating InOrbit's Python Edge SDK with MiR's APIs, the Connector unlocks the following key features on InOrbit's platform:
+- **Real-time Monitoring**: Robot pose, system status, battery levels, and error states
+- **Camera Integration**: Live video feeds from robot cameras  
+- **Mission Control**: Dispatch, pause, cancel missions via [Actions](https://developer.inorbit.ai/docs#configuring-action-definitions)
+- **Custom Scripts**: Execute custom shell scripts on the connector via Custom Actions
+- **Mission Tracking**: Full [Mission Tracking](https://developer.inorbit.ai/docs#configuring-mission-tracking) support
+- **SSL Support**: Secure connections with full certificate validation
+- **Multi-Robot Fleet Management**: Simplified configuration for managing multiple robots
 
--   Visualizing: robot pose, system and sub-system status, and battery charge.
--   Camera feed integration.
--   Using [Actions](https://developer.inorbit.ai/docs#configuring-action-definitions) to interact with MiR's API by:
+## 📋 Requirements
 
-    -   Dispatching Mission.
-    -   Controlling Mission status (pause, cancel, retry, etc.).
-    -   Dispatching simple Send robot to target missions.
+- **Python 3.7+** with SQLite3 support (included in most distributions)
+- **InOrbit Account** [(free signup)](https://control.inorbit.ai/)
+- **MiR Robot** with REST API access
+- **Network Access** between connector host and MiR robot
 
--   Running custom shell scripts on the connector via Custom Actions.
--   [Mission Tracking](https://developer.inorbit.ai/docs#configuring-mission-tracking) support.
+## 🚀 Quick Start
 
-## Requirements
+### 1. Clone and Setup
 
--   Python 3.7 or later.
--   InOrbit account [(it's free to sign up!)](https://control.inorbit.ai/ "InOrbit").
+<details>
+<summary><b>🐧 Linux/macOS</b></summary>
 
-## Setup
+```bash
+# Clone the repository
+git clone https://github.com/inorbit-ai/inorbit-robot-connectors.git
+cd inorbit-robot-connectors/mir_connector
 
-Create a new folder and a Python virtual environment in the host machine.
+# Create virtual environment
+python3 -m venv venv
 
-```sh
-MY_INORBIT_ID="$(date +%N)"
-echo "Using INORBIT_ID '${MY_INORBIT_ID}'. Take note of it as it will be used below."
-mkdir -p "mir-connector-${MY_INORBIT_ID}" && cd "mir-connector-${MY_INORBIT_ID}"
-virtualenv venv/
-. venv/bin/activate
-mkdir config/
+# Activate virtual environment
+source venv/bin/activate
+
+# Verify activation (should show venv path)
+which python
+```
+</details>
+
+<details>
+<summary><b>🪟 Windows</b></summary>
+
+```cmd
+# Clone the repository
+git clone https://github.com/inorbit-ai/inorbit-robot-connectors.git
+cd inorbit-robot-connectors/mir_connector
+
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+venv\Scripts\activate
+
+# Verify activation (should show venv path)
+where python
+```
+</details>
+
+### 2. Install the Connector
+
+```bash
+# Install the connector (venv should be active from step 1)
+pip install -e .
 ```
 
-There are two alternatives for installing the connector Python package.
+### 3. Set Up Credentials
 
-1. From PyPi: `pip install inorbit-mir-connector`.
-2. From source: clone the repository and run `pip install -e mir_connector/`.
+**Copy and edit the environment file:**
 
-Configure the Connector:
+<details>
+<summary><b>🐧 Linux/macOS</b></summary>
 
--   Copy `config/my_fleet.example.yaml` and modify the `robot_id` (e.g. `mir100-1`) with the one generated on the previous step. Note that the configuration file supports adding multiple robots, so it's advised copying it to a directory outside of the `mir-connector-${MY_INORBIT_ID}` folder. If you plan to deploy multiple robots on a production environment, please contact [support@inorbit.ai](support@inorbit.ai) for allocating a pool of robot IDs for your fleet.
+```bash
+# Copy the example file
+cp config/example.env config/.env
 
--   Copy `config/example.env` to `config/.env` and set the environment variables following the instructions in the same file.
-    You can get the `INORBIT_KEY` for your account from InOrbit's [Developer Console](https://developer.inorbit.ai/docs#configuring-environment-variables).
-    Environment variables use the prefix `INORBIT_MIR_` for MiR-specific settings (e.g., `INORBIT_MIR_MIR_HOST_ADDRESS`).
+# Edit with your actual credentials
+nano config/.env
 
--   Also apply the Configuration as Code manifests under the `cac_examples` folder, through the [InOrbit CLI](https://developer.inorbit.ai/docs#using-the-inorbit-cli).
+# Load the environment variables
+source config/.env
 
-## Deployment
+# Verify variables are set
+echo $INORBIT_API_KEY
+echo $MIR_USERNAME
+echo $MIR_PASSWORD
+```
+</details>
 
-Once all dependencies are installed and the configuration is complete, the Connector can be run as a bash command.
-With the Python virtual environment activated run `inorbit_mir_connector -c <path to config.yaml> -id <robot_id>`:
+<details>
+<summary><b>🪟 Windows</b></summary>
 
-```sh
-# Activate the virtual environment and run the Connector
-# Environment variables from config/.env will be automatically loaded if present prefixed with INORBIT_MIR_ (i.e. INORBIT_MIR_MIR_HOST_ADDRESS)
-# Other variables such as INORBIT_API_KEY need manual loading if not already set in the environment
-source config/.env && inorbit_mir_connector -c config/my_fleet.example.yaml -id ${MY_INORBIT_ID}
+```cmd
+# Copy the example file
+copy config\example.env config\.env
+
+# Edit with your actual credentials
+notepad config\.env
+
+# Set the environment variables manually (simplest approach)
+set INORBIT_API_KEY=your-actual-api-key
+set MIR_USERNAME=admin
+set MIR_PASSWORD=your-actual-password
+
+# Verify variables are set
+echo %INORBIT_API_KEY%
+echo %MIR_USERNAME%
+echo %MIR_PASSWORD%
+```
+</details>
+
+**Required credentials:**
+- **InOrbit API Key**: Get from [InOrbit Developer Console](https://developer.inorbit.ai/docs#configuring-environment-variables)
+- **MiR Username/Password**: Your MiR robot's web interface credentials
+- **InOrbit Robot Key**: Set directly in config file (unique per robot)
+
+
+
+
+
+### 4. Configuration
+
+The connector uses a **single configuration file** with fleet-wide defaults and per-robot overrides. We provide two example configurations:
+
+- **`config/fleet.simple.example.yaml`** - Minimal setup for basic configurations
+- **`config/fleet.example.yaml`** - Comprehensive example with advanced features (SSL, cameras, etc.)
+
+<details>
+<summary><b>🐧 Linux/macOS Setup</b></summary>
+
+```bash
+# For basic setup (recommended for first-time users)
+cp config/fleet.simple.example.yaml config/my_fleet.yaml
+
+# OR for advanced setup (SSL, cameras, etc.)
+cp config/fleet.example.yaml config/my_fleet.yaml
+
+# Edit the configuration for your robots
+nano config/my_fleet.yaml  # or vim, code, etc.
+```
+</details>
+
+<details>
+<summary><b>🪟 Windows Setup</b></summary>
+
+```cmd
+# For basic setup (recommended for first-time users)
+copy config\fleet.simple.example.yaml config\my_fleet.yaml
+
+# OR for advanced setup (SSL, cameras, etc.)
+copy config\fleet.example.yaml config\my_fleet.yaml
+
+# Edit the configuration for your robots
+notepad config\my_fleet.yaml
+```
+</details>
+
+The configuration file uses a simple inheritance model:
+- **Common section**: Settings shared by all robots  
+- **Robot sections**: Override common settings as needed
+
+Both example files include detailed comments explaining each setting.
+
+
+
+### 5. Run the Connector
+
+**Make sure your virtual environment is activated:**
+
+<details>
+<summary><b>🐧 Linux/macOS</b></summary>
+
+```bash
+# Activate virtual environment
+source venv/bin/activate
+
+# Load environment variables
+source config/.env
+
+# Run connector
+inorbit_mir_connector -c config/my_fleet.yaml -id restocker-rs-1
+```
+</details>
+
+<details>
+<summary><b>🪟 Windows</b></summary>
+
+```cmd
+# Activate virtual environment
+venv\Scripts\activate
+
+# Set environment variables (same as step 3)
+set INORBIT_API_KEY=your-actual-api-key
+set MIR_USERNAME=admin
+set MIR_PASSWORD=your-actual-password
+
+# Run connector
+inorbit_mir_connector -c config/my_fleet.yaml -id restocker-rs-1
+```
+</details>
+
+**Important**: Run **one connector instance per robot**. Replace `restocker-rs-1` with your actual robot ID from the configuration file.
+
+## 💡 Virtual Environment Tips
+
+<details>
+<summary><b>🔧 Managing Your Virtual Environment</b></summary>
+
+**Activating the environment:**
+- **Linux/macOS**: `source venv/bin/activate`
+- **Windows**: `venv\Scripts\activate`
+
+**Deactivating the environment:**
+```bash
+deactivate  # Works on all platforms
 ```
 
-### Systemd
+**Check if environment is active:**
+- Your prompt should show `(venv)` at the beginning
+- **Linux/macOS**: `which python` should show path with `/venv/`
+- **Windows**: `where python` should show path with `\venv\`
 
-It is recommended to run the Connector as a service. An example [systemd](https://www.freedesktop.org/software/systemd/man/systemd.service.html) service unit configuration is provided at [`systemd/mir-connector.service`](systemd/mir-connector.service).
-In a Debian based system the service can usually be installed and enabled at boot the following way:
-
-```sh
-# Copy the unit configuration to the service directory
-sudo cp /path/to/systemd/mir-connector.service /etc/systemd/system/mir-connector-${MY_INORBIT_ID}.service
-# Replace the robot_id, path to the connector directory and configuration file
-sudo vi /etc/systemd/system/mir-connector-${MY_INORBIT_ID}.service
-# Reload the daemon and enable the service
-sudo systemctl daemon-reload
-sudo systemctl enable mir-connector-${MY_INORBIT_ID}
+**Installing additional packages:**
+```bash
+# Always activate first, then install
+pip install package-name
 ```
 
-Once the service is installed, it can be restarted with:
+**Troubleshooting:**
+- If `inorbit_mir_connector` command not found → activate venv first
+- If import errors → check venv is active and package installed
+- If permission errors on Windows → run terminal as Administrator
+- If SQLite errors → use system Python: `/usr/bin/python3 -m venv venv_sqlite`
+</details>
 
-```sh
-sudo systemctl restart mir-connector-${MY_INORBIT_ID}
+## 📁 Configuration Files
+
+The connector includes configuration templates:
+
+- **`config/example.env`** - Environment variables template for credentials
+- **`config/fleet.simple.example.yaml`** - Minimal configuration for basic HTTP setups
+- **`config/fleet.example.yaml`** - Advanced configuration with SSL, cameras, and all features
+
+Choose the example that best matches your setup:
+- **Simple**: Basic HTTP connection, no SSL, minimal features
+- **Advanced**: HTTPS/SSL, cameras, custom certificates, full feature set
+
+## 🔧 Configuration Guidelines
+
+1. **Credentials First**: Copy and edit `config/example.env` with your credentials
+2. **Start Simple**: Copy `fleet.simple.yaml` for basic setups  
+3. **Use Inheritance**: Define common settings once, override per robot
+4. **Load Environment**: Always `source config/.env` before running
+5. **File Paths**: Use `./` relative paths for cross-platform compatibility
+
+## 🗄️ Database Configuration
+
+The MiR connector uses a database to store mission execution state, enabling features like mission persistence and resumption after connector restarts.
+
+### Database Options
+
+**🧪 Development/Testing:**
+```yaml
+# In your fleet configuration
+mission_database_file: "dummy"  # No persistence, in-memory only
 ```
 
-and its logs can be seen by running:
-
-```sh
-sudo journalctl --unit=mir-connector-${MY_INORBIT_ID} --since=today --follow
+**🚀 Production (Recommended):**
+```yaml
+# Each robot should have its own database file
+mission_database_file: "/var/lib/mir_connector/missions_robot-id.db"  # SQLite persistence
 ```
 
-### Docker
+### Default Behavior
 
-The Connector may also be run on docker containers. See [`docker/README.md`](docker/README.md) for instructions.
+If not specified, the connector automatically creates:
+- **Database file**: `missions_{robot_id}.db` in the connector directory
+- **Format**: SQLite 3.x with ACID compliance
+- **Tables**: Automatically created for mission state tracking
+
+### Per-Robot Isolation
+
+**✅ Each robot instance should have its own database:**
+```yaml
+# Robot 1
+robot-1:
+  mission_database_file: "/var/lib/mir_connector/missions_robot-1.db"
+
+# Robot 2  
+robot-2:
+  mission_database_file: "/var/lib/mir_connector/missions_robot-2.db"
+```
+
+### Requirements
+
+- **SQLite Support**: Ensure your Python environment includes SQLite3
+- **File Permissions**: Database directory must be writable
+- **Disk Space**: SQLite files grow with mission history
+
+**Note**: The connector automatically handles database schema creation and migrations.
+
+## 🚀 Running Multiple Robots
+
+For production or multi-robot setups, run one connector instance per robot:
+
+**Linux/macOS:**
+```bash
+# Terminal 1 - Robot 1
+source venv/bin/activate && source config/.env
+inorbit_mir_connector -c config/my_fleet.yaml -id robot-1
+
+# Terminal 2 - Robot 2  
+source venv/bin/activate && source config/.env
+inorbit_mir_connector -c config/my_fleet.yaml -id robot-2
+
+# Or run in background
+nohup inorbit_mir_connector -c config/my_fleet.yaml -id robot-1 &
+nohup inorbit_mir_connector -c config/my_fleet.yaml -id robot-2 &
+```
+
+**Windows:**
+```cmd
+# Command Prompt 1 - Robot 1
+venv\Scripts\activate
+set INORBIT_API_KEY=your-key & set MIR_USERNAME=admin & set MIR_PASSWORD=your-password
+inorbit_mir_connector -c config/my_fleet.yaml -id robot-1
+
+# Command Prompt 2 - Robot 2
+venv\Scripts\activate  
+set INORBIT_API_KEY=your-key & set MIR_USERNAME=admin & set MIR_PASSWORD=your-password
+inorbit_mir_connector -c config/my_fleet.yaml -id robot-2
+```
+
+**Production Notes:**
+- Consider using system services (systemd on Linux, Windows Service) for automatic startup
+- Docker deployment is also supported for containerized environments
+- Each robot maintains its own database file for mission persistence
 
 ## Next steps
 

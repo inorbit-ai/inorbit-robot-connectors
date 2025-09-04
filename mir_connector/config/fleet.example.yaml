@@ -1,364 +1,91 @@
 # =============================================================================
-# MiR Fleet Configuration - Single File with Inheritance
+# MiR Fleet Configuration (Single File with Inheritance)
 # =============================================================================
-# 
-# OVERVIEW:
-# This configuration file manages your entire MiR robot fleet using inheritance.
-# Define common settings once, then override only what's different per robot.
-# 
+#
 # USAGE:
 # 1. Copy this file to config/my_fleet.yaml
 # 2. Edit the 'common' section with your fleet defaults
-# 3. Add/modify robot sections with specific settings
-# 4. Run: inorbit_mir_connector -c config/my_fleet.yaml -id <robot-id>
-# 
+# 3. Edit the 'restocker-rs-1' section for your robot
+# 4. Run: inorbit_mir_connector -c config/my_fleet.yaml -id restocker-rs-1
+#
 # INHERITANCE MODEL:
-# - Each robot inherits ALL settings from 'common' section
+# - Each robot inherits ALL settings from 'common'
 # - Robot-specific settings override common settings
 # - Only specify what's different from common defaults
-# 
-# ONE CONNECTOR PER ROBOT:
-# Each robot needs its own connector process. For multiple robots:
-#   Terminal 1: inorbit_mir_connector -c config/my_fleet.yaml -id robot-001
-#   Terminal 2: inorbit_mir_connector -c config/my_fleet.yaml -id robot-002
-# 
+#
+# One connector instance per robot.
 # =============================================================================
-# COMMON SETTINGS (inherited by all robots unless overridden)
+
+# =============================================================================
+# COMMON SETTINGS (shared by all robots)
 # =============================================================================
 common:
-  # =============================================================================
-  # BASIC SETTINGS
-  # =============================================================================
-  
-  # Default timezone for all robots (override per robot if in different locations)
-  # See: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
-  location_tz: "America/Los_Angeles"
-  
-  # Default logging level for all robots
-  # Options: DEBUG (most verbose), INFO, WARNING, ERROR, CRITICAL (least verbose)
-  log_level: "INFO"
-  
-  # =============================================================================
-  # CONNECTOR SETTINGS
-  # =============================================================================
-  
-  # Default robot type - change if your fleet is mostly MiR250
-  connector_type: "MiR100"  # Options: "MiR100", "MiR250"
-  
-  # Connector version (for tracking)
+  # Basic settings
+  location_tz: America/Los_Angeles
+  log_level: INFO
+
+  # Connector settings
+  connector_type: MiR250           # Options: MiR100, MiR250
   connector_version: "0.2.2"
-  
-  # =============================================================================
-  # MiR API SETTINGS
-  # =============================================================================
-  
-  # MiR API version - DO NOT CHANGE (required by connector)
-  mir_api_version: "v2.0"
-  
-  # MiR firmware version - change based on your robots
-  # v2: Older MiR firmware (< 2.8)  
-  # v3: Newer MiR firmware (>= 2.8)
-  mir_firmware_version: "v3"
-  
-  # =============================================================================
-  # SSL/SECURITY SETTINGS (for HTTPS connections to MiR robots)
-  # =============================================================================
-  
-  # Use SSL/HTTPS to connect to MiR robots
-  mir_use_ssl: true   # Set to false for basic HTTP connections
-  
-  # Verify SSL certificates (recommended for production)
+
+  # MiR API settings
+  mir_api_version: v2.0
+  mir_firmware_version: v3
+
+  # SSL settings
+  mir_use_ssl: true
   verify_ssl: true
-  
-  # Verify hostname matches certificate (set false for proxy/tunnel setups)
   ssl_verify_hostname: true
-  
-  # Path to custom CA certificate bundle (uncomment if needed)
-  # ssl_ca_bundle: "./certs/company-ca.pem"
-  
-  # =============================================================================
-  # INORBIT FEATURES
-  # =============================================================================
-  
-  # Enable InOrbit Mission Tracking (requires compatible InOrbit plan)
-  # See: https://developer.inorbit.ai/docs#configuring-mission-tracking
+
+  # Mission tracking
   enable_mission_tracking: false
-  
-  # Mission database file for InOrbit Edge Executor (when mission tracking is disabled)
-  # If not specified, defaults to "missions_{robot_id}.db" 
-  # Each robot instance should have its own database file
-  # mission_database_file: "/path/to/missions_database.db"
-  
-  # =============================================================================
-  # WAYPOINT NAVIGATION SETTINGS
-  # =============================================================================
-  
-  # Use temporary mission groups for waypoint navigation (recommended)
-  # When true: Creates temporary mission groups for waypoint commands
-  # When false: Uses a predefined mission ID (must set default_waypoint_mission_id)
-  enable_temporary_mission_group: true
-  
-  # Default mission ID for waypoint navigation (only used if enable_temporary_mission_group: false)
-  # Get this ID from your MiR robot's mission list
-  # default_waypoint_mission_id: "mirconst-guid-0000-0003-actionlist00"
-  
-  # =============================================================================
-  # CAMERA DEFAULTS (applied to all robot cameras)
-  # =============================================================================
-  camera_defaults:
-    rate: 2          # Frames per second (1-30)
-    scaling: 0.3     # Scale factor: 1.0=full size, 0.5=half size, 0.1=tiny
-    quality: 60      # JPEG quality: 100=best quality, 1=smallest size
-  
-  # =============================================================================
-  # USER SCRIPTS
-  # =============================================================================
-  
-  # Base directory for user scripts (robot-specific subdirs created automatically)
-  # Use forward slashes for cross-platform compatibility
-  user_scripts_base_dir: "./user_scripts"
-  
-  # =============================================================================
-  # ENVIRONMENT VARIABLES (available to all robots and scripts)
-  # =============================================================================
+
+  # Mission database (each robot should have its own)
+  # Use "dummy" for testing (no persistence) or set a file path for SQLite
+  # mission_database_file: ./missions_restocker-rs-1.db
+
+  # Waypoint navigation settings
+  enable_temporary_mission_group: true     # Use temporary mission groups (recommended)
+  # default_waypoint_mission_id: ""       # Only needed if enable_temporary_mission_group: false--configure per robot
+
+  user_scripts_base_dir: ./user_scripts
+
+  # Common environment variables
   env_vars:
-    # InOrbit API key (set as environment variable for security)
     INORBIT_API_KEY: "${INORBIT_API_KEY}"
-    
-    # Fleet identifier (useful for organizing logs/metrics)
-    FLEET_NAME: "production"
-    
-    # Add more fleet-wide variables here
-    # COMPANY_NAME: "YourCompany"
-    # ENVIRONMENT: "production"
 
 # =============================================================================
-# ROBOT CONFIGURATIONS (inherit from common, override as needed)
+# ROBOT CONFIGURATIONS
 # =============================================================================
 
-# =============================================================================
-# EXAMPLE 1: Production Warehouse Robot (Basic Setup)
-# =============================================================================
-'mir100-warehouse-01':
-  # REQUIRED: Get this from InOrbit Developer Console
-  # See: https://developer.inorbit.ai/docs#configuring-environment-variables  
-  inorbit_robot_key: "your-warehouse-robot-key-here"
-  
-  # -----------------------------------------------------------------------------
-  # MiR Robot Connection (update these for your robot)
-  # -----------------------------------------------------------------------------
-  mir_host_address: "192.168.1.100"  # IP address of your MiR robot
-  mir_host_port: 443                  # Port (80 for HTTP, 443 for HTTPS)
-  mir_username: "${MIR_USERNAME}"     # Use environment variable
-  mir_password: "${MIR_PASSWORD}"     # Use environment variable
-  
-  # -----------------------------------------------------------------------------
-  # Camera Configuration (optional)
-  # -----------------------------------------------------------------------------
-  cameras:
-    # Primary camera
-    - video_url: "rtsp://admin:password@192.168.1.100:554/cam/realmonitor?channel=1&subtype=0"
-      rate: 2          # Override default framerate
-      scaling: 0.3     # Override default scaling  
-      quality: 80      # Higher quality for main camera
-    
-    # Secondary/backup camera
-    - video_url: "rtsp://admin:password@192.168.1.100:554/cam/realmonitor?channel=2&subtype=0"
-      rate: 1          # Lower framerate to save bandwidth
-      scaling: 0.2     # Smaller image
-      quality: 60      # Standard quality
-  
-  # -----------------------------------------------------------------------------
-  # User Scripts Directory (robot-specific scripts)
-  # -----------------------------------------------------------------------------
-  user_scripts_dir: "./user_scripts/mir100-warehouse-01"
-  
-  # -----------------------------------------------------------------------------
-  # Robot-Specific Environment Variables
-  # -----------------------------------------------------------------------------
-  env_vars:
-    # InOrbit API (inherited but can be overridden)
-    INORBIT_API_KEY: "${INORBIT_API_KEY}"
-    
-    # MiR robot connection details (for use in scripts)
-    MIR_API_ENDPOINT: "192.168.1.100:80"
-    MIR_USERNAME: "admin"
-    MIR_PASSWORD: "admin123"
-    
-    # Custom variables for this robot
-    ROBOT_ZONE: "warehouse-zone-a"
-    ROBOT_FLOOR: "1"
-    ROBOT_PURPOSE: "picking"
+# -----------------------------------------------------------------------------
+# Example robot configuration (aligns with my_fleet.yaml structure)
+# -----------------------------------------------------------------------------
+restocker-rs-1:
+  # REQUIRED: Robot key from InOrbit (unique per robot)
+  # Get this when registering the robot in InOrbit. Delete if not used and fall back to the InOrbit API key.
+  inorbit_robot_key: your-robot-key-here
 
-# =============================================================================
-# EXAMPLE 2: Production Factory Robot (SSL + Advanced Configuration)
-# =============================================================================
-'mir250-factory-02':
-  # REQUIRED: Robot key from InOrbit
-  inorbit_robot_key: "your-factory-robot-key-here"
-  
-  # -----------------------------------------------------------------------------
-  # Override Common Settings (when this robot is different)
-  # -----------------------------------------------------------------------------
-  connector_type: "MiR250"                 # Different robot type
-  location_tz: "America/Chicago"           # Different timezone
-  mir_firmware_version: "v2"               # Older firmware
-  log_level: "WARNING"                     # Less verbose logging for production
-  enable_mission_tracking: true            # Enable advanced features
-  mission_database_file: "/var/lib/mir_connector/missions_mir250-factory-02.db"  # Production database path
-  
-  # Use predefined mission for waypoint navigation (more stable for production)
+  # Robot connection details
+  mir_host_address: 192.168.1.2
+  mir_host_port: 443
+  mir_username: "${MIR_USERNAME}"
+  mir_password: "${MIR_PASSWORD}"
+
+  # Custom CA bundle if your robot uses a non-public CA
+  # Provide a path to a PEM bundle containing the issuing CA/cert chain if using a self-signed certificate
+  ssl_ca_bundle: "/path/to/your/mir-robot-ca-bundle.pem"
+
+  # Waypoint navigation using a predefined mission
+  # Set to false to use the robot's mission instead of temporary groups
   enable_temporary_mission_group: false
+  # IMPORTANT: Use the GUID from MiR GET /missions for "GoToPositionPrototype"
+  # Example payload: {"guid": "mirconst-guid-0000-0003-actionlist00", "name": "GoToPositionPrototype"}
   default_waypoint_mission_id: "mirconst-guid-0000-0003-actionlist00"
-  
-  # -----------------------------------------------------------------------------
-  # SSL/HTTPS Connection (secure production setup)
-  # -----------------------------------------------------------------------------
-  mir_host_address: "factory-mir.company.com"  # FQDN or IP
-  mir_host_port: 443                           # HTTPS port
-  mir_username: "factory_admin"                # Secure username
-  mir_password: "secure_password_123"          # Secure password
-  
-  # SSL configuration
-  mir_use_ssl: true                             # Enable HTTPS
-  verify_ssl: true                              # Verify certificates (recommended)
-  ssl_ca_bundle: "/etc/ssl/certs/factory-ca.pem"  # Custom CA certificate
-  ssl_verify_hostname: false                    # Disable if using proxy/tunnel
-  
-  # GETTING SSL CERTIFICATE:
-  # Extract your robot's certificate with:
-  # openssl s_client -connect factory-mir.company.com:443 -showcerts </dev/null 2>/dev/null | openssl x509 -outform PEM > factory-ca.pem
-  
-  # -----------------------------------------------------------------------------
-  # Cameras (disabled for secure production environment)
-  # -----------------------------------------------------------------------------
-  cameras: []  # No cameras for security/performance
-  
-  # -----------------------------------------------------------------------------
-  # Scripts and Environment
-  # -----------------------------------------------------------------------------
-  user_scripts_dir: "./user_scripts/mir250-factory-02"
-  env_vars:
-    INORBIT_API_KEY: "${INORBIT_API_KEY}"
-    MIR_API_ENDPOINT: "factory-mir.company.com:443"
-    MIR_USERNAME: "factory_admin"
-    MIR_PASSWORD: "secure_password_123"
-    
-    # Production environment variables
-    ROBOT_ZONE: "factory-floor-2"
-    PRODUCTION_LINE: "assembly-line-b"
-    ENVIRONMENT: "production"
-    SECURITY_LEVEL: "high"
 
-# =============================================================================
-# EXAMPLE 3: Development/Testing Robot (Debug Configuration)
-# =============================================================================
-'mir100-dev-01':
-  # REQUIRED: Development robot key
-  inorbit_robot_key: "your-dev-robot-key-here"
-  
-  # -----------------------------------------------------------------------------
-  # Development Overrides
-  # -----------------------------------------------------------------------------
-  log_level: "DEBUG"                      # Verbose logging for development
-  
-  # -----------------------------------------------------------------------------
-  # Simple Connection (no SSL for local development)
-  # -----------------------------------------------------------------------------
-  mir_host_address: "192.168.1.200"       # Development robot IP
-  mir_host_port: 80                       # HTTP port
-  mir_username: "admin"                   # Default credentials
-  mir_password: "admin"                   # Default credentials
-  
-  # -----------------------------------------------------------------------------
-  # Basic Camera for Testing
-  # -----------------------------------------------------------------------------
-  cameras:
-    - video_url: "rtsp://admin:admin@192.168.1.200:554/cam/realmonitor?channel=1&subtype=0"
-      # Uses default quality/scaling from common section
-  
-  # -----------------------------------------------------------------------------
-  # Development Environment
-  # -----------------------------------------------------------------------------
-  user_scripts_dir: "./user_scripts/mir100-dev-01"
-  env_vars:
-    INORBIT_API_KEY: "${INORBIT_API_KEY}"
-    MIR_API_ENDPOINT: "192.168.1.200:80"
-    MIR_USERNAME: "admin"
-    MIR_PASSWORD: "admin"
-    
-    # Development-specific variables
-    ROBOT_ZONE: "development"
-    DEBUG_MODE: "true"
-    ENVIRONMENT: "development"
-    LOG_VERBOSE: "true"
+  # Robot-specific user scripts directory for actions using custom scripts
+  user_scripts_dir: ./user_scripts/restocker-rs-1
 
-# Based on your current fleet-config.yaml
-'restocker-rs-1':
-  # Uncomment and set your robot key
-  # inorbit_robot_key: "6xZmoUOQnDeaW5R-K7Ik"
-  
-  # Override API URL for local development
-  api_url: "http://localdev.com:3000/cloud_sdk_robot_config"
-  
-  mir_host_address: "192.168.1.2"
-  mir_host_port: 80
-  mir_username: "admin"
-  mir_password: "admin"
-  
-  user_scripts_dir: "./user_scripts/restocker-rs-1"
+  # Robot-specific environment variables (for user scripts only)
   env_vars:
-    INORBIT_API_KEY: "1Kv6qWYso02K8O9s"
-    MIR_API_ENDPOINT: "192.168.1.2:443"
-    MIR_USERNAME: "admin"
-    MIR_PASSWORD: "admin"
-
-# =============================================================================
-# CONFIGURATION NOTES
-# =============================================================================
-#
-# INHERITANCE MODEL:
-# - Each robot inherits ALL settings from the 'common' section
-# - Robot-specific settings override common settings
-# - Use exact same field names as original config for compatibility
-#
-# ENVIRONMENT VARIABLES:
-# - Use ${VAR_NAME} syntax for environment variable substitution
-# - INORBIT_API_KEY should be set as environment variable for security
-# - Example: export INORBIT_API_KEY="your-api-key-here"
-#
-# SSL CONFIGURATION EXAMPLES:
-#
-# No SSL (Local/Development):
-#   mir_use_ssl: false
-#
-# SSL with self-signed certificate:
-#   mir_use_ssl: true
-#   verify_ssl: false
-#
-# SSL with proper certificates (Recommended):
-#   mir_use_ssl: true
-#   verify_ssl: true
-#   ssl_ca_bundle: "/path/to/ca-bundle.pem"
-#
-# SSL through proxy/tunnel (hostname mismatch):
-#   mir_use_ssl: true
-#   verify_ssl: true
-#   ssl_verify_hostname: false
-#   ssl_ca_bundle: "/path/to/ca-bundle.pem"
-#
-# CROSS-PLATFORM PATHS:
-# Windows: Use forward slashes or double backslashes
-#   - "C:/Users/YourName/mir_scripts"
-#   - "C:\\Users\\YourName\\mir_scripts"
-# Linux/macOS: Use standard Unix paths
-#   - "/home/username/mir_scripts"
-#   - "./user_scripts"
-#
-# USER SCRIPTS STRUCTURE:
-# Each robot gets its own subdirectory:
-#   ./user_scripts/
-#     ├── mir100-warehouse-01/
-#     ├── mir250-factory-02/
-#     ├── mir100-dev-01/
-#     └── restocker-rs-1/
+    MY_VAR: "${MY_VAR}"

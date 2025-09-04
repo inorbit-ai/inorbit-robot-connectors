@@ -19,7 +19,6 @@ The [InOrbit](https://inorbit.ai/) Robot Connector for [MiR Motors](https://dire
 ## ✨ Features
 
 - **Real-time Monitoring**: Robot pose, system status, battery levels, and error states
-- **Camera Integration**: Live video feeds from robot cameras  
 - **Mission Control**: Dispatch, pause, cancel missions via [Actions](https://developer.inorbit.ai/docs#configuring-action-definitions)
 - **Custom Scripts**: Execute custom shell scripts on the connector via Custom Actions
 - **Mission Tracking**: Full [Mission Tracking](https://developer.inorbit.ai/docs#configuring-mission-tracking) support

@@ -498,7 +498,7 @@ class MirConnector(Connector):
                 map_name = map_data.get("name")
                 resolution = map_data.get("resolution")
                 origin_x = map_data.get("origin_x")
-                origin_y = map_data.get("origin_x")
+                origin_y = map_data.get("origin_y")
 
             except Exception as ex:
                 self._logger.error(f"Failed to load map from robot: {ex}")

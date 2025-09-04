@@ -1,0 +1,91 @@
+# =============================================================================
+# MiR Fleet Configuration (Single File with Inheritance)
+# =============================================================================
+#
+# USAGE:
+# 1. Copy this file to config/my_fleet.yaml
+# 2. Edit the 'common' section with your fleet defaults
+# 3. Edit the 'restocker-rs-1' section for your robot
+# 4. Run: inorbit_mir_connector -c config/my_fleet.yaml -id restocker-rs-1
+#
+# INHERITANCE MODEL:
+# - Each robot inherits ALL settings from 'common'
+# - Robot-specific settings override common settings
+# - Only specify what's different from common defaults
+#
+# One connector instance per robot.
+# =============================================================================
+
+# =============================================================================
+# COMMON SETTINGS (shared by all robots)
+# =============================================================================
+common:
+  # Basic settings
+  location_tz: America/Los_Angeles
+  log_level: INFO
+
+  # Connector settings
+  connector_type: MiR250           # Options: MiR100, MiR250
+  connector_version: "0.2.2"
+
+  # MiR API settings
+  mir_api_version: v2.0
+  mir_firmware_version: v3
+
+  # SSL settings
+  mir_use_ssl: true
+  verify_ssl: true
+  ssl_verify_hostname: true
+
+  # Mission tracking
+  enable_mission_tracking: false
+
+  # Mission database (each robot should have its own)
+  # Use "dummy" for testing (no persistence) or set a file path for SQLite
+  # mission_database_file: ./missions_restocker-rs-1.db
+
+  # Waypoint navigation settings
+  enable_temporary_mission_group: true     # Use temporary mission groups (recommended)
+  # default_waypoint_mission_id: ""       # Only needed if enable_temporary_mission_group: false--configure per robot
+
+  user_scripts_base_dir: ./user_scripts
+
+  # Common environment variables
+  env_vars:
+    INORBIT_API_KEY: "${INORBIT_API_KEY}"
+
+# =============================================================================
+# ROBOT CONFIGURATIONS
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Example robot configuration (aligns with my_fleet.yaml structure)
+# -----------------------------------------------------------------------------
+restocker-rs-1:
+  # REQUIRED: Robot key from InOrbit (unique per robot)
+  # Get this when registering the robot in InOrbit. Delete if not used and fall back to the InOrbit API key.
+  inorbit_robot_key: your-robot-key-here
+
+  # Robot connection details
+  mir_host_address: 192.168.1.2
+  mir_host_port: 443
+  mir_username: "${MIR_USERNAME}"
+  mir_password: "${MIR_PASSWORD}"
+
+  # Custom CA bundle if your robot uses a non-public CA
+  # Provide a path to a PEM bundle containing the issuing CA/cert chain if using a self-signed certificate
+  ssl_ca_bundle: "/path/to/your/mir-robot-ca-bundle.pem"
+
+  # Waypoint navigation using a predefined mission
+  # Set to false to use the robot's mission instead of temporary groups
+  enable_temporary_mission_group: false
+  # IMPORTANT: Use the GUID from MiR GET /missions for "GoToPositionPrototype"
+  # Example payload: {"guid": "mirconst-guid-0000-0003-actionlist00", "name": "GoToPositionPrototype"}
+  default_waypoint_mission_id: "mirconst-guid-0000-0003-actionlist00"
+
+  # Robot-specific user scripts directory for actions using custom scripts
+  user_scripts_dir: ./user_scripts/restocker-rs-1
+
+  # Robot-specific environment variables (for user scripts only)
+  env_vars:
+    MY_VAR: "${MY_VAR}"

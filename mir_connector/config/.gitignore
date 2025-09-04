@@ -1,5 +1,6 @@
 *
 !.gitignore
-!.example.*
+!*.example.*
 !example.env
-!my_fleet.example.yaml
+!fleet.example.yaml
+!fleet.simple.example.yaml

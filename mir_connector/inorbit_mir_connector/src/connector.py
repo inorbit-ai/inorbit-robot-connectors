@@ -112,6 +112,7 @@ class MirConnector(Connector):
                     api_key=self.config.api_key,
                 ),
                 mir_api=self.mir_api,
+                database_file=config.connector_config.mission_database_file,
             )
 
         # Set up temporary mission groups

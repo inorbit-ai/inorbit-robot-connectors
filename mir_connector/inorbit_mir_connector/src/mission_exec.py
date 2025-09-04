@@ -76,7 +76,7 @@ class MirMissionExecutor:
     Handles mission submission, pause, resume, and abort operations.
     """
 
-    def __init__(self, robot_id, inorbit_api, mir_api):
+    def __init__(self, robot_id, inorbit_api, mir_api, database_file=None):
         """
         Initialize the mission executor.
 
@@ -84,19 +84,28 @@ class MirMissionExecutor:
             robot_id: InOrbit robot ID
             inorbit_api: InOrbit API client instance
             mir_api: MIR robot API client instance
+            database_file: Optional path to SQLite database file for mission storage
         """
         self.logger = logging.getLogger(name=self.__class__.__name__)
         self.robot_id = robot_id
         self.inorbit_api = inorbit_api
         self.mir_api = mir_api
+        # Format database filename for inorbit-edge-executor (expects "sqlite:<filename>" or "dummy")
+        if database_file:
+            if database_file == "dummy":
+                self.database_file = "dummy"
+            else:
+                self.database_file = f"sqlite:{database_file}"
+        else:
+            self.database_file = f"sqlite:missions_{robot_id}.db"
         self._worker_pool = None
         self._initialized = False
 
     async def initialize(self):
         """Initialize the worker pool if not already done."""
         if not self._initialized:
-            # TODO: Make the database filename configurable
-            db = await get_db("dummy")
+            # Use configurable database filename, defaulting to robot-specific name
+            db = await get_db(self.database_file)
             self._worker_pool = MirWorkerPool(
                 mir_api=self.mir_api,
                 api=self.inorbit_api,

@@ -59,7 +59,7 @@ class MirApiV2(MirApiBaseClass):
             base_url=self.mir_api_base_url,
             auth=self._auth,
             default_headers={"Accept-Language": "en_US"},
-            timeout=30,  # Increased timeout to handle slower responses
+            timeout=30,
             verify_ssl=verify_ssl,
             ssl_ca_bundle=ssl_ca_bundle,
             ssl_verify_hostname=ssl_verify_hostname,

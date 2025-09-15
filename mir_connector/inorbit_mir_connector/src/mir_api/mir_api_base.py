@@ -5,6 +5,7 @@
 from abc import ABC, abstractmethod
 import logging
 import httpx
+import asyncio
 from typing import Union, Optional
 
 
@@ -54,6 +55,9 @@ class MirApiBaseClass(ABC):
         # If the log level is INFO, reduce the verbosity of httpx
         if self.logger.getEffectiveLevel() == logging.INFO:
             logging.getLogger("httpx").setLevel(logging.WARNING)
+        
+        # Store auth for retry logic
+        self._auth = auth
 
     def _configure_ssl_verify(
         self, verify_ssl: bool, ssl_ca_bundle: Optional[str], ssl_verify_hostname: bool
@@ -97,52 +101,80 @@ class MirApiBaseClass(ABC):
             return True, None  # Use default CA bundle
 
     async def _get(self, endpoint: str, **kwargs) -> httpx.Response:
-        res = await self._async_client.get(endpoint, **kwargs)
-        try:
-            res.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            self.logger.error(
-                f"HTTP error making request: {e.response.status_code} - {e.response.text}\n"
-                f"Request: {e.request.method} {e.request.url}\nArguments: {kwargs}"
-            )
-            raise e
-        return res
+        return await self._make_request_with_retry("GET", endpoint, **kwargs)
 
     async def _post(self, endpoint: str, **kwargs) -> httpx.Response:
-        res = await self._async_client.post(endpoint, **kwargs)
-        try:
-            res.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            self.logger.error(
-                f"HTTP error making request: {e.response.status_code} - {e.response.text}\n"
-                f"Request: {e.request.method} {e.request.url}\nArguments: {kwargs}"
-            )
-            raise e
-        return res
+        return await self._make_request_with_retry("POST", endpoint, **kwargs)
 
     async def _put(self, endpoint: str, **kwargs) -> httpx.Response:
-        res = await self._async_client.put(endpoint, **kwargs)
-        try:
-            res.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            self.logger.error(
-                f"HTTP error making request: {e.response.status_code} - {e.response.text}\n"
-                f"Request: {e.request.method} {e.request.url}\nArguments: {kwargs}"
-            )
-            raise e
-        return res
+        return await self._make_request_with_retry("PUT", endpoint, **kwargs)
 
     async def _delete(self, endpoint: str, **kwargs) -> httpx.Response:
-        res = await self._async_client.delete(endpoint, **kwargs)
-        try:
-            res.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            self.logger.error(
-                f"HTTP error making request: {e.response.status_code} - {e.response.text}\n"
-                f"Request: {e.request.method} {e.request.url}\nArguments: {kwargs}"
-            )
-            raise e
-        return res
+        return await self._make_request_with_retry("DELETE", endpoint, **kwargs)
+
+    async def _make_request_with_retry(self, method: str, endpoint: str, **kwargs) -> httpx.Response:
+        """Make HTTP request with retry logic for better error handling"""
+        max_retries = 3
+        base_delay = 1.0
+        
+        for attempt in range(max_retries):
+            try:
+                # Make the request based on method
+                if method == "GET":
+                    res = await self._async_client.get(endpoint, **kwargs)
+                elif method == "POST":
+                    res = await self._async_client.post(endpoint, **kwargs)
+                elif method == "PUT":
+                    res = await self._async_client.put(endpoint, **kwargs)
+                elif method == "DELETE":
+                    res = await self._async_client.delete(endpoint, **kwargs)
+                else:
+                    raise ValueError(f"Unsupported HTTP method: {method}")
+                
+                res.raise_for_status()
+                return res
+                
+            except httpx.TimeoutException as e:
+                if attempt == max_retries - 1:
+                    self.logger.error(f"Request timeout after {max_retries} attempts: {method} {endpoint}")
+                    raise e
+                delay = base_delay * (2 ** attempt)
+                self.logger.warning(f"Request timeout (attempt {attempt + 1}/{max_retries}), retrying in {delay}s: {method} {endpoint}")
+                await asyncio.sleep(delay)
+                
+            except httpx.ConnectError as e:
+                if attempt == max_retries - 1:
+                    self.logger.error(f"Connection error after {max_retries} attempts: {method} {endpoint} - {e}")
+                    raise e
+                delay = base_delay * (2 ** attempt)
+                self.logger.warning(f"Connection error (attempt {attempt + 1}/{max_retries}), retrying in {delay}s: {method} {endpoint} - {e}")
+                await asyncio.sleep(delay)
+                
+            except httpx.HTTPStatusError as e:
+                # Don't retry client errors (4xx) except for 408, 429
+                if 400 <= e.response.status_code < 500 and e.response.status_code not in [408, 429]:
+                    self.logger.error(
+                        f"HTTP client error: {e.response.status_code} - {e.response.text}\n"
+                        f"Request: {e.request.method} {e.request.url}\nArguments: {kwargs}"
+                    )
+                    raise e
+                    
+                # Retry server errors (5xx) and specific client errors
+                if attempt == max_retries - 1:
+                    self.logger.error(
+                        f"HTTP error after {max_retries} attempts: {e.response.status_code} - {e.response.text}\n"
+                        f"Request: {e.request.method} {e.request.url}\nArguments: {kwargs}"
+                    )
+                    raise e
+                    
+                delay = base_delay * (2 ** attempt)
+                self.logger.warning(f"HTTP error {e.response.status_code} (attempt {attempt + 1}/{max_retries}), retrying in {delay}s: {method} {endpoint}")
+                await asyncio.sleep(delay)
+                
+            except Exception as e:
+                # For unexpected errors, log and re-raise immediately
+                self.logger.error(f"Unexpected error making request: {method} {endpoint} - {type(e).__name__}: {e}", exc_info=True)
+                raise e
 
     async def close(self):
         await self._async_client.aclose()

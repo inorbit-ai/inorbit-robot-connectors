@@ -49,7 +49,7 @@ setup(
     name="inorbit_mir_connector",
     description="InOrbit Edge-SDK connector for MiR robots. It polls data from MiR API and sends "
     + "it to InOrbit cloud through the edge-sdk.",
-    long_description=open("README.md").read(),
+    long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     project_urls={
         "repository": "https://github.com/inorbit-ai/inorbit-robot-connectors/tree/main/mir_connector",  # noqa: E501

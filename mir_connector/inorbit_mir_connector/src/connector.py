@@ -142,11 +142,12 @@ class MirConnector(Connector):
                 - `metadata` is reserved for the future and will contains additional
                 information about the received command request.
         """
-        self._logger.info(f"Received '{command_name}'!. {args}")
+        self._logger.info(f"Received command '{command_name}' with {len(args)} arguments")
+        self._logger.debug(f"Command details: {command_name} - {args}")
 
         if command_name == COMMAND_CUSTOM_COMMAND:
             if len(args) < 2:
-                self._logger.error("Invalid number of arguments: ", args)
+                self._logger.error(f"Invalid number of arguments for '{command_name}': expected >=2, got {len(args)}")
                 options["result_function"](
                     CommandResultCode.FAILURE,
                     execution_status_details="Invalid number of arguments",
@@ -307,7 +308,8 @@ class MirConnector(Connector):
             elif msg == "inorbit_resume":
                 await self.mir_api.set_state(SetStateId.READY.value)
         else:
-            self._logger.info(f"Received unknown command '{command_name}'!. {args}")
+            self._logger.warning(f"Received unknown command '{command_name}' - ignoring")
+            self._logger.debug(f"Unknown command details: {command_name} - {args}")
 
     async def _connect(self) -> None:
         """Connect to the robot services and initialize background tasks."""
@@ -360,7 +362,7 @@ class MirConnector(Connector):
             "yaw": math.radians(self.status.get("position", {}).get("orientation", 0)),
             "frame_id": self.status.get("map_id", ""),
         }
-        self._logger.debug(f"Publishing pose: {pose_data}")
+        # self._logger.debug(f"Publishing pose: {pose_data}")
         self.publish_pose(**pose_data)
 
         # publish odometry
@@ -368,7 +370,7 @@ class MirConnector(Connector):
             "linear_speed": self.status.get("velocity", {}).get("linear", 0),
             "angular_speed": math.radians(self.status.get("velocity", {}).get("angular", 0)),
         }
-        self._logger.debug(f"Publishing odometry: {odometry}")
+        # self._logger.debug(f"Publishing odometry: {odometry}")
         self._robot_session.publish_odometry(**odometry)
 
         # publish key values
@@ -384,10 +386,6 @@ class MirConnector(Connector):
         # TODO(Elvio): Move key values to a "values.py" and represent them with constants
         key_values = {
             "connector_version": get_module_version(),
-            "battery percent": self.status.get("battery_percentage"),
-            "battery_time_remaining": self.status.get("battery_time_remaining"),
-            "uptime": self.status.get("uptime"),
-            "localization_score": (self.metrics or {}).get("mir_robot_localization_score"),
             "robot_name": self.status.get("robot_name"),
             "errors": self.status.get("errors"),
             "distance_to_next_target": self.status.get("distance_to_next_target"),
@@ -400,7 +398,139 @@ class MirConnector(Connector):
             ),
             "api_connected": self.robot.api_connected,
         }
-        self._logger.debug(f"Publishing key values: {key_values}")
+        
+        # Add vitals from diagnostics (preferred) or status (fallback)
+        # Keep localization_score from metrics only
+        key_values['localization_score'] = (self.metrics or {}).get('mir_robot_localization_score')
+
+        # Uptime always from status (more reliable)
+        key_values['uptime'] = self.status.get("uptime")
+
+        diagnostics = self.diagnostics or {}
+        try:
+            # Helper to convert percentage (0-100) to InOrbit format (0-1)
+            def _to_inorbit_percent(value: float) -> float:
+                return max(0.0, min(100.0, value)) / 100.0
+            # Helper to parse a numeric value from a string and convert units
+            def _parse_number(value: object) -> float | None:
+                try:
+                    if isinstance(value, (int, float)):
+                        return float(value)
+                    s = str(value)
+                    # Extract first decimal/float-like token
+                    import re
+                    m = re.search(r"-?\d+(?:[.,]\d+)?", s)
+                    if not m:
+                        return None
+                    num = m.group(0).replace(",", ".")
+                    return float(num)
+                except (ValueError, AttributeError):
+                    # Expected parsing errors for malformed numbers
+                    return None
+
+            def _to_gb(val: object, key: str) -> float | None:
+                n = _parse_number(val)
+                if n is None:
+                    return None
+                k = key.lower()
+                if "[gb]" in k:
+                    return n
+                if "[mb]" in k:
+                    return n / 1024.0
+                if "[b]" in k:
+                    return n / (1024.0 * 1024.0 * 1024.0)
+                # Assume already in GB if unit not specified
+                return n
+            # Battery from diagnostics (/Power System/Battery), fallback to status
+            batt_vals = (diagnostics.get('/Power System/Battery', {}) or {}).get('values', {})
+            remaining_pct = None
+            remaining_sec = None
+            for k, v in batt_vals.items():
+                if 'Remaining battery capacity' in k:
+                    remaining_pct = float(v)
+                elif 'Remaining battery time [sec]' in k:
+                    remaining_sec = float(v)
+            if remaining_pct is not None:
+                key_values['battery percent'] = _to_inorbit_percent(remaining_pct)
+            if remaining_sec is not None:
+                key_values['battery_time_remaining'] = int(remaining_sec)
+
+            # CPU load from diagnostics
+            cpu_vals = (diagnostics.get('/Computer/PC/CPU Load', {}) or {}).get('values', {})
+            avg_cpu = None
+            for k, v in cpu_vals.items():
+                if 'Average CPU load' in k and '30 second' not in k and '3 minut' not in k:
+                    avg_cpu = float(v)
+                    break
+            if avg_cpu is not None:
+                key_values['cpu_usage_percent'] = _to_inorbit_percent(avg_cpu)
+
+            # CPU temperature from diagnostics
+            cpu_temp_vals = (diagnostics.get('/Computer/PC/CPU Temperature', {}) or {}).get('values', {})
+            pkg_temp = None
+            for k, v in cpu_temp_vals.items():
+                if 'Package id' in k:
+                    pkg_temp = float(v)
+                    break
+            if pkg_temp is not None:
+                key_values['temperature_celsius'] = pkg_temp
+
+            # Helper function to calculate usage percentage from diagnostics
+            def _calculate_usage_percent(diagnostic_path: str, key_name: str) -> None:
+                vals = (diagnostics.get(diagnostic_path, {}) or {}).get('values', {})
+                total_gb = used_gb = free_gb = None
+                
+                for k, v in vals.items():
+                    if 'Total size' in k:
+                        total_gb = _to_gb(v, k)
+                    elif 'Used' in k:
+                        used_gb = _to_gb(v, k)
+                    elif 'Free' in k:
+                        free_gb = _to_gb(v, k)
+                
+                usage_pct = None
+                if total_gb and total_gb > 0:
+                    if used_gb is not None:
+                        usage_pct = (used_gb / total_gb) * 100.0
+                    elif free_gb is not None:
+                        usage_pct = ((total_gb - free_gb) / total_gb) * 100.0
+                
+                if usage_pct is not None:
+                    key_values[key_name] = _to_inorbit_percent(usage_pct)
+
+            # Memory and disk usage from diagnostics
+            _calculate_usage_percent('/Computer/PC/Memory', 'memory_usage_percent')
+            _calculate_usage_percent('/Computer/PC/Harddrive', 'disk_usage_percent')
+
+            # WiFi details from diagnostics (/Computer/Network/Wifi)
+            wifi_vals = (diagnostics.get('/Computer/Network/Wifi', {}) or {}).get('values', {})
+            ssid = wifi_vals.get('SSID')
+            freq = wifi_vals.get('Frequency')
+            signal = wifi_vals.get('Signal level')
+            if ssid is not None:
+                key_values['wifi_ssid'] = ssid
+            if freq is not None:
+                # Frequency provided as MHz in examples
+                try:
+                    key_values['wifi_frequency_mhz'] = float(freq)
+                except (ValueError, TypeError):
+                    # Expected parsing errors for malformed frequency values
+                    pass
+            if signal is not None:
+                try:
+                    key_values['wifi_signal_dbm'] = float(signal)
+                except (ValueError, TypeError):
+                    # Expected parsing errors for malformed signal values
+                    pass
+        except Exception:
+            # Never fail the loop due to parsing issues; values just won't be present
+            self._logger.debug('Failed to parse diagnostics vitals', exc_info=True)
+        
+        # Key values published every second - too noisy for debug logs
+        # Only log when api_connected status changes
+        if hasattr(self, '_last_api_connected') and self._last_api_connected != key_values.get('api_connected'):
+            self._logger.info(f"API connection status changed: {key_values.get('api_connected')}")
+        self._last_api_connected = key_values.get('api_connected')
         self._robot_session.publish_key_values(key_values)
 
         # publish mission data if available
@@ -508,7 +638,7 @@ class MirConnector(Connector):
             if image and map_name and resolution and origin_x is not None and origin_y is not None:
                 # Generate a byte array from the base64 encoded image
                 map_data = base64.b64decode(image)
-                self._logger.info(f"Map image size: {len(map_data)} bytes")
+                self._logger.debug(f"Map image size: {len(map_data)} bytes")
                 # Create a temporary file with .png extension to store the map image
                 fd, temp_path = tempfile.mkstemp(suffix=".png")
                 self._logger.debug(f"Created temporary file: {temp_path}")
@@ -528,7 +658,7 @@ class MirConnector(Connector):
                     flipped_image.save(img_byte_arr, format="PNG")
                     flipped_bytes = img_byte_arr.getvalue()
 
-                    self._logger.debug("Successfully flipped map image")
+                    # Map flipping is routine - no need to log
                 except Exception as e:
                     self._logger.error(f"Failed to flip map image: {e}")
                     # If flipping fails, use the original bytes
@@ -557,5 +687,5 @@ class MirConnector(Connector):
                     os.unlink(temp_path)  # Clean up the file in case of error
             else:
                 self._logger.error(f"No map data available for {frame_id}")
-                self._logger.debug(f"Map data: {map_data}")
+                # Map data is too verbose for logs
                 return

@@ -59,7 +59,7 @@ class MirApiV2(MirApiBaseClass):
             base_url=self.mir_api_base_url,
             auth=self._auth,
             default_headers={"Accept-Language": "en_US"},
-            timeout=10,
+            timeout=30,  # Increased timeout to handle slower responses
             verify_ssl=verify_ssl,
             ssl_ca_bundle=ssl_ca_bundle,
             ssl_verify_hostname=ssl_verify_hostname,
@@ -74,6 +74,7 @@ class MirApiV2(MirApiBaseClass):
             for sample in family.samples:
                 samples[sample.name] = sample.value
         return samples
+
 
     async def get_mission_groups(self):
         """Get available mission groups"""
@@ -213,7 +214,8 @@ class MirApiV2(MirApiBaseClass):
             headers={"Content-Type": "application/json"},
             json=mission_queues,
         )
-        self.logger.info(response.text)
+        # Response logged at debug level only - too noisy for INFO
+        self.logger.debug(f"Mission queued: {response.text}")
 
     async def abort_all_missions(self):
         """Aborts all missions"""
@@ -222,7 +224,8 @@ class MirApiV2(MirApiBaseClass):
             queue_mission_url,
             headers={"Content-Type": "application/json"},
         )
-        self.logger.info(response.text)
+        # Response logged at debug level only - too noisy for INFO
+        self.logger.debug(f"Missions aborted: {response.text}")
 
     async def set_state(self, state_id: int):
         """Set robot state
@@ -253,7 +256,7 @@ class MirApiV2(MirApiBaseClass):
 
     async def send_waypoint(self, pose):
         """Receives a pose and sends a request to command the robot to navigate to the waypoint"""
-        self.logger.info("Sending waypoint")
+        self.logger.info(f"Sending waypoint to ({pose['x']:.2f}, {pose['y']:.2f}, {math.degrees(float(pose['theta'])):.1f}°)")
         orientation_degs = math.degrees(float(pose["theta"]))
         parameters = {
             "clearall": "yes",
@@ -262,10 +265,10 @@ class MirApiV2(MirApiBaseClass):
             "orientation": orientation_degs,
             "mode": "map-go-to-coordinates",
         }
-        async with httpx.AsyncClient(base_url=self.mir_base_url, timeout=10) as client:
+        async with httpx.AsyncClient(base_url=self.mir_base_url, timeout=30) as client:
             res = await client.get("/", params=parameters)
             res.raise_for_status()
-            self.logger.info(res.text)
+            self.logger.debug(f"Waypoint response: {res.text}")
 
     async def get_status(self):
         status_api_url = f"/{STATUS_ENDPOINT_V2}"

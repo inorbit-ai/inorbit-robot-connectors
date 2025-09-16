@@ -31,6 +31,7 @@ from .mission_exec import MirMissionExecutor
 from inorbit_edge_executor.inorbit import InOrbitAPI as MissionInOrbitAPI
 from ..config.connector_model import ConnectorConfig
 from .robot.robot import Robot
+from .utils import to_inorbit_percent, parse_number, to_gb, calculate_usage_percent
 
 
 # Available MiR states to select via actions
@@ -416,39 +417,6 @@ class MirConnector(Connector):
 
         diagnostics = self.diagnostics or {}
         try:
-            # Helper to convert percentage (0-100) to InOrbit format (0-1)
-            def _to_inorbit_percent(value: float) -> float:
-                return max(0.0, min(100.0, value)) / 100.0
-            # Helper to parse a numeric value from a string and convert units
-            def _parse_number(value: object) -> float | None:
-                try:
-                    if isinstance(value, (int, float)):
-                        return float(value)
-                    s = str(value)
-                    # Extract first decimal/float-like token
-                    import re
-                    m = re.search(r"-?\d+(?:[.,]\d+)?", s)
-                    if not m:
-                        return None
-                    num = m.group(0).replace(",", ".")
-                    return float(num)
-                except (ValueError, AttributeError):
-                    # Expected parsing errors for malformed numbers
-                    return None
-
-            def _to_gb(val: object, key: str) -> float | None:
-                n = _parse_number(val)
-                if n is None:
-                    return None
-                k = key.lower()
-                if "[gb]" in k:
-                    return n
-                if "[mb]" in k:
-                    return n / 1024.0
-                if "[b]" in k:
-                    return n / (1024.0 * 1024.0 * 1024.0)
-                # Assume already in GB if unit not specified
-                return n
             # Battery from diagnostics, fallback to status
             batt_vals = (diagnostics.get(BATTERY_PATH, {}) or {}).get('values', {})
             remaining_pct = None
@@ -459,7 +427,7 @@ class MirConnector(Connector):
                 elif 'Remaining battery time [sec]' in k:
                     remaining_sec = float(v)
             if remaining_pct is not None:
-                key_values['battery percent'] = _to_inorbit_percent(remaining_pct)
+                key_values['battery percent'] = to_inorbit_percent(remaining_pct)
             if remaining_sec is not None:
                 key_values['battery_time_remaining'] = int(remaining_sec)
 
@@ -471,7 +439,7 @@ class MirConnector(Connector):
                     avg_cpu = float(v)
                     break
             if avg_cpu is not None:
-                key_values['cpu_usage_percent'] = _to_inorbit_percent(avg_cpu)
+                key_values['cpu_usage_percent'] = to_inorbit_percent(avg_cpu)
 
             # CPU temperature from diagnostics
             cpu_temp_vals = (diagnostics.get(CPU_TEMP_PATH, {}) or {}).get('values', {})
@@ -483,32 +451,16 @@ class MirConnector(Connector):
             if pkg_temp is not None:
                 key_values['temperature_celsius'] = pkg_temp
 
-            # Helper function to calculate usage percentage from diagnostics
-            def _calculate_usage_percent(diagnostic_path: str, key_name: str) -> None:
-                vals = (diagnostics.get(diagnostic_path, {}) or {}).get('values', {})
-                total_gb = used_gb = free_gb = None
-                
-                for k, v in vals.items():
-                    if 'Total size' in k:
-                        total_gb = _to_gb(v, k)
-                    elif 'Used' in k:
-                        used_gb = _to_gb(v, k)
-                    elif 'Free' in k:
-                        free_gb = _to_gb(v, k)
-                
-                usage_pct = None
-                if total_gb and total_gb > 0:
-                    if used_gb is not None:
-                        usage_pct = (used_gb / total_gb) * 100.0
-                    elif free_gb is not None:
-                        usage_pct = ((total_gb - free_gb) / total_gb) * 100.0
-                
-                if usage_pct is not None:
-                    key_values[key_name] = _to_inorbit_percent(usage_pct)
-
             # Memory and disk usage from diagnostics
-            _calculate_usage_percent(MEMORY_PATH, 'memory_usage_percent')
-            _calculate_usage_percent(HARDDRIVE_PATH, 'disk_usage_percent')
+            memory_vals = (diagnostics.get(MEMORY_PATH, {}) or {}).get('values', {})
+            memory_usage_pct = calculate_usage_percent(memory_vals, 'memory_usage_percent')
+            if memory_usage_pct is not None:
+                key_values['memory_usage_percent'] = to_inorbit_percent(memory_usage_pct)
+            
+            disk_vals = (diagnostics.get(HARDDRIVE_PATH, {}) or {}).get('values', {})
+            disk_usage_pct = calculate_usage_percent(disk_vals, 'disk_usage_percent')
+            if disk_usage_pct is not None:
+                key_values['disk_usage_percent'] = to_inorbit_percent(disk_usage_pct)
 
             # WiFi details from diagnostics
             wifi_vals = (diagnostics.get(WIFI_PATH, {}) or {}).get('values', {})

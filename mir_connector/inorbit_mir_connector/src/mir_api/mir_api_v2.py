@@ -256,7 +256,6 @@ class MirApiV2(MirApiBaseClass):
 
     async def send_waypoint(self, pose):
         """Receives a pose and sends a request to command the robot to navigate to the waypoint"""
-        self.logger.info(f"Sending waypoint to ({pose['x']:.2f}, {pose['y']:.2f}, {math.degrees(float(pose['theta'])):.1f}°)")
         orientation_degs = math.degrees(float(pose["theta"]))
         parameters = {
             "clearall": "yes",
@@ -265,6 +264,7 @@ class MirApiV2(MirApiBaseClass):
             "orientation": orientation_degs,
             "mode": "map-go-to-coordinates",
         }
+        self.logger.info(f"Sending waypoint to ({pose['x']:.2f}, {pose['y']:.2f}, {orientation_degs:.1f}°)")
         async with httpx.AsyncClient(base_url=self.mir_base_url, timeout=30) as client:
             res = await client.get("/", params=parameters)
             res.raise_for_status()

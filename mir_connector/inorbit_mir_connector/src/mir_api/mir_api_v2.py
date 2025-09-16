@@ -214,7 +214,6 @@ class MirApiV2(MirApiBaseClass):
             headers={"Content-Type": "application/json"},
             json=mission_queues,
         )
-        # Response logged at debug level only - too noisy for INFO
         self.logger.debug(f"Mission queued: {response.text}")
 
     async def abort_all_missions(self):
@@ -224,7 +223,6 @@ class MirApiV2(MirApiBaseClass):
             queue_mission_url,
             headers={"Content-Type": "application/json"},
         )
-        # Response logged at debug level only - too noisy for INFO
         self.logger.debug(f"Missions aborted: {response.text}")
 
     async def set_state(self, state_id: int):

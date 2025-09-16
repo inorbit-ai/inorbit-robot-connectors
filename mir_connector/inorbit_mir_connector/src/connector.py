@@ -371,7 +371,6 @@ class MirConnector(Connector):
             "yaw": math.radians(self.status.get("position", {}).get("orientation", 0)),
             "frame_id": self.status.get("map_id", ""),
         }
-        # self._logger.debug(f"Publishing pose: {pose_data}")
         self.publish_pose(**pose_data)
 
         # publish odometry
@@ -379,7 +378,6 @@ class MirConnector(Connector):
             "linear_speed": self.status.get("velocity", {}).get("linear", 0),
             "angular_speed": math.radians(self.status.get("velocity", {}).get("angular", 0)),
         }
-        # self._logger.debug(f"Publishing odometry: {odometry}")
         self._robot_session.publish_odometry(**odometry)
 
         # publish key values

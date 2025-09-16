@@ -40,6 +40,14 @@ MIR_STATE = {3: "READY", 4: "PAUSE", 11: "MANUALCONTROL"}
 # Used in waypoints sent via missions
 MIR_MOVE_DISTANCE_THRESHOLD = 0.1
 
+# Diagnostic paths for robot vitals
+BATTERY_PATH = '/Power System/Battery'
+CPU_LOAD_PATH = '/Computer/PC/CPU Load'
+CPU_TEMP_PATH = '/Computer/PC/CPU Temperature'
+MEMORY_PATH = '/Computer/PC/Memory'
+HARDDRIVE_PATH = '/Computer/PC/Harddrive'
+WIFI_PATH = '/Computer/Network/Wifi'
+
 
 class MirConnector(Connector):
     """MiR connector.
@@ -441,8 +449,8 @@ class MirConnector(Connector):
                     return n / (1024.0 * 1024.0 * 1024.0)
                 # Assume already in GB if unit not specified
                 return n
-            # Battery from diagnostics (/Power System/Battery), fallback to status
-            batt_vals = (diagnostics.get('/Power System/Battery', {}) or {}).get('values', {})
+            # Battery from diagnostics, fallback to status
+            batt_vals = (diagnostics.get(BATTERY_PATH, {}) or {}).get('values', {})
             remaining_pct = None
             remaining_sec = None
             for k, v in batt_vals.items():
@@ -456,7 +464,7 @@ class MirConnector(Connector):
                 key_values['battery_time_remaining'] = int(remaining_sec)
 
             # CPU load from diagnostics
-            cpu_vals = (diagnostics.get('/Computer/PC/CPU Load', {}) or {}).get('values', {})
+            cpu_vals = (diagnostics.get(CPU_LOAD_PATH, {}) or {}).get('values', {})
             avg_cpu = None
             for k, v in cpu_vals.items():
                 if 'Average CPU load' in k and '30 second' not in k and '3 minut' not in k:
@@ -466,7 +474,7 @@ class MirConnector(Connector):
                 key_values['cpu_usage_percent'] = _to_inorbit_percent(avg_cpu)
 
             # CPU temperature from diagnostics
-            cpu_temp_vals = (diagnostics.get('/Computer/PC/CPU Temperature', {}) or {}).get('values', {})
+            cpu_temp_vals = (diagnostics.get(CPU_TEMP_PATH, {}) or {}).get('values', {})
             pkg_temp = None
             for k, v in cpu_temp_vals.items():
                 if 'Package id' in k:
@@ -499,11 +507,11 @@ class MirConnector(Connector):
                     key_values[key_name] = _to_inorbit_percent(usage_pct)
 
             # Memory and disk usage from diagnostics
-            _calculate_usage_percent('/Computer/PC/Memory', 'memory_usage_percent')
-            _calculate_usage_percent('/Computer/PC/Harddrive', 'disk_usage_percent')
+            _calculate_usage_percent(MEMORY_PATH, 'memory_usage_percent')
+            _calculate_usage_percent(HARDDRIVE_PATH, 'disk_usage_percent')
 
-            # WiFi details from diagnostics (/Computer/Network/Wifi)
-            wifi_vals = (diagnostics.get('/Computer/Network/Wifi', {}) or {}).get('values', {})
+            # WiFi details from diagnostics
+            wifi_vals = (diagnostics.get(WIFI_PATH, {}) or {}).get('values', {})
             ssid = wifi_vals.get('SSID')
             freq = wifi_vals.get('Frequency')
             signal = wifi_vals.get('Signal level')

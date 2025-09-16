@@ -657,8 +657,6 @@ class MirConnector(Connector):
                     img_byte_arr = io.BytesIO()
                     flipped_image.save(img_byte_arr, format="PNG")
                     flipped_bytes = img_byte_arr.getvalue()
-
-                    # Map flipping is routine - no need to log
                 except Exception as e:
                     self._logger.error(f"Failed to flip map image: {e}")
                     # If flipping fails, use the original bytes
@@ -687,5 +685,4 @@ class MirConnector(Connector):
                     os.unlink(temp_path)  # Clean up the file in case of error
             else:
                 self._logger.error(f"No map data available for {frame_id}")
-                # Map data is too verbose for logs
                 return

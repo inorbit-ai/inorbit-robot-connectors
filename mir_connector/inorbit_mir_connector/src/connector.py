@@ -435,7 +435,7 @@ class MirConnector(Connector):
             cpu_vals = (diagnostics.get(CPU_LOAD_PATH, {}) or {}).get('values', {})
             avg_cpu = None
             for k, v in cpu_vals.items():
-                if 'Average CPU load' in k and '30 second' not in k and '3 minut' not in k:
+                if 'Average CPU load' in k and '30 second' not in k and '3 minute' not in k:
                     avg_cpu = float(v)
                     break
             if avg_cpu is not None:

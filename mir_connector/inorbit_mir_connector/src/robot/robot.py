@@ -91,7 +91,6 @@ class Robot:
             status = await self._mir_api.get_status()
             self._status = status
             self._handle_success()
-            # self.logger.debug("Robot status updated successfully")
         except Exception as e:
             self._handle_error(e, "robot status fetch")
             # Keep the last known status on error
@@ -102,7 +101,6 @@ class Robot:
             metrics = await self._mir_api.get_metrics()
             self._metrics = metrics
             self._handle_success()
-            # self.logger.debug("Robot metrics updated successfully")
         except Exception as e:
             self._handle_error(e, "robot metrics fetch")
             # Keep the last known metrics on error
@@ -113,7 +111,6 @@ class Robot:
             diagnostics = await self._mir_api.get_diagnostics()
             self._diagnostics = diagnostics
             self._handle_success()
-            # self.logger.debug("Robot diagnostics updated successfully")
         except Exception as e:
             self._handle_error(e, "robot diagnostics fetch")
             # Keep the last known diagnostics on error

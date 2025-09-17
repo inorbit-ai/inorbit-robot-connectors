@@ -32,13 +32,13 @@ test_requirements = [
     "pytest-httpx~=0.35",
 ]
 
-dev_requirements = {
+dev_requirements = [
     "twine==4.0",
     "build==1.0",
     "bump-my-version==0.15",
     "black",
     "flake8",
-}
+]
 
 extra_requirements = {
     "test": [*test_requirements],

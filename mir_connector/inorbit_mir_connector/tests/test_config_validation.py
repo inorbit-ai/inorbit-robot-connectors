@@ -49,7 +49,8 @@ def test_mir_validator(example_mir_configuration_dict, example_configuration_dic
     # Should fail because of an invalid mir specific field
     with pytest.raises(ValidationError):
         ConnectorConfig(
-            **example_configuration_dict | {"connector_config": {"missing_fields": True}}
+            **example_configuration_dict
+            | {"connector_config": {"missing_fields": True}}
         )
     # Should fail because of a version mismatch
     with pytest.raises(ValidationError):

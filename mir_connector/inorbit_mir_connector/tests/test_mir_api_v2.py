@@ -116,7 +116,9 @@ mir_robot_wifi_access_point_frequency_hertz 0.0
         "mir_robot_wifi_access_point_frequency_hertz": 0.0,
     }
 
-    httpx_mock.add_response(method="GET", url=f"{mir_api.mir_api_base_url}/metrics", text=input)
+    httpx_mock.add_response(
+        method="GET", url=f"{mir_api.mir_api_base_url}/metrics", text=input
+    )
     metrics = await mir_api.get_metrics()
 
     assert DeepDiff(expected_output, metrics) == {}

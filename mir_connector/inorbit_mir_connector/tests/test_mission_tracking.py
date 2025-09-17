@@ -20,7 +20,9 @@ def mission_tracking():
         robot_tz_info=pytz.timezone("UTC"),
         enable_io_mission_tracking=True,
     )
-    mission_tracking.inorbit_sess.missions_module.executor.wait_until_idle = Mock(return_value=True)
+    mission_tracking.inorbit_sess.missions_module.executor.wait_until_idle = Mock(
+        return_value=True
+    )
     return mission_tracking
 
 
@@ -45,7 +47,9 @@ async def test_get_current_mission(mission_tracking):
 async def test_toggle_mir_tracking(
     mission_tracking, sample_metrics_data, sample_status_data, sample_mir_mission_data
 ):
-    mission_tracking.get_current_mission = AsyncMock(return_value=sample_mir_mission_data)
+    mission_tracking.get_current_mission = AsyncMock(
+        return_value=sample_mir_mission_data
+    )
 
     # MiR tracking should be disabled
     assert mission_tracking.mir_mission_tracking_enabled is False
@@ -64,11 +68,13 @@ async def test_report_mission(
 ):
     mission_tracking.mir_mission_tracking_enabled = True
     mission_tracking.io_mission_tracking_enabled = True
-    mission_tracking.get_current_mission = AsyncMock(return_value=sample_mir_mission_data)
+    mission_tracking.get_current_mission = AsyncMock(
+        return_value=sample_mir_mission_data
+    )
     await mission_tracking.report_mission(sample_status_data, sample_metrics_data)
-    reported_mission = mission_tracking.inorbit_sess.publish_key_values.call_args.kwargs[
-        "key_values"
-    ]
+    reported_mission = (
+        mission_tracking.inorbit_sess.publish_key_values.call_args.kwargs["key_values"]
+    )
 
     assert len(mission_tracking.inorbit_sess.publish_key_values.call_args_list) == 1
 
@@ -102,7 +108,9 @@ async def test_toggle_inorbit_tracking(
 ):
     # Enable MiR tracking. This is ussually set by the connector
     mission_tracking.mir_mission_tracking_enabled = True
-    mission_tracking.get_current_mission = AsyncMock(return_value=sample_mir_mission_data)
+    mission_tracking.get_current_mission = AsyncMock(
+        return_value=sample_mir_mission_data
+    )
 
     # Should be enabled
     await mission_tracking.report_mission(sample_status_data, sample_metrics_data)
@@ -180,7 +188,9 @@ class TestSafeLocalizeTimestamp:
         timestamp_str = "2023-12-07T23:07:51"
         result = utc_mission_tracking._safe_localize_timestamp(timestamp_str)
 
-        expected_dt = pytz.timezone("UTC").localize(datetime.fromisoformat(timestamp_str))
+        expected_dt = pytz.timezone("UTC").localize(
+            datetime.fromisoformat(timestamp_str)
+        )
         expected = expected_dt.timestamp()
 
         assert result == expected

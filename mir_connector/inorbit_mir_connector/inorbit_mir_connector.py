@@ -10,7 +10,10 @@ import os
 
 from pydantic import ValidationError
 from inorbit_mir_connector.src.connector import MirConnector
-from inorbit_mir_connector.config.connector_model import load_and_validate, format_validation_error
+from inorbit_mir_connector.config.connector_model import (
+    load_and_validate,
+    format_validation_error,
+)
 
 
 # Configure logging with better formatting and level control

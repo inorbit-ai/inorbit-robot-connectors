@@ -85,7 +85,9 @@ def sample_mir_mission_data():
         "started": "2023-12-07T10:54:31",
         "created_by_name": "Administrator",
         "mission": "/v2.0.0/missions/71e63050-7b7a-11ed-9f3c-0001299981c4",
-        "actions": [{"url": "/v2.0.0/mission_queue/14026/actions/367820", "id": 367820}],
+        "actions": [
+            {"url": "/v2.0.0/mission_queue/14026/actions/367820", "id": 367820}
+        ],
         "fleet_schedule_guid": "",
         "mission_id": "71e63050-7b7a-11ed-9f3c-0001299981c4",
         "finished": None,
@@ -157,7 +159,10 @@ def sample_mir_diagnostics_agg_data():
                     "hardware_id": "",
                     "values": [
                         {"value": "CPU load is OK", "key": "/Computer/PC/CPU Load"},
-                        {"value": "CPU temperature is OK", "key": "/Computer/PC/CPU Temperature"},
+                        {
+                            "value": "CPU temperature is OK",
+                            "key": "/Computer/PC/CPU Temperature",
+                        },
                         {"value": "Harddrive is OK", "key": "/Computer/PC/Harddrive"},
                         {"value": "Memory is OK", "key": "/Computer/PC/Memory"},
                     ],
@@ -401,7 +406,10 @@ def sample_mir_diagnostics_agg_data():
                 {
                     "message": "OK",
                     "hardware_id": "",
-                    "values": [{"value": "OK", "key": "PC"}, {"value": "OK", "key": "Network"}],
+                    "values": [
+                        {"value": "OK", "key": "PC"},
+                        {"value": "OK", "key": "Network"},
+                    ],
                     "name": "/Computer",
                     "level": 0,
                 },
@@ -506,7 +514,10 @@ def sample_mir_diagnostics_agg_data():
                     "values": [
                         {"value": "98.8", "key": "Remaining battery capacity [%]"},
                         {"value": "94807", "key": "Remaining battery time [sec]"},
-                        {"value": "26:20:07", "key": "Remaining battery time [HH:MM:SS]"},
+                        {
+                            "value": "26:20:07",
+                            "key": "Remaining battery time [HH:MM:SS]",
+                        },
                         {"value": "0", "key": "Battery Amps"},
                     ],
                     "name": "/Power System/Battery",
@@ -590,8 +601,14 @@ def sample_mir_diagnostics_agg_data():
                     "message": "OK",
                     "hardware_id": "",
                     "values": [
-                        {"value": "SICK Safety PLC is OK", "key": "/Safety System/Communication"},
-                        {"value": "Emergency Stop is OK", "key": "/Safety System/Emergency Stop"},
+                        {
+                            "value": "SICK Safety PLC is OK",
+                            "key": "/Safety System/Communication",
+                        },
+                        {
+                            "value": "Emergency Stop is OK",
+                            "key": "/Safety System/Emergency Stop",
+                        },
                     ],
                     "name": "/Safety System",
                     "level": 0,
@@ -665,7 +682,10 @@ def sample_mir_diagnostics_agg_data():
                     "message": "OK",
                     "hardware_id": "",
                     "values": [
-                        {"value": "Camera is OK", "key": "/Sensors/3D Camera (Left)/Connection"}
+                        {
+                            "value": "Camera is OK",
+                            "key": "/Sensors/3D Camera (Left)/Connection",
+                        }
                     ],
                     "name": "/Sensors/3D Camera (Left)",
                     "level": 0,
@@ -692,7 +712,10 @@ def sample_mir_diagnostics_agg_data():
                     "message": "OK",
                     "hardware_id": "",
                     "values": [
-                        {"value": "Camera is OK", "key": "/Sensors/3D Camera (Right)/Connection"}
+                        {
+                            "value": "Camera is OK",
+                            "key": "/Sensors/3D Camera (Right)/Connection",
+                        }
                     ],
                     "name": "/Sensors/3D Camera (Right)",
                     "level": 0,
@@ -750,7 +773,10 @@ def sample_mir_diagnostics_agg_data():
                     "message": "OK",
                     "hardware_id": "",
                     "values": [
-                        {"value": "Accelerometer is OK", "key": "/Sensors/IMU/Accelerometer"},
+                        {
+                            "value": "Accelerometer is OK",
+                            "key": "/Sensors/IMU/Accelerometer",
+                        },
                         {"value": "Connection OK", "key": "/Sensors/IMU/Connection"},
                         {"value": "Gyroscope is OK", "key": "/Sensors/IMU/Gyroscope"},
                     ],

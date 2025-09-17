@@ -151,7 +151,9 @@ class MirConnector(Connector):
                 - `metadata` is reserved for the future and will contains additional
                 information about the received command request.
         """
-        self._logger.info(f"Received command '{command_name}' with {len(args)} arguments")
+        self._logger.info(
+            f"Received command '{command_name}' with {len(args)} arguments"
+        )
         self._logger.debug(f"Command details: {command_name} - {args}")
 
         if command_name == COMMAND_CUSTOM_COMMAND:
@@ -179,7 +181,9 @@ class MirConnector(Connector):
                 script_args = dict(zip(args_raw[::2], args_raw[1::2]))
                 self._logger.debug(f"Parsed arguments are: {script_args}")
             else:
-                return options["result_function"](CommandResultCode.FAILURE, "Invalid arguments")
+                return options["result_function"](
+                    CommandResultCode.FAILURE, "Invalid arguments"
+                )
 
             # Delegate mission commands to the mission executor
             if self.mission_executor:
@@ -187,7 +191,9 @@ class MirConnector(Connector):
                     script_name, script_args, options
                 )
                 if handled:
-                    self._logger.info(f"Mission executor handled command '{script_name}'")
+                    self._logger.info(
+                        f"Mission executor handled command '{script_name}'"
+                    )
                     # The executor handles calling the result function
                     return
 
@@ -271,7 +277,8 @@ class MirConnector(Connector):
                 else:
                     self._logger.error("Invalid arguments for 'localize' command")
                     options["result_function"](
-                        CommandResultCode.FAILURE, execution_status_details="Invalid arguments"
+                        CommandResultCode.FAILURE,
+                        execution_status_details="Invalid arguments",
                     )
                     return
             else:
@@ -300,12 +307,18 @@ class MirConnector(Connector):
                     parameters=[
                         {"id": "X", "value": x, "label": f"{x}"},
                         {"id": "Y", "value": y, "label": f"{y}"},
-                        {"id": "Orientation", "value": orientation, "label": f"{orientation}"},
+                        {
+                            "id": "Orientation",
+                            "value": orientation,
+                            "label": f"{orientation}",
+                        },
                     ],
                     description="Mission created by InOrbit",
                 )
             else:
-                self._logger.error("No waypoint mission id or temporary missions group enabled")
+                self._logger.error(
+                    "No waypoint mission id or temporary missions group enabled"
+                )
                 return options["result_function"](
                     CommandResultCode.FAILURE,
                     execution_status_details=(
@@ -320,7 +333,9 @@ class MirConnector(Connector):
             elif msg == "inorbit_resume":
                 await self.mir_api.set_state(SetStateId.READY.value)
         else:
-            self._logger.warning(f"Received unknown command '{command_name}' - ignoring")
+            self._logger.warning(
+                f"Received unknown command '{command_name}' - ignoring"
+            )
             self._logger.debug(f"Unknown command details: {command_name} - {args}")
 
     async def _connect(self) -> None:
@@ -379,7 +394,9 @@ class MirConnector(Connector):
         # publish odometry
         odometry = {
             "linear_speed": self.status.get("velocity", {}).get("linear", 0),
-            "angular_speed": math.radians(self.status.get("velocity", {}).get("angular", 0)),
+            "angular_speed": math.radians(
+                self.status.get("velocity", {}).get("angular", 0)
+            ),
         }
         self._robot_session.publish_odometry(**odometry)
 
@@ -404,14 +421,18 @@ class MirConnector(Connector):
             "mode_text": mode_text,
             "robot_model": self.status.get("robot_model"),
             "waiting_for": (
-                self.mission_tracking.waiting_for_text if self.mission_tracking else None
+                self.mission_tracking.waiting_for_text
+                if self.mission_tracking
+                else None
             ),
             "api_connected": self.robot.api_connected,
         }
 
         # Add vitals from diagnostics (preferred) or status (fallback)
         # Keep localization_score from metrics only
-        key_values["localization_score"] = (self.metrics or {}).get("mir_robot_localization_score")
+        key_values["localization_score"] = (self.metrics or {}).get(
+            "mir_robot_localization_score"
+        )
 
         # Uptime always from status (more reliable)
         key_values["uptime"] = self.status.get("uptime")
@@ -436,7 +457,11 @@ class MirConnector(Connector):
             cpu_vals = (diagnostics.get(CPU_LOAD_PATH, {}) or {}).get("values", {})
             avg_cpu = None
             for k, v in cpu_vals.items():
-                if "Average CPU load" in k and "30 second" not in k and "3 minute" not in k:
+                if (
+                    "Average CPU load" in k
+                    and "30 second" not in k
+                    and "3 minute" not in k
+                ):
                     avg_cpu = float(v)
                     break
             if avg_cpu is not None:
@@ -454,9 +479,13 @@ class MirConnector(Connector):
 
             # Memory and disk usage from diagnostics
             memory_vals = (diagnostics.get(MEMORY_PATH, {}) or {}).get("values", {})
-            memory_usage_pct = calculate_usage_percent(memory_vals, "memory_usage_percent")
+            memory_usage_pct = calculate_usage_percent(
+                memory_vals, "memory_usage_percent"
+            )
             if memory_usage_pct is not None:
-                key_values["memory_usage_percent"] = to_inorbit_percent(memory_usage_pct)
+                key_values["memory_usage_percent"] = to_inorbit_percent(
+                    memory_usage_pct
+                )
 
             disk_vals = (diagnostics.get(HARDDRIVE_PATH, {}) or {}).get("values", {})
             disk_usage_pct = calculate_usage_percent(disk_vals, "disk_usage_percent")
@@ -489,17 +518,21 @@ class MirConnector(Connector):
 
         # Key values published every second - too noisy for debug logs
         # Only log when api_connected status changes
-        if hasattr(self, "_last_api_connected") and self._last_api_connected != key_values.get(
-            "api_connected"
-        ):
-            self._logger.info(f"API connection status changed: {key_values.get('api_connected')}")
+        if hasattr(
+            self, "_last_api_connected"
+        ) and self._last_api_connected != key_values.get("api_connected"):
+            self._logger.info(
+                f"API connection status changed: {key_values.get('api_connected')}"
+            )
         self._last_api_connected = key_values.get("api_connected")
         self._robot_session.publish_key_values(key_values)
 
         # publish mission data if available
         if self.mission_tracking:
             try:
-                await self.mission_tracking.report_mission(self.status, self.metrics or {})
+                await self.mission_tracking.report_mission(
+                    self.status, self.metrics or {}
+                )
             except Exception:
                 self._logger.exception("Error reporting mission")
 
@@ -564,12 +597,16 @@ class MirConnector(Connector):
 
     async def _delete_unused_missions(self):
         """Delete unused mission definitions from the temporary missions group."""
-        if not hasattr(self, 'tmp_missions_group_id') or not self.tmp_missions_group_id:
-            self._logger.warning("Cannot delete unused missions: missions group not set up")
+        if not hasattr(self, "tmp_missions_group_id") or not self.tmp_missions_group_id:
+            self._logger.warning(
+                "Cannot delete unused missions: missions group not set up"
+            )
             return
-        
+
         try:
-            mission_defs = await self.mir_api.get_mission_group_missions(self.tmp_missions_group_id)
+            mission_defs = await self.mir_api.get_mission_group_missions(
+                self.tmp_missions_group_id
+            )
             missions_queue = await self.mir_api.get_missions_queue()
             # Do not delete definitions of missions that are pending or executing
             protected_mission_defs = [
@@ -621,7 +658,13 @@ class MirConnector(Connector):
                 return
 
             # Process and save the map image
-            if image and map_name and resolution and origin_x is not None and origin_y is not None:
+            if (
+                image
+                and map_name
+                and resolution
+                and origin_x is not None
+                and origin_y is not None
+            ):
                 # Generate a byte array from the base64 encoded image
                 map_data = base64.b64decode(image)
                 self._logger.debug(f"Map image size: {len(map_data)} bytes")
@@ -664,7 +707,9 @@ class MirConnector(Connector):
                         resolution=resolution,
                     )
 
-                    self._logger.info(f"Added map {frame_id} from robot to configuration")
+                    self._logger.info(
+                        f"Added map {frame_id} from robot to configuration"
+                    )
                     return super().publish_map(frame_id, is_update)
                 except Exception as e:
                     self._logger.error(f"Failed to create temporary map file: {e}")

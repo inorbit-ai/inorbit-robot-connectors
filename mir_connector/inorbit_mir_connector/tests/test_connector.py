@@ -135,31 +135,42 @@ async def test_command_callback_unknown_command(connector, callback_kwargs):
 
 
 @pytest.mark.asyncio
-async def test_command_callback_missions(connector_with_mission_tracking, callback_kwargs):
+async def test_command_callback_missions(
+    connector_with_mission_tracking, callback_kwargs
+):
     connector = connector_with_mission_tracking
+
     def reset_mock():
         callback_kwargs["options"]["result_function"].reset_mock()
         connector.mir_api.reset_mock()
 
     # Simulate an executor timeout, which should disable robot mission tracking
-    connector._robot_session.missions_module.executor.wait_until_idle = Mock(return_value=False)
+    connector._robot_session.missions_module.executor.wait_until_idle = Mock(
+        return_value=False
+    )
     assert connector.mission_tracking.mir_mission_tracking_enabled is False
     callback_kwargs["command_name"] = "customCommand"
     callback_kwargs["args"] = ["queue_mission", ["--mission_id", "1"]]
     await connector._inorbit_command_handler(**callback_kwargs)
     assert connector.mission_tracking.mir_mission_tracking_enabled is False
     assert connector.mir_api.queue_mission.call_args == call("1")
-    callback_kwargs["options"]["result_function"].assert_called_with(CommandResultCode.SUCCESS)
+    callback_kwargs["options"]["result_function"].assert_called_with(
+        CommandResultCode.SUCCESS
+    )
     reset_mock()
 
     # Queue mission
-    connector._robot_session.missions_module.executor.wait_until_idle = Mock(return_value=True)
+    connector._robot_session.missions_module.executor.wait_until_idle = Mock(
+        return_value=True
+    )
     callback_kwargs["command_name"] = "customCommand"
     callback_kwargs["args"] = ["queue_mission", ["--mission_id", "2"]]
     await connector._inorbit_command_handler(**callback_kwargs)
     assert connector.mission_tracking.mir_mission_tracking_enabled is True
     assert connector.mir_api.queue_mission.call_args == call("2")
-    callback_kwargs["options"]["result_function"].assert_called_with(CommandResultCode.SUCCESS)
+    callback_kwargs["options"]["result_function"].assert_called_with(
+        CommandResultCode.SUCCESS
+    )
     reset_mock()
 
     # Run mission now
@@ -168,16 +179,23 @@ async def test_command_callback_missions(connector_with_mission_tracking, callba
     await connector._inorbit_command_handler(**callback_kwargs)
     assert connector.mir_api.abort_all_missions.call_args == call()
     assert connector.mir_api.queue_mission.call_args == call("3")
-    callback_kwargs["options"]["result_function"].assert_called_with(CommandResultCode.SUCCESS)
+    callback_kwargs["options"]["result_function"].assert_called_with(
+        CommandResultCode.SUCCESS
+    )
     reset_mock()
 
     # Abort all
     callback_kwargs["command_name"] = "customCommand"
     callback_kwargs["args"] = ["abort_missions", []]
     await connector._inorbit_command_handler(**callback_kwargs)
-    assert connector._robot_session.missions_module.executor.cancel_mission.call_args == call("*")
+    assert (
+        connector._robot_session.missions_module.executor.cancel_mission.call_args
+        == call("*")
+    )
     assert connector.mir_api.abort_all_missions.call_args == call()
-    callback_kwargs["options"]["result_function"].assert_called_with(CommandResultCode.SUCCESS)
+    callback_kwargs["options"]["result_function"].assert_called_with(
+        CommandResultCode.SUCCESS
+    )
     reset_mock()
 
 
@@ -189,7 +207,9 @@ async def test_command_callback_state(connector, callback_kwargs):
     for id, state in MIR_STATE.items():
         callback_kwargs["args"] = ["set_state", ["--state_id", str(id)]]
         await connector._inorbit_command_handler(**callback_kwargs)
-        callback_kwargs["options"]["result_function"].assert_called_with(CommandResultCode.SUCCESS)
+        callback_kwargs["options"]["result_function"].assert_called_with(
+            CommandResultCode.SUCCESS
+        )
         connector.mir_api.set_state.assert_called_with(id)
         connector.mir_api.set_state.reset_mock()
         callback_kwargs["options"]["result_function"].reset_mock()
@@ -215,7 +235,9 @@ async def test_command_callback_nav_goal(connector, callback_kwargs):
     callback_kwargs["args"] = [{"x": "1", "y": "2", "theta": "3.14"}]
     connector.send_waypoint_over_missions = AsyncMock()
     await connector._inorbit_command_handler(**callback_kwargs)
-    connector.send_waypoint_over_missions.assert_called_with({"x": "1", "y": "2", "theta": "3.14"})
+    connector.send_waypoint_over_missions.assert_called_with(
+        {"x": "1", "y": "2", "theta": "3.14"}
+    )
 
 
 @pytest.mark.asyncio
@@ -224,11 +246,11 @@ async def test_send_waypoint_over_missions(connector, monkeypatch):
     # Test MiR100 firmware v2
     connector.config.connector_type = "MiR100"
     connector.config.connector_config.mir_firmware_version = "v2"
-    
+
     # Mock the mission group to have an ID so the method doesn't fail
     connector.mission_group = MagicMock()
     connector.mission_group.missions_group_id = "test_group_id"
-    
+
     await connector.send_waypoint_over_missions({"x": "1", "y": "2", "theta": "0"})
     connector.mir_api.create_mission.assert_called_once()
     connector.mir_api.add_action_to_mission.assert_called_once_with(
@@ -238,7 +260,12 @@ async def test_send_waypoint_over_missions(connector, monkeypatch):
             {"value": 1.0, "input_name": None, "guid": "uuid", "id": "x"},
             {"value": 2.0, "input_name": None, "guid": "uuid", "id": "y"},
             {"value": 0, "input_name": None, "guid": "uuid", "id": "orientation"},
-            {"value": 0.1, "input_name": None, "guid": "uuid", "id": "distance_threshold"},
+            {
+                "value": 0.1,
+                "input_name": None,
+                "guid": "uuid",
+                "id": "distance_threshold",
+            },
             {"value": 5, "input_name": None, "guid": "uuid", "id": "retries"},
         ],
         priority=1,
@@ -257,8 +284,18 @@ async def test_send_waypoint_over_missions(connector, monkeypatch):
             {"value": 1.0, "input_name": None, "guid": "uuid", "id": "x"},
             {"value": 2.0, "input_name": None, "guid": "uuid", "id": "y"},
             {"value": 0, "input_name": None, "guid": "uuid", "id": "orientation"},
-            {"value": 0.1, "input_name": None, "guid": "uuid", "id": "distance_threshold"},
-            {"value": 60.0, "input_name": None, "guid": "uuid", "id": "blocked_path_timeout"},
+            {
+                "value": 0.1,
+                "input_name": None,
+                "guid": "uuid",
+                "id": "distance_threshold",
+            },
+            {
+                "value": 60.0,
+                "input_name": None,
+                "guid": "uuid",
+                "id": "blocked_path_timeout",
+            },
         ],
         priority=1,
     )
@@ -348,9 +385,9 @@ async def test_connector_loop(connector_with_mission_tracking, monkeypatch):
             "y": 7.156267166137695,
             "x": 9.52050495147705,
             "orientation": 104.30510711669922,
-            },
-        }
-    
+        },
+    }
+
     # Mock the robot status and metrics directly
     connector.robot._status = status_data
     connector.mir_api.get_status.return_value = status_data
@@ -371,11 +408,11 @@ async def test_connector_loop(connector_with_mission_tracking, monkeypatch):
         "mir_robot_wifi_access_point_info": 1.0,
         "mir_robot_wifi_access_point_frequency_hertz": 0.0,
     }
-    
+
     # Mock the robot metrics directly
     connector.robot._metrics = metrics_data
     connector.mir_api.get_metrics.return_value = metrics_data
-    
+
     # Mock diagnostics to include battery information
     connector.robot._diagnostics = {
         "/Power System/Battery": {
@@ -466,8 +503,14 @@ async def test_missions_garbage_collector(connector):
             "id": 1,
         },  # Would be safe to delete
         2: {"mission_id": "not_in_tmp_group", "id": 2},  # Should not be deleted
-        3: {"mission_id": "d871d686-9006-4ddf-af78-bac9a22ddb53", "id": 3},  # Not safe to delete
-        4: {"mission_id": "c0a17f65-39f1-4b10-8fee-77dfe1470ac1", "id": 4},  # Not safe to delete
+        3: {
+            "mission_id": "d871d686-9006-4ddf-af78-bac9a22ddb53",
+            "id": 3,
+        },  # Not safe to delete
+        4: {
+            "mission_id": "c0a17f65-39f1-4b10-8fee-77dfe1470ac1",
+            "id": 4,
+        },  # Not safe to delete
     }
     connector.mir_api.get_mission.side_effect = lambda id: defs[id]
     await connector._delete_unused_missions()
@@ -476,5 +519,7 @@ async def test_missions_garbage_collector(connector):
     connector.mir_api.delete_mission_definition.assert_any_call(
         "72003359-6445-419c-85fb-df5576a9ce2e"
     )
-    connector.mir_api.delete_mission_definition.assert_any_call("not_in_queue_so_safe_to_delete")
+    connector.mir_api.delete_mission_definition.assert_any_call(
+        "not_in_queue_so_safe_to_delete"
+    )
     assert connector.mir_api.delete_mission_definition.call_count == 2

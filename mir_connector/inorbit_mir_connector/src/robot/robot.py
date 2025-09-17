@@ -138,7 +138,8 @@ class Robot:
     @property
     def api_connected(self) -> bool:
         """Return whether the API connection is healthy.
-        This is defined by whether the last API call succeeded, regardless of its status code"""
+        This is defined by whether the last API call succeeded, regardless of its status code
+        """
         return self._last_call_successful
 
     def _run_in_loop(self, coro: Coroutine, frequency: float | None = None) -> None:
@@ -156,7 +157,10 @@ class Robot:
                         # Apply backoff if we have consecutive errors
                         if self._consecutive_errors >= self._max_consecutive_errors:
                             current_time = time.time()
-                            if current_time - self._last_error_time < self._backoff_time:
+                            if (
+                                current_time - self._last_error_time
+                                < self._backoff_time
+                            ):
                                 self.logger.debug(
                                     f"Circuit breaker active, backing off for {self._backoff_time}s"
                                 )

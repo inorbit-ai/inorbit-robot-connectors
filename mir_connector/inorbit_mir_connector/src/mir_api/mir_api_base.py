@@ -111,12 +111,16 @@ class MirApiBaseClass(ABC):
                     f"Using custom CA bundle with hostname verification disabled: {ssl_ca_bundle}"
                 )
             else:
-                self.logger.info("Using default CA bundle with hostname verification disabled")
+                self.logger.info(
+                    "Using default CA bundle with hostname verification disabled"
+                )
             ssl_context.check_hostname = False
             # Create custom async transport with our SSL context
             return httpx.AsyncHTTPTransport(verify=ssl_context), ssl_context
         elif ssl_ca_bundle:
-            self.logger.info(f"Using custom CA bundle for SSL verification: {ssl_ca_bundle}")
+            self.logger.info(
+                f"Using custom CA bundle for SSL verification: {ssl_ca_bundle}"
+            )
             return ssl_ca_bundle, None
         else:
             return True, None  # Use default CA bundle

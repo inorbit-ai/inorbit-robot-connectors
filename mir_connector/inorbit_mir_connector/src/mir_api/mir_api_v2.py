@@ -83,14 +83,22 @@ class MirApiV2(MirApiBaseClass):
 
     async def get_mission_group_missions(self, mission_group_id: str):
         """Get available missions for a mission group"""
-        mission_group_api_url = f"/{MISSION_GROUPS_ENDPOINT_V2}/{mission_group_id}/missions"
+        mission_group_api_url = (
+            f"/{MISSION_GROUPS_ENDPOINT_V2}/{mission_group_id}/missions"
+        )
         missions = (await self._get(mission_group_api_url)).json()
         return missions
 
     async def create_mission_group(self, feature, icon, name, priority, **kwargs):
         """Create a new mission group"""
         mission_groups_api_url = f"/{MISSION_GROUPS_ENDPOINT_V2}"
-        group = {"feature": feature, "icon": icon, "name": name, "priority": priority, **kwargs}
+        group = {
+            "feature": feature,
+            "icon": icon,
+            "name": name,
+            "priority": priority,
+            **kwargs,
+        }
         response = await self._post(
             mission_groups_api_url,
             headers={"Content-Type": "application/json"},
@@ -125,7 +133,9 @@ class MirApiV2(MirApiBaseClass):
         )
         return response.json()
 
-    async def add_action_to_mission(self, action_type, mission_id, parameters, priority, **kwargs):
+    async def add_action_to_mission(
+        self, action_type, mission_id, parameters, priority, **kwargs
+    ):
         """Add an action to an existing mission"""
         action_api_url = f"/{MISSIONS_ENDPOINT_V2}/{mission_id}/actions"
         action = {
@@ -297,7 +307,9 @@ class MirApiV2(MirApiBaseClass):
             ) as client:
                 try:
                     response = client.get(
-                        f"maps/{map_id}", headers={"Accept-Language": "en_US"}, auth=self._auth
+                        f"maps/{map_id}",
+                        headers={"Accept-Language": "en_US"},
+                        auth=self._auth,
                     )
                     response.raise_for_status()
                 except Exception as e:
@@ -311,7 +323,9 @@ class MirApiV2(MirApiBaseClass):
             ) as client:
                 try:
                     response = client.get(
-                        f"maps/{map_id}", headers={"Accept-Language": "en_US"}, auth=self._auth
+                        f"maps/{map_id}",
+                        headers={"Accept-Language": "en_US"},
+                        auth=self._auth,
                     )
                     response.raise_for_status()
                 except Exception as e:

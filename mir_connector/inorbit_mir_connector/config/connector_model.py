@@ -56,9 +56,7 @@ class MirConnectorConfig(BaseSettings):
     )
 
     # Database Configuration
-    mission_database_file: Optional[str] = (
-        None  # Path to SQLite database file for mission storage
-    )
+    mission_database_file: Optional[str] = None  # Path to SQLite database file for mission storage
 
     @field_validator("mir_api_version")
     def api_version_validation(cls, mir_api_version):
@@ -83,10 +81,7 @@ class MirConnectorConfig(BaseSettings):
         Validator to ensure that if enable_temporary_mission_group is False,
         default_waypoint_mission_id is set.
         """
-        if (
-            not self.enable_temporary_mission_group
-            and not self.default_waypoint_mission_id
-        ):
+        if not self.enable_temporary_mission_group and not self.default_waypoint_mission_id:
             raise ValueError(
                 "default_waypoint_mission_id should be set when enable_temporary_mission_group "
                 "is False."

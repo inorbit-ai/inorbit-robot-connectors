@@ -79,9 +79,7 @@ class MirInorbitMissionTracking:
             return
         mission = await self.get_current_mission()
         if mission:
-            completed_percent = len(mission["actions"]) / len(
-                mission["definition"]["actions"]
-            )
+            completed_percent = len(mission["actions"]) / len(mission["definition"]["actions"])
             # Merge 'Abort' and 'Aborted' values into a single state
             if mission["state"] == MISSION_STATE_ABORT:
                 mission["state"] = MISSION_STATE_ABORTED
@@ -107,18 +105,12 @@ class MirInorbitMissionTracking:
                     "Robot Model": status["robot_model"],
                     "Uptime (s)": status["uptime"],
                     "Serial Number": status.get("serial_number", "N/A"),
-                    "Battery Time Remaning (s)": status.get(
-                        "battery_time_remaining", "N/A"
-                    ),
-                    "WiFi RSSI (dbm)": metrics.get(
-                        "mir_robot_wifi_access_point_rssi_dbm", "N/A"
-                    ),
+                    "Battery Time Remaning (s)": status.get("battery_time_remaining", "N/A"),
+                    "WiFi RSSI (dbm)": metrics.get("mir_robot_wifi_access_point_rssi_dbm", "N/A"),
                 },
             }
             if mission.get("finished") is not None:
-                mission_values["endTs"] = (
-                    self._safe_localize_timestamp(mission["finished"]) * 1000
-                )
+                mission_values["endTs"] = self._safe_localize_timestamp(mission["finished"]) * 1000
                 mission_values["completedPercent"] = 1
                 mission_values["status"] = (
                     "OK" if mission["state"] == MISSION_STATE_DONE else "error"

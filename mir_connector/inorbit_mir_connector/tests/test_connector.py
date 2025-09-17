@@ -134,9 +134,7 @@ async def test_command_callback_unknown_command(connector, callback_kwargs):
 
 
 @pytest.mark.asyncio
-async def test_command_callback_missions(
-    connector_with_mission_tracking, callback_kwargs
-):
+async def test_command_callback_missions(connector_with_mission_tracking, callback_kwargs):
     connector = connector_with_mission_tracking
 
     def reset_mock():
@@ -144,32 +142,24 @@ async def test_command_callback_missions(
         connector.mir_api.reset_mock()
 
     # Simulate an executor timeout, which should disable robot mission tracking
-    connector._robot_session.missions_module.executor.wait_until_idle = Mock(
-        return_value=False
-    )
+    connector._robot_session.missions_module.executor.wait_until_idle = Mock(return_value=False)
     assert connector.mission_tracking.mir_mission_tracking_enabled is False
     callback_kwargs["command_name"] = "customCommand"
     callback_kwargs["args"] = ["queue_mission", ["--mission_id", "1"]]
     await connector._inorbit_command_handler(**callback_kwargs)
     assert connector.mission_tracking.mir_mission_tracking_enabled is False
     assert connector.mir_api.queue_mission.call_args == call("1")
-    callback_kwargs["options"]["result_function"].assert_called_with(
-        CommandResultCode.SUCCESS
-    )
+    callback_kwargs["options"]["result_function"].assert_called_with(CommandResultCode.SUCCESS)
     reset_mock()
 
     # Queue mission
-    connector._robot_session.missions_module.executor.wait_until_idle = Mock(
-        return_value=True
-    )
+    connector._robot_session.missions_module.executor.wait_until_idle = Mock(return_value=True)
     callback_kwargs["command_name"] = "customCommand"
     callback_kwargs["args"] = ["queue_mission", ["--mission_id", "2"]]
     await connector._inorbit_command_handler(**callback_kwargs)
     assert connector.mission_tracking.mir_mission_tracking_enabled is True
     assert connector.mir_api.queue_mission.call_args == call("2")
-    callback_kwargs["options"]["result_function"].assert_called_with(
-        CommandResultCode.SUCCESS
-    )
+    callback_kwargs["options"]["result_function"].assert_called_with(CommandResultCode.SUCCESS)
     reset_mock()
 
     # Run mission now
@@ -178,23 +168,16 @@ async def test_command_callback_missions(
     await connector._inorbit_command_handler(**callback_kwargs)
     assert connector.mir_api.abort_all_missions.call_args == call()
     assert connector.mir_api.queue_mission.call_args == call("3")
-    callback_kwargs["options"]["result_function"].assert_called_with(
-        CommandResultCode.SUCCESS
-    )
+    callback_kwargs["options"]["result_function"].assert_called_with(CommandResultCode.SUCCESS)
     reset_mock()
 
     # Abort all
     callback_kwargs["command_name"] = "customCommand"
     callback_kwargs["args"] = ["abort_missions", []]
     await connector._inorbit_command_handler(**callback_kwargs)
-    assert (
-        connector._robot_session.missions_module.executor.cancel_mission.call_args
-        == call("*")
-    )
+    assert connector._robot_session.missions_module.executor.cancel_mission.call_args == call("*")
     assert connector.mir_api.abort_all_missions.call_args == call()
-    callback_kwargs["options"]["result_function"].assert_called_with(
-        CommandResultCode.SUCCESS
-    )
+    callback_kwargs["options"]["result_function"].assert_called_with(CommandResultCode.SUCCESS)
     reset_mock()
 
 
@@ -206,9 +189,7 @@ async def test_command_callback_state(connector, callback_kwargs):
     for id, state in MIR_STATE.items():
         callback_kwargs["args"] = ["set_state", ["--state_id", str(id)]]
         await connector._inorbit_command_handler(**callback_kwargs)
-        callback_kwargs["options"]["result_function"].assert_called_with(
-            CommandResultCode.SUCCESS
-        )
+        callback_kwargs["options"]["result_function"].assert_called_with(CommandResultCode.SUCCESS)
         connector.mir_api.set_state.assert_called_with(id)
         connector.mir_api.set_state.reset_mock()
         callback_kwargs["options"]["result_function"].reset_mock()
@@ -234,9 +215,7 @@ async def test_command_callback_nav_goal(connector, callback_kwargs):
     callback_kwargs["args"] = [{"x": "1", "y": "2", "theta": "3.14"}]
     connector.send_waypoint_over_missions = AsyncMock()
     await connector._inorbit_command_handler(**callback_kwargs)
-    connector.send_waypoint_over_missions.assert_called_with(
-        {"x": "1", "y": "2", "theta": "3.14"}
-    )
+    connector.send_waypoint_over_missions.assert_called_with({"x": "1", "y": "2", "theta": "3.14"})
 
 
 @pytest.mark.asyncio
@@ -518,7 +497,5 @@ async def test_missions_garbage_collector(connector):
     connector.mir_api.delete_mission_definition.assert_any_call(
         "72003359-6445-419c-85fb-df5576a9ce2e"
     )
-    connector.mir_api.delete_mission_definition.assert_any_call(
-        "not_in_queue_so_safe_to_delete"
-    )
+    connector.mir_api.delete_mission_definition.assert_any_call("not_in_queue_so_safe_to_delete")
     assert connector.mir_api.delete_mission_definition.call_count == 2

@@ -126,9 +126,7 @@ class MirMissionExecutor:
         """Check if the mission executor is initialized."""
         return self._initialized
 
-    async def handle_command(
-        self, script_name: str, script_args: dict, options: dict
-    ) -> bool:
+    async def handle_command(self, script_name: str, script_args: dict, options: dict) -> bool:
         """
         Handle mission-related custom commands.
 
@@ -141,9 +139,7 @@ class MirMissionExecutor:
             True if the command was handled, False if it should be passed to the next handler
         """
         if not self._initialized:
-            self.logger.warning(
-                "Mission executor not initialized, cannot handle commands"
-            )
+            self.logger.warning("Mission executor not initialized, cannot handle commands")
             return False
 
         if script_name == MissionScriptName.EXECUTE_MISSION_ACTION.value:
@@ -159,9 +155,7 @@ class MirMissionExecutor:
             # Not a mission command, let the connector handle it
             return False
 
-    async def _handle_execute_mission_action(
-        self, script_args: dict, options: dict
-    ) -> None:
+    async def _handle_execute_mission_action(self, script_args: dict, options: dict) -> None:
         """Handle executeMissionAction command."""
         try:
             # Parse arguments
@@ -209,9 +203,7 @@ class MirMissionExecutor:
             result = await self._worker_pool.abort_mission(mission_id)
             self.logger.info(f"Cancelled mission {mission_id}: {result}")
             if result is False:
-                options["result_function"](
-                    CommandResultCode.FAILURE, "Mission not found"
-                )
+                options["result_function"](CommandResultCode.FAILURE, "Mission not found")
             else:
                 options["result_function"](CommandResultCode.SUCCESS)
 
@@ -222,9 +214,7 @@ class MirMissionExecutor:
                 execution_status_details=str(e),
             )
 
-    async def _handle_update_mission_action(
-        self, script_args: dict, options: dict
-    ) -> None:
+    async def _handle_update_mission_action(self, script_args: dict, options: dict) -> None:
         """Handle updateMissionAction command."""
         mission_id = script_args.get("missionId")
         action = script_args.get("action")
@@ -243,9 +233,7 @@ class MirMissionExecutor:
             options["result_function"](CommandResultCode.SUCCESS)
 
         except Exception as e:
-            self.logger.error(
-                f"Failed to update mission {mission_id} with action {action}: {e}"
-            )
+            self.logger.error(f"Failed to update mission {mission_id} with action {action}: {e}")
             options["result_function"](
                 CommandResultCode.FAILURE,
                 execution_status_details=str(e),

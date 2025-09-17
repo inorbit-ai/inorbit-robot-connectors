@@ -130,20 +130,12 @@ class TmpMissionsGroupHandler(MirMissionsGroupHandler):
         # Find or create the missions group
         mission_groups: list[dict] = await self.mir_api.get_mission_groups()
         group = next(
-            (
-                x
-                for x in mission_groups
-                if x["name"] == self.MIR_INORBIT_MISSIONS_GROUP_NAME
-            ),
+            (x for x in mission_groups if x["name"] == self.MIR_INORBIT_MISSIONS_GROUP_NAME),
             None,
         )
-        self._missions_group_id = (
-            group["guid"] if group is not None else str(uuid.uuid4())
-        )
+        self._missions_group_id = group["guid"] if group is not None else str(uuid.uuid4())
         if group is None:
-            self._logger.info(
-                f"Creating mission group '{self.MIR_INORBIT_MISSIONS_GROUP_NAME}'"
-            )
+            self._logger.info(f"Creating mission group '{self.MIR_INORBIT_MISSIONS_GROUP_NAME}'")
             group = await self.mir_api.create_mission_group(
                 feature=".",
                 icon=".",
@@ -151,9 +143,7 @@ class TmpMissionsGroupHandler(MirMissionsGroupHandler):
                 priority=0,
                 guid=self._missions_group_id,
             )
-            self._logger.info(
-                f"Mission group created with guid '{self._missions_group_id}'"
-            )
+            self._logger.info(f"Mission group created with guid '{self._missions_group_id}'")
         else:
             self._logger.info(
                 f"Found mission group '{self.MIR_INORBIT_MISSIONS_GROUP_NAME}' with "
@@ -177,9 +167,7 @@ class TmpMissionsGroupHandler(MirMissionsGroupHandler):
         """Delete all missions definitions in the temporary group that are not associated to
         pending or executing missions"""
         try:
-            mission_defs = await self.mir_api.get_mission_group_missions(
-                self._missions_group_id
-            )
+            mission_defs = await self.mir_api.get_mission_group_missions(self._missions_group_id)
             missions_queue = await self.mir_api.get_missions_queue()
             # Do not delete definitions of missions that are pending or executing
             protected_mission_defs = [

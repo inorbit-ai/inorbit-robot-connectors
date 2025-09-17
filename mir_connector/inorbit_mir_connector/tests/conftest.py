@@ -85,9 +85,7 @@ def sample_mir_mission_data():
         "started": "2023-12-07T10:54:31",
         "created_by_name": "Administrator",
         "mission": "/v2.0.0/missions/71e63050-7b7a-11ed-9f3c-0001299981c4",
-        "actions": [
-            {"url": "/v2.0.0/mission_queue/14026/actions/367820", "id": 367820}
-        ],
+        "actions": [{"url": "/v2.0.0/mission_queue/14026/actions/367820", "id": 367820}],
         "fleet_schedule_guid": "",
         "mission_id": "71e63050-7b7a-11ed-9f3c-0001299981c4",
         "finished": None,

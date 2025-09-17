@@ -157,10 +157,7 @@ class Robot:
                         # Apply backoff if we have consecutive errors
                         if self._consecutive_errors >= self._max_consecutive_errors:
                             current_time = time.time()
-                            if (
-                                current_time - self._last_error_time
-                                < self._backoff_time
-                            ):
+                            if current_time - self._last_error_time < self._backoff_time:
                                 self.logger.debug(
                                     f"Circuit breaker active, backing off for {self._backoff_time}s"
                                 )

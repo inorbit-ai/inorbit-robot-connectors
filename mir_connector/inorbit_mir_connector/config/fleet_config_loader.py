@@ -36,9 +36,7 @@ def read_fleet_yaml(config_filename: str) -> Dict[str, Any]:
     except FileNotFoundError:
         raise FileNotFoundError(f"Configuration file not found: {config_filename}")
     except yaml.YAMLError as e:
-        raise yaml.YAMLError(
-            f"Invalid YAML in configuration file {config_filename}: {e}"
-        )
+        raise yaml.YAMLError(f"Invalid YAML in configuration file {config_filename}: {e}")
 
 
 def get_robot_config(config_filename: str, robot_id: str) -> Dict[str, Any]:
@@ -67,9 +65,7 @@ def get_robot_config(config_filename: str, robot_id: str) -> Dict[str, Any]:
     # Check if robot exists in configuration
     if robot_id not in full_config:
         available_robots = [
-            key
-            for key in full_config.keys()
-            if key not in ["common", "fleet_defaults", "robots"]
+            key for key in full_config.keys() if key not in ["common", "fleet_defaults", "robots"]
         ]
         raise IndexError(
             f"Robot '{robot_id}' not found in configuration. "
@@ -204,9 +200,7 @@ def _restructure_connector_config(config: Dict[str, Any]) -> Dict[str, Any]:
     if "mission_tracking" in result:
         mission_tracking = result.pop("mission_tracking")
         if "enabled" in mission_tracking:
-            result["connector_config"]["enable_mission_tracking"] = mission_tracking[
-                "enabled"
-            ]
+            result["connector_config"]["enable_mission_tracking"] = mission_tracking["enabled"]
 
     # Handle logging section (new format)
     if "logging" in result:
@@ -275,9 +269,7 @@ def validate_config_structure(config_filename: str) -> Dict[str, Any]:
             validation["robots"] = list(full_config["robots"].keys())
         else:
             validation["robots"] = [
-                key
-                for key in full_config.keys()
-                if key not in ["common", "fleet_defaults"]
+                key for key in full_config.keys() if key not in ["common", "fleet_defaults"]
             ]
     else:
         validation["structure_type"] = "flat"

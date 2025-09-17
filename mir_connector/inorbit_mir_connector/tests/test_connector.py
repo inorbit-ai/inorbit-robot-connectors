@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: MIT
 
 import math
-import time
 import pytest
 import uuid
 from unittest.mock import MagicMock, Mock, call, AsyncMock

@@ -24,7 +24,11 @@ def parse_number(value: object) -> Optional[float]:
     """Parse a numeric value from various input types.
 
     Handles strings with decimal/float-like tokens, integers, floats.
-    Supports comma as decimal separator.
+    Based on actual MiR API format: simple integers and decimals with periods only.
+
+    Examples:
+        "123.45" -> 123.45 (MiR API decimal format)
+        "1024" -> 1024.0 (MiR API integer format)
 
     Args:
         value: Input value to parse (int, float, str, etc.)
@@ -36,13 +40,16 @@ def parse_number(value: object) -> Optional[float]:
         if isinstance(value, (int, float)):
             return float(value)
 
-        s = str(value)
-        # Extract first decimal/float-like token
-        m = re.search(r"-?\d+(?:[.,]\d+)?", s)
+        s = str(value).strip()
+        if not s:
+            return None
+
+        # Extract standard number format (what MiR API actually returns)
+        m = re.search(r"-?\d+(?:\.\d+)?", s)
         if not m:
             return None
-        num = m.group(0).replace(",", ".")
-        return float(num)
+
+        return float(m.group(0))
     except (ValueError, AttributeError):
         # Expected parsing errors for malformed numbers
         return None

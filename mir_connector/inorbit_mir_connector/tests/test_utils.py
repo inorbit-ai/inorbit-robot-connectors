@@ -51,10 +51,19 @@ class TestParseNumber:
         assert parse_number("3.14") == 3.14
         assert parse_number("-10.5") == -10.5
 
-    def test_string_with_comma_decimal(self):
-        """Test string with comma as decimal separator."""
-        assert parse_number("3,14") == 3.14
-        assert parse_number("1,000.5") == 1.0  # First number found
+    def test_mir_api_formats(self):
+        """Test the actual number formats returned by MiR API."""
+        # Integer values (from actual MiR API response)
+        assert parse_number("100") == 100.0  # Battery percentage
+        assert parse_number("51") == 51.0  # CPU load
+        assert parse_number("49") == 49.0  # Temperature
+        assert parse_number("1024") == 1024.0  # Large integers
+
+        # Decimal values (from actual MiR API response)
+        assert parse_number("43.6") == 43.6  # CPU load (30 second)
+        assert parse_number("55.74") == 55.74  # Hard drive total size [GB]
+        assert parse_number("4.951") == 4.951  # 5V out voltage
+        assert parse_number("123.45") == 123.45  # Generic decimal
 
     def test_string_with_text(self):
         """Test string containing text and numbers."""

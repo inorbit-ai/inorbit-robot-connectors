@@ -32,7 +32,7 @@ class Robot:
         self._default_update_freq = default_update_freq
         self._running_tasks: list[asyncio.Task] = []
         self._last_call_successful: bool = True
-        
+
         # Circuit breaker pattern for error handling
         self._consecutive_errors = 0
         self._max_consecutive_errors = 5
@@ -157,10 +157,12 @@ class Robot:
                         if self._consecutive_errors >= self._max_consecutive_errors:
                             current_time = time.time()
                             if current_time - self._last_error_time < self._backoff_time:
-                                self.logger.debug(f"Circuit breaker active, backing off for {self._backoff_time}s")
+                                self.logger.debug(
+                                    f"Circuit breaker active, backing off for {self._backoff_time}s"
+                                )
                                 await asyncio.sleep(self._backoff_time)
                                 continue
-                        
+
                         await asyncio.gather(
                             coro(),
                             asyncio.sleep(1 / (frequency or self._default_update_freq)),
@@ -181,13 +183,15 @@ class Robot:
     def _handle_success(self) -> None:
         """Handle successful API call - reset error counters"""
         if self._consecutive_errors > 0:
-            self.logger.info(f"API connection recovered after {self._consecutive_errors} consecutive errors")
-        
+            self.logger.info(
+                f"API connection recovered after {self._consecutive_errors} consecutive errors"
+            )
+
         # Track API connection state changes
-        if not getattr(self, '_api_connected', True):
+        if not getattr(self, "_api_connected", True):
             self.logger.info("Robot API connection established")
             self._api_connected = True
-            
+
         self._consecutive_errors = 0
         self._backoff_time = 1.0  # Reset backoff time
         self._last_call_successful = True
@@ -196,22 +200,33 @@ class Robot:
         """Handle API error - implement circuit breaker logic"""
         self._last_call_successful = False
         self._consecutive_errors += 1
-        
+
         # Track API connection state changes
-        if getattr(self, '_api_connected', True):
+        if getattr(self, "_api_connected", True):
             self.logger.warning("Robot API connection lost")
             self._api_connected = False
         self._last_error_time = time.time()
-        
+
         # Exponential backoff with max limit
         self._backoff_time = min(self._backoff_time * 1.5, self._max_backoff_time)
-        
+
         # Log with appropriate level based on error frequency
         if self._consecutive_errors == 1:
-            self.logger.error(f"Error in {operation}: {type(error).__name__}: {error}", exc_info=True)
+            self.logger.error(
+                f"Error in {operation}: {type(error).__name__}: {error}", exc_info=True
+            )
         elif self._consecutive_errors == self._max_consecutive_errors:
-            self.logger.error(f"Circuit breaker activated after {self._consecutive_errors} consecutive errors in {operation}. Backing off for {self._backoff_time}s")
+            self.logger.error(
+                f"Circuit breaker activated after {self._consecutive_errors} consecutive "
+                f"errors in {operation}. Backing off for {self._backoff_time}s"
+            )
         elif self._consecutive_errors % 10 == 0:  # Log every 10th error to reduce noise
-            self.logger.error(f"Still failing {operation} ({self._consecutive_errors} consecutive errors): {type(error).__name__}: {error}")
+            self.logger.error(
+                f"Still failing {operation} ({self._consecutive_errors} consecutive "
+                f"errors): {type(error).__name__}: {error}"
+            )
         else:
-            self.logger.debug(f"Continuing error in {operation} ({self._consecutive_errors} errors): {type(error).__name__}: {error}")
+            self.logger.debug(
+                f"Continuing error in {operation} ({self._consecutive_errors} "
+                f"errors): {type(error).__name__}: {error}"
+            )

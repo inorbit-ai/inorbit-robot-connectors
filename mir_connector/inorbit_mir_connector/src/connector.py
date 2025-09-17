@@ -31,7 +31,7 @@ from .mission_exec import MirMissionExecutor
 from inorbit_edge_executor.inorbit import InOrbitAPI as MissionInOrbitAPI
 from ..config.connector_model import ConnectorConfig
 from .robot.robot import Robot
-from .utils import to_inorbit_percent, parse_number, to_gb, calculate_usage_percent
+from .utils import to_inorbit_percent, calculate_usage_percent
 
 
 # Available MiR states to select via actions
@@ -42,12 +42,12 @@ MIR_STATE = {3: "READY", 4: "PAUSE", 11: "MANUALCONTROL"}
 MIR_MOVE_DISTANCE_THRESHOLD = 0.1
 
 # Diagnostic paths for robot vitals
-BATTERY_PATH = '/Power System/Battery'
-CPU_LOAD_PATH = '/Computer/PC/CPU Load'
-CPU_TEMP_PATH = '/Computer/PC/CPU Temperature'
-MEMORY_PATH = '/Computer/PC/Memory'
-HARDDRIVE_PATH = '/Computer/PC/Harddrive'
-WIFI_PATH = '/Computer/Network/Wifi'
+BATTERY_PATH = "/Power System/Battery"
+CPU_LOAD_PATH = "/Computer/PC/CPU Load"
+CPU_TEMP_PATH = "/Computer/PC/CPU Temperature"
+MEMORY_PATH = "/Computer/PC/Memory"
+HARDDRIVE_PATH = "/Computer/PC/Harddrive"
+WIFI_PATH = "/Computer/Network/Wifi"
 
 
 class MirConnector(Connector):
@@ -156,7 +156,10 @@ class MirConnector(Connector):
 
         if command_name == COMMAND_CUSTOM_COMMAND:
             if len(args) < 2:
-                self._logger.error(f"Invalid number of arguments for '{command_name}': expected >=2, got {len(args)}")
+                self._logger.error(
+                    f"Invalid number of arguments for '{command_name}': "
+                    f"expected >=2, got {len(args)}"
+                )
                 options["result_function"](
                     CommandResultCode.FAILURE,
                     execution_status_details="Invalid number of arguments",
@@ -405,90 +408,92 @@ class MirConnector(Connector):
             ),
             "api_connected": self.robot.api_connected,
         }
-        
+
         # Add vitals from diagnostics (preferred) or status (fallback)
         # Keep localization_score from metrics only
-        key_values['localization_score'] = (self.metrics or {}).get('mir_robot_localization_score')
+        key_values["localization_score"] = (self.metrics or {}).get("mir_robot_localization_score")
 
         # Uptime always from status (more reliable)
-        key_values['uptime'] = self.status.get("uptime")
+        key_values["uptime"] = self.status.get("uptime")
 
         diagnostics = self.diagnostics or {}
         try:
             # Battery from diagnostics, fallback to status
-            batt_vals = (diagnostics.get(BATTERY_PATH, {}) or {}).get('values', {})
+            batt_vals = (diagnostics.get(BATTERY_PATH, {}) or {}).get("values", {})
             remaining_pct = None
             remaining_sec = None
             for k, v in batt_vals.items():
-                if 'Remaining battery capacity' in k:
+                if "Remaining battery capacity" in k:
                     remaining_pct = float(v)
-                elif 'Remaining battery time [sec]' in k:
+                elif "Remaining battery time [sec]" in k:
                     remaining_sec = float(v)
             if remaining_pct is not None:
-                key_values['battery percent'] = to_inorbit_percent(remaining_pct)
+                key_values["battery percent"] = to_inorbit_percent(remaining_pct)
             if remaining_sec is not None:
-                key_values['battery_time_remaining'] = int(remaining_sec)
+                key_values["battery_time_remaining"] = int(remaining_sec)
 
             # CPU load from diagnostics
-            cpu_vals = (diagnostics.get(CPU_LOAD_PATH, {}) or {}).get('values', {})
+            cpu_vals = (diagnostics.get(CPU_LOAD_PATH, {}) or {}).get("values", {})
             avg_cpu = None
             for k, v in cpu_vals.items():
-                if 'Average CPU load' in k and '30 second' not in k and '3 minute' not in k:
+                if "Average CPU load" in k and "30 second" not in k and "3 minute" not in k:
                     avg_cpu = float(v)
                     break
             if avg_cpu is not None:
-                key_values['cpu_usage_percent'] = to_inorbit_percent(avg_cpu)
+                key_values["cpu_usage_percent"] = to_inorbit_percent(avg_cpu)
 
             # CPU temperature from diagnostics
-            cpu_temp_vals = (diagnostics.get(CPU_TEMP_PATH, {}) or {}).get('values', {})
+            cpu_temp_vals = (diagnostics.get(CPU_TEMP_PATH, {}) or {}).get("values", {})
             pkg_temp = None
             for k, v in cpu_temp_vals.items():
-                if 'Package id' in k:
+                if "Package id" in k:
                     pkg_temp = float(v)
                     break
             if pkg_temp is not None:
-                key_values['temperature_celsius'] = pkg_temp
+                key_values["temperature_celsius"] = pkg_temp
 
             # Memory and disk usage from diagnostics
-            memory_vals = (diagnostics.get(MEMORY_PATH, {}) or {}).get('values', {})
-            memory_usage_pct = calculate_usage_percent(memory_vals, 'memory_usage_percent')
+            memory_vals = (diagnostics.get(MEMORY_PATH, {}) or {}).get("values", {})
+            memory_usage_pct = calculate_usage_percent(memory_vals, "memory_usage_percent")
             if memory_usage_pct is not None:
-                key_values['memory_usage_percent'] = to_inorbit_percent(memory_usage_pct)
-            
-            disk_vals = (diagnostics.get(HARDDRIVE_PATH, {}) or {}).get('values', {})
-            disk_usage_pct = calculate_usage_percent(disk_vals, 'disk_usage_percent')
+                key_values["memory_usage_percent"] = to_inorbit_percent(memory_usage_pct)
+
+            disk_vals = (diagnostics.get(HARDDRIVE_PATH, {}) or {}).get("values", {})
+            disk_usage_pct = calculate_usage_percent(disk_vals, "disk_usage_percent")
             if disk_usage_pct is not None:
-                key_values['disk_usage_percent'] = to_inorbit_percent(disk_usage_pct)
+                key_values["disk_usage_percent"] = to_inorbit_percent(disk_usage_pct)
 
             # WiFi details from diagnostics
-            wifi_vals = (diagnostics.get(WIFI_PATH, {}) or {}).get('values', {})
-            ssid = wifi_vals.get('SSID')
-            freq = wifi_vals.get('Frequency')
-            signal = wifi_vals.get('Signal level')
+            wifi_vals = (diagnostics.get(WIFI_PATH, {}) or {}).get("values", {})
+            ssid = wifi_vals.get("SSID")
+            freq = wifi_vals.get("Frequency")
+            signal = wifi_vals.get("Signal level")
             if ssid is not None:
-                key_values['wifi_ssid'] = ssid
+                key_values["wifi_ssid"] = ssid
             if freq is not None:
                 # Frequency provided as MHz in examples
                 try:
-                    key_values['wifi_frequency_mhz'] = float(freq)
+                    key_values["wifi_frequency_mhz"] = float(freq)
                 except (ValueError, TypeError):
                     # Expected parsing errors for malformed frequency values
                     pass
             if signal is not None:
                 try:
-                    key_values['wifi_signal_dbm'] = float(signal)
+                    key_values["wifi_signal_dbm"] = float(signal)
                 except (ValueError, TypeError):
                     # Expected parsing errors for malformed signal values
                     pass
         except Exception:
             # Never fail the loop due to parsing issues; values just won't be present
-            self._logger.debug('Failed to parse diagnostics vitals', exc_info=True)
-        
+            self._logger.debug("Failed to parse diagnostics vitals", exc_info=True)
+
         # Key values published every second - too noisy for debug logs
         # Only log when api_connected status changes
-        if hasattr(self, '_last_api_connected') and self._last_api_connected != key_values.get('api_connected'):
+        if hasattr(self, "_last_api_connected") and self._last_api_connected != key_values.get(
+            "api_connected"
+        ):
             self._logger.info(f"API connection status changed: {key_values.get('api_connected')}")
-        self._last_api_connected = key_values.get('api_connected')
+        self._last_api_connected = key_values.get("api_connected")
         self._robot_session.publish_key_values(key_values)
 
         # publish mission data if available

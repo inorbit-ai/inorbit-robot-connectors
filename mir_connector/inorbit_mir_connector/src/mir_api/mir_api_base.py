@@ -6,12 +6,17 @@ from abc import ABC, abstractmethod
 import logging
 import httpx
 from typing import Union, Optional
-from tenacity import retry, wait_exponential_jitter, before_sleep_log, retry_if_exception_type, stop_after_attempt, retry_if
+from tenacity import (
+    retry,
+    wait_exponential_jitter,
+    before_sleep_log,
+    stop_after_attempt,
+)
 
 
 def should_retry_http_error(exception):
     """Custom retry condition for HTTP errors.
-    
+
     Retries on:
     - TimeoutException, ConnectError (always)
     - HTTPStatusError for 5xx, 408, 429 (but not other 4xx)
@@ -71,7 +76,7 @@ class MirApiBaseClass(ABC):
         # If the log level is INFO, reduce the verbosity of httpx
         if self.logger.getEffectiveLevel() == logging.INFO:
             logging.getLogger("httpx").setLevel(logging.WARNING)
-        
+
         # Store auth for retry logic
         self._auth = auth
 
@@ -120,7 +125,7 @@ class MirApiBaseClass(ABC):
         wait=wait_exponential_jitter(initial=1, max=10),
         stop=stop_after_attempt(3),
         before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING),
-        retry=retry_if(should_retry_http_error),
+        retry=should_retry_http_error,
         reraise=True,
     )
     async def _get(self, endpoint: str, **kwargs) -> httpx.Response:
@@ -132,7 +137,7 @@ class MirApiBaseClass(ABC):
         wait=wait_exponential_jitter(initial=1, max=10),
         stop=stop_after_attempt(3),
         before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING),
-        retry=retry_if(should_retry_http_error),
+        retry=should_retry_http_error,
         reraise=True,
     )
     async def _post(self, endpoint: str, **kwargs) -> httpx.Response:
@@ -144,7 +149,7 @@ class MirApiBaseClass(ABC):
         wait=wait_exponential_jitter(initial=1, max=10),
         stop=stop_after_attempt(3),
         before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING),
-        retry=retry_if(should_retry_http_error),
+        retry=should_retry_http_error,
         reraise=True,
     )
     async def _put(self, endpoint: str, **kwargs) -> httpx.Response:
@@ -156,14 +161,13 @@ class MirApiBaseClass(ABC):
         wait=wait_exponential_jitter(initial=1, max=10),
         stop=stop_after_attempt(3),
         before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING),
-        retry=retry_if(should_retry_http_error),
+        retry=should_retry_http_error,
         reraise=True,
     )
     async def _delete(self, endpoint: str, **kwargs) -> httpx.Response:
         res = await self._async_client.delete(endpoint, **kwargs)
         res.raise_for_status()
         return res
-
 
     async def close(self):
         await self._async_client.aclose()

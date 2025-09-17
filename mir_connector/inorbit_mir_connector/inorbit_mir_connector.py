@@ -12,35 +12,35 @@ from pydantic import ValidationError
 from inorbit_mir_connector.src.connector import MirConnector
 from inorbit_mir_connector.config.connector_model import load_and_validate, format_validation_error
 
+
 # Configure logging with better formatting and level control
 def setup_logging():
     """Configure logging with appropriate levels and formatting"""
-    log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
-    
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+
     # Create formatter with more detailed information
-    formatter = logging.Formatter(
-        '%(asctime)s %(levelname)s [%(name)s] %(message)s (%(filename)s:%(lineno)d)'
+    logging.Formatter(
+        "%(asctime)s %(levelname)s [%(name)s] %(message)s (%(filename)s:%(lineno)d)"
     )
-    
+
     # Configure root logger
     logging.basicConfig(
         level=getattr(logging, log_level, logging.INFO),
-        format='%(asctime)s %(levelname)s [%(name)s] %(message)s (%(filename)s:%(lineno)d)',
-        handlers=[
-            logging.StreamHandler(sys.stdout)
-        ]
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s (%(filename)s:%(lineno)d)",
+        handlers=[logging.StreamHandler(sys.stdout)],
     )
-    
+
     # Reduce noise from verbose libraries
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("asyncio").setLevel(logging.WARNING)
-    
+
     # Reduce noise from InOrbit SDK - these log every MQTT publish
     logging.getLogger("inorbit_edge.robot").setLevel(logging.INFO)
     logging.getLogger("RobotSession").setLevel(logging.INFO)
-    
+
     return logging.getLogger(__name__)
+
 
 LOGGER = setup_logging()
 
@@ -81,9 +81,9 @@ def start():
 
     args = parser.parse_args()
     robot_id, config_filename = args.robot_id, args.config
-    
+
     # Update logging level if specified
-    if hasattr(args, 'log_level') and args.log_level:
+    if hasattr(args, "log_level") and args.log_level:
         logging.getLogger().setLevel(getattr(logging, args.log_level.upper()))
 
     try:

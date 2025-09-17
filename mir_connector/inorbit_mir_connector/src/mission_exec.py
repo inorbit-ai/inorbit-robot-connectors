@@ -90,7 +90,8 @@ class MirMissionExecutor:
         self.robot_id = robot_id
         self.inorbit_api = inorbit_api
         self.mir_api = mir_api
-        # Format database filename for inorbit-edge-executor (expects "sqlite:<filename>" or "dummy")
+        # Format database filename for inorbit-edge-executor
+        # (expects "sqlite:<filename>" or "dummy")
         if database_file:
             if database_file == "dummy":
                 self.database_file = "dummy"

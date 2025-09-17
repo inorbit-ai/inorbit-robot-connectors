@@ -75,7 +75,6 @@ class MirApiV2(MirApiBaseClass):
                 samples[sample.name] = sample.value
         return samples
 
-
     async def get_mission_groups(self):
         """Get available mission groups"""
         mission_groups_api_url = f"/{MISSION_GROUPS_ENDPOINT_V2}"
@@ -262,7 +261,9 @@ class MirApiV2(MirApiBaseClass):
             "orientation": orientation_degs,
             "mode": "map-go-to-coordinates",
         }
-        self.logger.info(f"Sending waypoint to ({pose['x']:.2f}, {pose['y']:.2f}, {orientation_degs:.1f}°)")
+        self.logger.info(
+            f"Sending waypoint to ({pose['x']:.2f}, {pose['y']:.2f}, {orientation_degs:.1f}°)"
+        )
         async with httpx.AsyncClient(base_url=self.mir_base_url, timeout=30) as client:
             res = await client.get("/", params=parameters)
             res.raise_for_status()

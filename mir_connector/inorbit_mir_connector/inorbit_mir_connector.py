@@ -18,11 +18,6 @@ def setup_logging():
     """Configure logging with appropriate levels and formatting"""
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
 
-    # Create formatter with more detailed information
-    logging.Formatter(
-        "%(asctime)s %(levelname)s [%(name)s] %(message)s (%(filename)s:%(lineno)d)"
-    )
-
     # Configure root logger
     logging.basicConfig(
         level=getattr(logging, log_level, logging.INFO),

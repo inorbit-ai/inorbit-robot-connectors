@@ -374,7 +374,7 @@ class MirConnector(Connector):
             "yaw": math.radians(self.status.get("position", {}).get("orientation", 0)),
             "frame_id": self.status.get("map_id", ""),
         }
-        self.publish_pose(**pose_data)
+        self._robot_session.publish_pose(**pose_data)
 
         # publish odometry
         odometry = {
@@ -561,6 +561,29 @@ class MirConnector(Connector):
             priority=1,
         )
         await self.mir_api.queue_mission(mission_id)
+
+    async def _delete_unused_missions(self):
+        """Delete unused mission definitions from the temporary missions group."""
+        if not hasattr(self, 'tmp_missions_group_id') or not self.tmp_missions_group_id:
+            self._logger.warning("Cannot delete unused missions: missions group not set up")
+            return
+        
+        try:
+            mission_defs = await self.mir_api.get_mission_group_missions(self.tmp_missions_group_id)
+            missions_queue = await self.mir_api.get_missions_queue()
+            # Do not delete definitions of missions that are pending or executing
+            protected_mission_defs = [
+                (await self.mir_api.get_mission(mission["id"]))["mission_id"]
+                for mission in missions_queue
+                if mission["state"] in ["Pending", "Executing"]
+            ]
+            # Delete mission definitions that are not protected
+            for mission_def in mission_defs:
+                mission_id = mission_def["guid"]
+                if mission_id not in protected_mission_defs:
+                    await self.mir_api.delete_mission_definition(mission_id)
+        except Exception as ex:
+            self._logger.error(f"Error deleting unused missions: {ex}")
 
     # HACK(b-Tomas): This is a hack to publish the map data through the connector.
     # All of this logic should be moved to the Connector base class.

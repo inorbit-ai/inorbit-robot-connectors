@@ -31,6 +31,7 @@ from .mission_exec import MirMissionExecutor
 from inorbit_edge_executor.inorbit import InOrbitAPI as MissionInOrbitAPI
 from ..config.connector_model import ConnectorConfig
 from .robot.robot import Robot
+from .utils import to_inorbit_percent, calculate_usage_percent
 
 
 # Available MiR states to select via actions
@@ -39,6 +40,14 @@ MIR_STATE = {3: "READY", 4: "PAUSE", 11: "MANUALCONTROL"}
 # Distance threshold for MiR move missions in meters
 # Used in waypoints sent via missions
 MIR_MOVE_DISTANCE_THRESHOLD = 0.1
+
+# Diagnostic paths for robot vitals
+BATTERY_PATH = "/Power System/Battery"
+CPU_LOAD_PATH = "/Computer/PC/CPU Load"
+CPU_TEMP_PATH = "/Computer/PC/CPU Temperature"
+MEMORY_PATH = "/Computer/PC/Memory"
+HARDDRIVE_PATH = "/Computer/PC/Harddrive"
+WIFI_PATH = "/Computer/Network/Wifi"
 
 
 class MirConnector(Connector):
@@ -142,11 +151,15 @@ class MirConnector(Connector):
                 - `metadata` is reserved for the future and will contains additional
                 information about the received command request.
         """
-        self._logger.info(f"Received '{command_name}'!. {args}")
+        self._logger.info(f"Received command '{command_name}' with {len(args)} arguments")
+        self._logger.debug(f"Command details: {command_name} - {args}")
 
         if command_name == COMMAND_CUSTOM_COMMAND:
             if len(args) < 2:
-                self._logger.error("Invalid number of arguments: ", args)
+                self._logger.error(
+                    f"Invalid number of arguments for '{command_name}': "
+                    f"expected >=2, got {len(args)}"
+                )
                 options["result_function"](
                     CommandResultCode.FAILURE,
                     execution_status_details="Invalid number of arguments",
@@ -258,7 +271,8 @@ class MirConnector(Connector):
                 else:
                     self._logger.error("Invalid arguments for 'localize' command")
                     options["result_function"](
-                        CommandResultCode.FAILURE, execution_status_details="Invalid arguments"
+                        CommandResultCode.FAILURE,
+                        execution_status_details="Invalid arguments",
                     )
                     return
             else:
@@ -287,7 +301,11 @@ class MirConnector(Connector):
                     parameters=[
                         {"id": "X", "value": x, "label": f"{x}"},
                         {"id": "Y", "value": y, "label": f"{y}"},
-                        {"id": "Orientation", "value": orientation, "label": f"{orientation}"},
+                        {
+                            "id": "Orientation",
+                            "value": orientation,
+                            "label": f"{orientation}",
+                        },
                     ],
                     description="Mission created by InOrbit",
                 )
@@ -307,7 +325,8 @@ class MirConnector(Connector):
             elif msg == "inorbit_resume":
                 await self.mir_api.set_state(SetStateId.READY.value)
         else:
-            self._logger.info(f"Received unknown command '{command_name}'!. {args}")
+            self._logger.warning(f"Received unknown command '{command_name}' - ignoring")
+            self._logger.debug(f"Unknown command details: {command_name} - {args}")
 
     async def _connect(self) -> None:
         """Connect to the robot services and initialize background tasks."""
@@ -360,15 +379,13 @@ class MirConnector(Connector):
             "yaw": math.radians(self.status.get("position", {}).get("orientation", 0)),
             "frame_id": self.status.get("map_id", ""),
         }
-        self._logger.debug(f"Publishing pose: {pose_data}")
-        self.publish_pose(**pose_data)
+        self._robot_session.publish_pose(**pose_data)
 
         # publish odometry
         odometry = {
             "linear_speed": self.status.get("velocity", {}).get("linear", 0),
             "angular_speed": math.radians(self.status.get("velocity", {}).get("angular", 0)),
         }
-        self._logger.debug(f"Publishing odometry: {odometry}")
         self._robot_session.publish_odometry(**odometry)
 
         # publish key values
@@ -384,10 +401,6 @@ class MirConnector(Connector):
         # TODO(Elvio): Move key values to a "values.py" and represent them with constants
         key_values = {
             "connector_version": get_module_version(),
-            "battery percent": self.status.get("battery_percentage"),
-            "battery_time_remaining": self.status.get("battery_time_remaining"),
-            "uptime": self.status.get("uptime"),
-            "localization_score": (self.metrics or {}).get("mir_robot_localization_score"),
             "robot_name": self.status.get("robot_name"),
             "errors": self.status.get("errors"),
             "distance_to_next_target": self.status.get("distance_to_next_target"),
@@ -400,7 +413,92 @@ class MirConnector(Connector):
             ),
             "api_connected": self.robot.api_connected,
         }
-        self._logger.debug(f"Publishing key values: {key_values}")
+
+        # Add vitals from diagnostics (preferred) or status (fallback)
+        # Keep localization_score from metrics only
+        key_values["localization_score"] = (self.metrics or {}).get("mir_robot_localization_score")
+
+        # Uptime always from status (more reliable)
+        key_values["uptime"] = self.status.get("uptime")
+
+        diagnostics = self.diagnostics or {}
+        try:
+            # Battery from diagnostics, fallback to status
+            batt_vals = (diagnostics.get(BATTERY_PATH, {}) or {}).get("values", {})
+            remaining_pct = None
+            remaining_sec = None
+            for k, v in batt_vals.items():
+                if "Remaining battery capacity" in k:
+                    remaining_pct = float(v)
+                elif "Remaining battery time [sec]" in k:
+                    remaining_sec = float(v)
+            if remaining_pct is not None:
+                key_values["battery percent"] = to_inorbit_percent(remaining_pct)
+            if remaining_sec is not None:
+                key_values["battery_time_remaining"] = int(remaining_sec)
+
+            # CPU load from diagnostics
+            cpu_vals = (diagnostics.get(CPU_LOAD_PATH, {}) or {}).get("values", {})
+            avg_cpu = None
+            for k, v in cpu_vals.items():
+                if "Average CPU load" in k and "30 second" not in k and "3 minute" not in k:
+                    avg_cpu = float(v)
+                    break
+            if avg_cpu is not None:
+                key_values["cpu_usage_percent"] = to_inorbit_percent(avg_cpu)
+
+            # CPU temperature from diagnostics
+            cpu_temp_vals = (diagnostics.get(CPU_TEMP_PATH, {}) or {}).get("values", {})
+            pkg_temp = None
+            for k, v in cpu_temp_vals.items():
+                if "Package id" in k:
+                    pkg_temp = float(v)
+                    break
+            if pkg_temp is not None:
+                key_values["temperature_celsius"] = pkg_temp
+
+            # Memory and disk usage from diagnostics
+            memory_vals = (diagnostics.get(MEMORY_PATH, {}) or {}).get("values", {})
+            memory_usage_pct = calculate_usage_percent(memory_vals, "memory_usage_percent")
+            if memory_usage_pct is not None:
+                key_values["memory_usage_percent"] = to_inorbit_percent(memory_usage_pct)
+
+            disk_vals = (diagnostics.get(HARDDRIVE_PATH, {}) or {}).get("values", {})
+            disk_usage_pct = calculate_usage_percent(disk_vals, "disk_usage_percent")
+            if disk_usage_pct is not None:
+                key_values["disk_usage_percent"] = to_inorbit_percent(disk_usage_pct)
+
+            # WiFi details from diagnostics
+            wifi_vals = (diagnostics.get(WIFI_PATH, {}) or {}).get("values", {})
+            ssid = wifi_vals.get("SSID")
+            freq = wifi_vals.get("Frequency")
+            signal = wifi_vals.get("Signal level")
+            if ssid is not None:
+                key_values["wifi_ssid"] = ssid
+            if freq is not None:
+                # Frequency provided as MHz in examples
+                try:
+                    key_values["wifi_frequency_mhz"] = float(freq)
+                except (ValueError, TypeError):
+                    # Expected parsing errors for malformed frequency values
+                    pass
+            if signal is not None:
+                try:
+                    key_values["wifi_signal_dbm"] = float(signal)
+                except (ValueError, TypeError):
+                    # Expected parsing errors for malformed signal values
+                    pass
+        except Exception:
+            # Never fail the loop due to parsing issues; values just won't be present
+            self._logger.debug("Failed to parse diagnostics vitals", exc_info=True)
+
+        # Key values published every second - too noisy for debug logs
+        # Only log when api_connected status changes
+        if hasattr(self, "_last_api_connected") and self._last_api_connected != key_values.get(
+            "api_connected"
+        ):
+            self._logger.info(f"API connection status changed: {key_values.get('api_connected')}")
+        self._last_api_connected = key_values.get("api_connected")
         self._robot_session.publish_key_values(key_values)
 
         # publish mission data if available
@@ -469,6 +567,29 @@ class MirConnector(Connector):
         )
         await self.mir_api.queue_mission(mission_id)
 
+    async def _delete_unused_missions(self):
+        """Delete unused mission definitions from the temporary missions group."""
+        if not hasattr(self, "tmp_missions_group_id") or not self.tmp_missions_group_id:
+            self._logger.warning("Cannot delete unused missions: missions group not set up")
+            return
+
+        try:
+            mission_defs = await self.mir_api.get_mission_group_missions(self.tmp_missions_group_id)
+            missions_queue = await self.mir_api.get_missions_queue()
+            # Do not delete definitions of missions that are pending or executing
+            protected_mission_defs = [
+                (await self.mir_api.get_mission(mission["id"]))["mission_id"]
+                for mission in missions_queue
+                if mission["state"] in ["Pending", "Executing"]
+            ]
+            # Delete mission definitions that are not protected
+            for mission_def in mission_defs:
+                mission_id = mission_def["guid"]
+                if mission_id not in protected_mission_defs:
+                    await self.mir_api.delete_mission_definition(mission_id)
+        except Exception as ex:
+            self._logger.error(f"Error deleting unused missions: {ex}")
+
     # HACK(b-Tomas): This is a hack to publish the map data through the connector.
     # All of this logic should be moved to the Connector base class.
     # @override # TODO(b-Tomas): Uncomment when updating to Python 3.13
@@ -508,7 +629,7 @@ class MirConnector(Connector):
             if image and map_name and resolution and origin_x is not None and origin_y is not None:
                 # Generate a byte array from the base64 encoded image
                 map_data = base64.b64decode(image)
-                self._logger.info(f"Map image size: {len(map_data)} bytes")
+                self._logger.debug(f"Map image size: {len(map_data)} bytes")
                 # Create a temporary file with .png extension to store the map image
                 fd, temp_path = tempfile.mkstemp(suffix=".png")
                 self._logger.debug(f"Created temporary file: {temp_path}")
@@ -527,8 +648,6 @@ class MirConnector(Connector):
                     img_byte_arr = io.BytesIO()
                     flipped_image.save(img_byte_arr, format="PNG")
                     flipped_bytes = img_byte_arr.getvalue()
-
-                    self._logger.debug("Successfully flipped map image")
                 except Exception as e:
                     self._logger.error(f"Failed to flip map image: {e}")
                     # If flipping fails, use the original bytes
@@ -557,5 +676,4 @@ class MirConnector(Connector):
                     os.unlink(temp_path)  # Clean up the file in case of error
             else:
                 self._logger.error(f"No map data available for {frame_id}")
-                self._logger.debug(f"Map data: {map_data}")
                 return

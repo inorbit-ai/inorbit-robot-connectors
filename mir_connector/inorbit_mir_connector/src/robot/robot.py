@@ -6,6 +6,7 @@ from the MiR robot API.
 import asyncio
 import logging
 from typing import Coroutine
+import time
 
 from inorbit_mir_connector.src.mir_api.mir_api_base import MirApiBaseClass
 
@@ -31,6 +32,13 @@ class Robot:
         self._default_update_freq = default_update_freq
         self._running_tasks: list[asyncio.Task] = []
         self._last_call_successful: bool = True
+
+        # Circuit breaker pattern for error handling
+        self._consecutive_errors = 0
+        self._max_consecutive_errors = 5
+        self._backoff_time = 1.0  # Start with 1 second backoff
+        self._max_backoff_time = 30.0  # Max 30 seconds backoff
+        self._last_error_time = 0
 
     def start(self) -> None:
         """Start the tasks that fetch data from the robot."""
@@ -82,11 +90,9 @@ class Robot:
         try:
             status = await self._mir_api.get_status()
             self._status = status
-            self._last_call_successful = True
-            self.logger.debug("Robot status updated successfully")
+            self._handle_success()
         except Exception as e:
-            self._last_call_successful = False
-            self.logger.error(f"Error fetching robot status: {e}")
+            self._handle_error(e, "robot status fetch")
             # Keep the last known status on error
 
     async def _update_metrics(self) -> None:
@@ -94,11 +100,9 @@ class Robot:
         try:
             metrics = await self._mir_api.get_metrics()
             self._metrics = metrics
-            self._last_call_successful = True
-            self.logger.debug("Robot metrics updated successfully")
+            self._handle_success()
         except Exception as e:
-            self._last_call_successful = False
-            self.logger.error(f"Error fetching robot metrics: {e}")
+            self._handle_error(e, "robot metrics fetch")
             # Keep the last known metrics on error
 
     async def _update_diagnostics(self) -> None:
@@ -106,11 +110,9 @@ class Robot:
         try:
             diagnostics = await self._mir_api.get_diagnostics()
             self._diagnostics = diagnostics
-            self._last_call_successful = True
-            self.logger.debug("Robot diagnostics updated successfully")
+            self._handle_success()
         except Exception as e:
-            self._last_call_successful = False
-            self.logger.error(f"Error fetching robot diagnostics: {e}")
+            self._handle_error(e, "robot diagnostics fetch")
             # Keep the last known diagnostics on error
 
     @property
@@ -129,9 +131,15 @@ class Robot:
         return self._diagnostics
 
     @property
+    def grouped_vitals(self) -> dict:
+        """Return the latest grouped vitals data sources"""
+        return self._grouped_vitals
+
+    @property
     def api_connected(self) -> bool:
         """Return whether the API connection is healthy.
-        This is defined by whether the last API call succeeded, regardless of its status code"""
+        This is defined by whether the last API call succeeded, regardless of its status code
+        """
         return self._last_call_successful
 
     def _run_in_loop(self, coro: Coroutine, frequency: float | None = None) -> None:
@@ -145,6 +153,16 @@ class Robot:
                         # Check stop_event between each iteration
                         if self._stop_event.is_set():
                             break
+
+                        # Apply backoff if we have consecutive errors
+                        if self._consecutive_errors >= self._max_consecutive_errors:
+                            current_time = time.time()
+                            if current_time - self._last_error_time < self._backoff_time:
+                                self.logger.debug(
+                                    f"Circuit breaker active, backing off for {self._backoff_time}s"
+                                )
+                                await asyncio.sleep(self._backoff_time)
+                                continue
 
                         await asyncio.gather(
                             coro(),
@@ -162,3 +180,54 @@ class Robot:
                 pass
 
         self._running_tasks.append(asyncio.create_task(loop()))
+
+    def _handle_success(self) -> None:
+        """Handle successful API call - reset error counters"""
+        if self._consecutive_errors > 0:
+            self.logger.info(
+                f"API connection recovered after {self._consecutive_errors} consecutive errors"
+            )
+
+        # Track API connection state changes
+        if not getattr(self, "_api_connected", True):
+            self.logger.info("Robot API connection established")
+            self._api_connected = True
+
+        self._consecutive_errors = 0
+        self._backoff_time = 1.0  # Reset backoff time
+        self._last_call_successful = True
+
+    def _handle_error(self, error: Exception, operation: str) -> None:
+        """Handle API error - implement circuit breaker logic"""
+        self._last_call_successful = False
+        self._consecutive_errors += 1
+
+        # Track API connection state changes
+        if getattr(self, "_api_connected", True):
+            self.logger.warning("Robot API connection lost")
+            self._api_connected = False
+        self._last_error_time = time.time()
+
+        # Exponential backoff with max limit
+        self._backoff_time = min(self._backoff_time * 1.5, self._max_backoff_time)
+
+        # Log with appropriate level based on error frequency
+        if self._consecutive_errors == 1:
+            self.logger.error(
+                f"Error in {operation}: {type(error).__name__}: {error}", exc_info=True
+            )
+        elif self._consecutive_errors == self._max_consecutive_errors:
+            self.logger.error(
+                f"Circuit breaker activated after {self._consecutive_errors} consecutive "
+                f"errors in {operation}. Backing off for {self._backoff_time}s"
+            )
+        elif self._consecutive_errors % 10 == 0:  # Log every 10th error to reduce noise
+            self.logger.error(
+                f"Still failing {operation} ({self._consecutive_errors} consecutive "
+                f"errors): {type(error).__name__}: {error}"
+            )
+        else:
+            self.logger.debug(
+                f"Continuing error in {operation} ({self._consecutive_errors} "
+                f"errors): {type(error).__name__}: {error}"
+            )

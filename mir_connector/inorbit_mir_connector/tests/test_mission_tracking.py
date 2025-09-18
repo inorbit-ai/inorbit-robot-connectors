@@ -8,7 +8,7 @@ from datetime import datetime
 from unittest.mock import MagicMock, Mock, AsyncMock
 from inorbit_edge.robot import RobotSession
 from inorbit_mir_connector.src.mir_api import MirApiV2
-from mir_connector.inorbit_mir_connector.src.mission_tracking import MirInorbitMissionTracking
+from inorbit_mir_connector.src.mission_tracking import MirInorbitMissionTracking
 from deepdiff import DeepDiff
 
 

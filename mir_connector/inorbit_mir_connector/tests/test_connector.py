@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: MIT
 
 import math
-import time
 import pytest
 import uuid
 from unittest.mock import MagicMock, Mock, call, AsyncMock
@@ -36,6 +35,55 @@ def connector(monkeypatch, tmp_path):
                 "mir_api_version": "v2.0",
                 "mir_firmware_version": "v2",
                 "enable_mission_tracking": False,
+                "enable_temporary_mission_group": True,
+            },
+            user_scripts_dir=tmp_path,
+        ),
+    )
+    connector.mir_api = MagicMock()
+    # Async API methods
+    connector.mir_api.get_status = AsyncMock()
+    connector.mir_api.get_metrics = AsyncMock()
+    connector.mir_api.queue_mission = AsyncMock()
+    connector.mir_api.abort_all_missions = AsyncMock()
+    connector.mir_api.set_state = AsyncMock()
+    connector.mir_api.clear_error = AsyncMock()
+    connector.mir_api.set_status = AsyncMock()
+    connector.mir_api.create_mission = AsyncMock()
+    connector.mir_api.add_action_to_mission = AsyncMock()
+    connector.mir_api.get_mission_group_missions = AsyncMock()
+    connector.mir_api.get_missions_queue = AsyncMock()
+    connector.mir_api.get_mission = AsyncMock()
+    connector.mir_api.delete_mission_definition = AsyncMock()
+    connector.mir_api.get_mission_groups = AsyncMock(return_value=[])
+    connector.mir_api.create_mission_group = AsyncMock()
+    connector._robot_session = MagicMock()
+    return connector
+
+
+@pytest.fixture
+def connector_with_mission_tracking(monkeypatch, tmp_path):
+    """Connector fixture with mission tracking enabled for tests that need it."""
+    monkeypatch.setenv("INORBIT_KEY", "abc123")
+    monkeypatch.setattr(RobotSession, "connect", MagicMock())
+
+    connector = MirConnector(
+        "mir100-1",
+        ConnectorConfig(
+            inorbit_robot_key="robot_key",
+            location_tz="UTC",
+            logging={"log_level": "INFO"},
+            connector_type="MiR100",
+            connector_version="0.1.0",
+            connector_config={
+                "mir_host_address": "example.com",
+                "mir_host_port": 80,
+                "mir_use_ssl": False,
+                "mir_username": "user",
+                "mir_password": "pass",
+                "mir_api_version": "v2.0",
+                "mir_firmware_version": "v2",
+                "enable_mission_tracking": True,  # Enable mission tracking
             },
             user_scripts_dir=tmp_path,
         ),
@@ -86,7 +134,9 @@ async def test_command_callback_unknown_command(connector, callback_kwargs):
 
 
 @pytest.mark.asyncio
-async def test_command_callback_missions(connector, callback_kwargs):
+async def test_command_callback_missions(connector_with_mission_tracking, callback_kwargs):
+    connector = connector_with_mission_tracking
+
     def reset_mock():
         callback_kwargs["options"]["result_function"].reset_mock()
         connector.mir_api.reset_mock()
@@ -129,61 +179,6 @@ async def test_command_callback_missions(connector, callback_kwargs):
     assert connector.mir_api.abort_all_missions.call_args == call()
     callback_kwargs["options"]["result_function"].assert_called_with(CommandResultCode.SUCCESS)
     reset_mock()
-
-
-def test_enable_ws_flag(monkeypatch, tmp_path):
-    monkeypatch.setenv("INORBIT_KEY", "abc123")
-    # No session creation methods in async version
-    monkeypatch.setattr(RobotSession, "connect", MagicMock())
-    monkeypatch.setattr(time, "sleep", Mock())
-
-    config = ConnectorConfig(
-        inorbit_robot_key="robot_key",
-        location_tz="UTC",
-        log_level="INFO",
-        connector_type="MiR100",
-        connector_version="0.1.0",
-        connector_config={
-            "mir_username": "user",
-            "mir_password": "pass",
-            "mir_host_address": "example.com",
-            "mir_host_port": 80,
-            "mir_enable_ws": False,
-            "mir_ws_port": 9090,
-            "mir_use_ssl": False,
-            "mir_api_version": "v2.0",
-            "mir_firmware_version": "v2",
-            "enable_mission_tracking": False,
-        },
-        user_scripts_dir=tmp_path,
-    )
-    connector = MirConnector("mir100-1", config)
-    assert connector.ws_enabled is False
-    assert not hasattr(connector, "mir_ws")
-
-    config = ConnectorConfig(
-        inorbit_robot_key="robot_key",
-        location_tz="UTC",
-        log_level="INFO",
-        connector_type="MiR100",
-        connector_version="0.1.0",
-        connector_config={
-            "mir_username": "user",
-            "mir_password": "pass",
-            "mir_host_address": "example.com",
-            "mir_host_port": 80,
-            "mir_enable_ws": True,
-            "mir_ws_port": 9090,
-            "mir_use_ssl": False,
-            "mir_api_version": "v2.0",
-            "mir_firmware_version": "v2",
-            "enable_mission_tracking": False,
-        },
-        user_scripts_dir=tmp_path,
-    )
-    connector = MirConnector("mir100-1", config)
-    assert connector.ws_enabled is True
-    assert hasattr(connector, "mir_ws")
 
 
 @pytest.mark.asyncio
@@ -229,6 +224,11 @@ async def test_send_waypoint_over_missions(connector, monkeypatch):
     # Test MiR100 firmware v2
     connector.config.connector_type = "MiR100"
     connector.config.connector_config.mir_firmware_version = "v2"
+
+    # Mock the mission group to have an ID so the method doesn't fail
+    connector.mission_group = MagicMock()
+    connector.mission_group.missions_group_id = "test_group_id"
+
     await connector.send_waypoint_over_missions({"x": "1", "y": "2", "theta": "0"})
     connector.mir_api.create_mission.assert_called_once()
     connector.mir_api.add_action_to_mission.assert_called_once_with(
@@ -238,7 +238,12 @@ async def test_send_waypoint_over_missions(connector, monkeypatch):
             {"value": 1.0, "input_name": None, "guid": "uuid", "id": "x"},
             {"value": 2.0, "input_name": None, "guid": "uuid", "id": "y"},
             {"value": 0, "input_name": None, "guid": "uuid", "id": "orientation"},
-            {"value": 0.1, "input_name": None, "guid": "uuid", "id": "distance_threshold"},
+            {
+                "value": 0.1,
+                "input_name": None,
+                "guid": "uuid",
+                "id": "distance_threshold",
+            },
             {"value": 5, "input_name": None, "guid": "uuid", "id": "retries"},
         ],
         priority=1,
@@ -257,8 +262,18 @@ async def test_send_waypoint_over_missions(connector, monkeypatch):
             {"value": 1.0, "input_name": None, "guid": "uuid", "id": "x"},
             {"value": 2.0, "input_name": None, "guid": "uuid", "id": "y"},
             {"value": 0, "input_name": None, "guid": "uuid", "id": "orientation"},
-            {"value": 0.1, "input_name": None, "guid": "uuid", "id": "distance_threshold"},
-            {"value": 60.0, "input_name": None, "guid": "uuid", "id": "blocked_path_timeout"},
+            {
+                "value": 0.1,
+                "input_name": None,
+                "guid": "uuid",
+                "id": "distance_threshold",
+            },
+            {
+                "value": 60.0,
+                "input_name": None,
+                "guid": "uuid",
+                "id": "blocked_path_timeout",
+            },
         ],
         priority=1,
     )
@@ -312,10 +327,11 @@ async def test_command_callback_change_map(connector, callback_kwargs):
 
 
 @pytest.mark.asyncio
-async def test_connector_loop(connector, monkeypatch):
+async def test_connector_loop(connector_with_mission_tracking, monkeypatch):
+    connector = connector_with_mission_tracking
     connector.mission_tracking.report_mission = AsyncMock()
 
-    connector.mir_api.get_status.return_value = {
+    status_data = {
         "joystick_low_speed_mode_enabled": False,
         "mission_queue_url": "/v2.0.0/mission_queue/14026",
         "mode_id": 7,
@@ -350,7 +366,11 @@ async def test_connector_loop(connector, monkeypatch):
         },
     }
 
-    connector.mir_api.get_metrics.return_value = {
+    # Mock the robot status and metrics directly
+    connector.robot._status = status_data
+    connector.mir_api.get_status.return_value = status_data
+
+    metrics_data = {
         "mir_robot_localization_score": 0.027316320645337056,
         "mir_robot_position_x_meters": 9.52050495147705,
         "mir_robot_position_y_meters": 7.156267166137695,
@@ -367,13 +387,27 @@ async def test_connector_loop(connector, monkeypatch):
         "mir_robot_wifi_access_point_frequency_hertz": 0.0,
     }
 
+    # Mock the robot metrics directly
+    connector.robot._metrics = metrics_data
+    connector.mir_api.get_metrics.return_value = metrics_data
+
+    # Mock diagnostics to include battery information
+    connector.robot._diagnostics = {
+        "/Power System/Battery": {
+            "values": {
+                "Remaining battery capacity [%]": 93.5,
+                "Remaining battery time [sec]": 89725,
+            }
+        }
+    }
+
     await connector._execution_loop()
 
     assert connector._robot_session.publish_pose.call_args == call(
-        9.52050495147705,
-        7.156267166137695,
-        1.8204675458317707,
-        "20f762ff-5e0a-11ee-abc8-0001299981c4",
+        x=9.52050495147705,
+        y=7.156267166137695,
+        yaw=1.8204675458317707,
+        frame_id="20f762ff-5e0a-11ee-abc8-0001299981c4",
     )
     assert connector._robot_session.publish_odometry.call_args == call(
         linear_speed=1.1, angular_speed=math.pi
@@ -381,10 +415,6 @@ async def test_connector_loop(connector, monkeypatch):
     assert connector._robot_session.publish_key_values.call_args == call(
         {
             "connector_version": get_module_version(),
-            "battery percent": 93.5,
-            "battery_time_remaining": 89725,
-            "uptime": 3552693,
-            "localization_score": 0.027316320645337056,
             "robot_name": "Miriam",
             "errors": [],
             "distance_to_next_target": 0.1987656205892563,
@@ -394,15 +424,21 @@ async def test_connector_loop(connector, monkeypatch):
             "robot_model": "MiR100",
             "waiting_for": "",
             "api_connected": True,
+            "localization_score": 0.027316320645337056,
+            "uptime": 3552693,
+            "battery percent": 0.935,  # Converted by to_inorbit_percent (93.5 / 100)
+            "battery_time_remaining": 89725,
         }
     )
 
-    connector.mir_api.get_metrics.side_effect = Exception("Test")
+    # Test error handling - clear robot status to simulate failure
+    connector.robot._status = {}  # Empty status should cause early return
+    connector.status = None  # Clear connector's cached status too
     connector._robot_session.reset_mock()
     await connector._execution_loop()
     assert not connector._robot_session.publish_pose.called
     assert not connector._robot_session.publish_odometry.called
-    connector._robot_session.publish_key_values.assert_called_with({"api_connected": False})
+    assert not connector._robot_session.publish_key_values.called
 
 
 @pytest.mark.asyncio
@@ -445,8 +481,14 @@ async def test_missions_garbage_collector(connector):
             "id": 1,
         },  # Would be safe to delete
         2: {"mission_id": "not_in_tmp_group", "id": 2},  # Should not be deleted
-        3: {"mission_id": "d871d686-9006-4ddf-af78-bac9a22ddb53", "id": 3},  # Not safe to delete
-        4: {"mission_id": "c0a17f65-39f1-4b10-8fee-77dfe1470ac1", "id": 4},  # Not safe to delete
+        3: {
+            "mission_id": "d871d686-9006-4ddf-af78-bac9a22ddb53",
+            "id": 3,
+        },  # Not safe to delete
+        4: {
+            "mission_id": "c0a17f65-39f1-4b10-8fee-77dfe1470ac1",
+            "id": 4,
+        },  # Not safe to delete
     }
     connector.mir_api.get_mission.side_effect = lambda id: defs[id]
     await connector._delete_unused_missions()

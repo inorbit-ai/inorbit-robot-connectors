@@ -6,7 +6,12 @@ import asyncio
 from abc import ABC, abstractmethod
 
 from .mir_api_v2 import MirApiV2
-from tenacity import retry, wait_exponential_jitter, before_sleep_log, retry_if_exception_type
+from tenacity import (
+    retry,
+    wait_exponential_jitter,
+    before_sleep_log,
+    retry_if_exception_type,
+)
 import httpx
 import logging
 import uuid
@@ -125,7 +130,8 @@ class TmpMissionsGroupHandler(MirMissionsGroupHandler):
         # Find or create the missions group
         mission_groups: list[dict] = await self.mir_api.get_mission_groups()
         group = next(
-            (x for x in mission_groups if x["name"] == self.MIR_INORBIT_MISSIONS_GROUP_NAME), None
+            (x for x in mission_groups if x["name"] == self.MIR_INORBIT_MISSIONS_GROUP_NAME),
+            None,
         )
         self._missions_group_id = group["guid"] if group is not None else str(uuid.uuid4())
         if group is None:

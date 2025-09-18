@@ -109,7 +109,7 @@ def load_and_validate(config_filename: str, robot_id: str) -> ConnectorConfig:
     """Loads and validates the configuration file with inheritance support.
 
     This function supports both legacy and new configuration formats:
-    - Legacy: Direct robot configurations 
+    - Legacy: Direct robot configurations
     - New: Fleet-wide defaults with robot-specific overrides
 
     Args:
@@ -131,7 +131,7 @@ def load_and_validate(config_filename: str, robot_id: str) -> ConnectorConfig:
     except (KeyError, AttributeError):
         # Fallback to legacy format for backward compatibility
         config = read_yaml(config_filename, robot_id)
-    
+
     return ConnectorConfig(**config)
 
 

@@ -6,6 +6,28 @@ from abc import ABC, abstractmethod
 import logging
 import httpx
 from typing import Union, Optional
+from tenacity import (
+    retry,
+    wait_exponential_jitter,
+    before_sleep_log,
+    stop_after_attempt,
+)
+
+
+def should_retry_http_error(exception):
+    """Custom retry condition for HTTP errors.
+
+    Retries on:
+    - TimeoutException, ConnectError (always)
+    - HTTPStatusError for 5xx, 408, 429 (but not other 4xx)
+    """
+    if isinstance(exception, (httpx.TimeoutException, httpx.ConnectError)):
+        return True
+    if isinstance(exception, httpx.HTTPStatusError):
+        status_code = exception.response.status_code
+        # Retry server errors (5xx) and specific client errors (408, 429)
+        return status_code >= 500 or status_code in [408, 429]
+    return False
 
 
 class MirApiBaseClass(ABC):
@@ -55,6 +77,9 @@ class MirApiBaseClass(ABC):
         if self.logger.getEffectiveLevel() == logging.INFO:
             logging.getLogger("httpx").setLevel(logging.WARNING)
 
+        # Store auth for retry logic
+        self._auth = auth
+
     def _configure_ssl_verify(
         self, verify_ssl: bool, ssl_ca_bundle: Optional[str], ssl_verify_hostname: bool
     ) -> tuple[Union[bool, str, httpx.AsyncHTTPTransport], Optional[object]]:
@@ -96,52 +121,52 @@ class MirApiBaseClass(ABC):
         else:
             return True, None  # Use default CA bundle
 
+    @retry(
+        wait=wait_exponential_jitter(initial=1, max=10),
+        stop=stop_after_attempt(3),
+        before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING),
+        retry=should_retry_http_error,
+        reraise=True,
+    )
     async def _get(self, endpoint: str, **kwargs) -> httpx.Response:
         res = await self._async_client.get(endpoint, **kwargs)
-        try:
-            res.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            self.logger.error(
-                f"HTTP error making request: {e.response.status_code} - {e.response.text}\n"
-                f"Request: {e.request.method} {e.request.url}\nArguments: {kwargs}"
-            )
-            raise e
+        res.raise_for_status()
         return res
 
+    @retry(
+        wait=wait_exponential_jitter(initial=1, max=10),
+        stop=stop_after_attempt(3),
+        before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING),
+        retry=should_retry_http_error,
+        reraise=True,
+    )
     async def _post(self, endpoint: str, **kwargs) -> httpx.Response:
         res = await self._async_client.post(endpoint, **kwargs)
-        try:
-            res.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            self.logger.error(
-                f"HTTP error making request: {e.response.status_code} - {e.response.text}\n"
-                f"Request: {e.request.method} {e.request.url}\nArguments: {kwargs}"
-            )
-            raise e
+        res.raise_for_status()
         return res
 
+    @retry(
+        wait=wait_exponential_jitter(initial=1, max=10),
+        stop=stop_after_attempt(3),
+        before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING),
+        retry=should_retry_http_error,
+        reraise=True,
+    )
     async def _put(self, endpoint: str, **kwargs) -> httpx.Response:
         res = await self._async_client.put(endpoint, **kwargs)
-        try:
-            res.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            self.logger.error(
-                f"HTTP error making request: {e.response.status_code} - {e.response.text}\n"
-                f"Request: {e.request.method} {e.request.url}\nArguments: {kwargs}"
-            )
-            raise e
+        res.raise_for_status()
         return res
 
+    @retry(
+        wait=wait_exponential_jitter(initial=1, max=10),
+        stop=stop_after_attempt(3),
+        before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING),
+        retry=should_retry_http_error,
+        reraise=True,
+    )
     async def _delete(self, endpoint: str, **kwargs) -> httpx.Response:
         res = await self._async_client.delete(endpoint, **kwargs)
-        try:
-            res.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            self.logger.error(
-                f"HTTP error making request: {e.response.status_code} - {e.response.text}\n"
-                f"Request: {e.request.method} {e.request.url}\nArguments: {kwargs}"
-            )
-            raise e
+        res.raise_for_status()
         return res
 
     async def close(self):

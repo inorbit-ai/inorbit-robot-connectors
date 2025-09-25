@@ -381,6 +381,9 @@ class MirConnector(Connector):
         }
         self._robot_session.publish_pose(**pose_data)
 
+        # Mark successful publish for EdgeSDK health monitoring
+        self._mark_successful_publish()
+
         # publish odometry
         odometry = {
             "linear_speed": self.status.get("velocity", {}).get("linear", 0),
@@ -500,6 +503,9 @@ class MirConnector(Connector):
             self._logger.info(f"API connection status changed: {key_values.get('api_connected')}")
         self._last_api_connected = key_values.get("api_connected")
         self._robot_session.publish_key_values(key_values)
+
+        # Mark successful publish for EdgeSDK health monitoring
+        self._mark_successful_publish()
 
         # publish mission data if available
         if self.mission_tracking:

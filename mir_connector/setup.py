@@ -9,8 +9,9 @@ requirements = [
     "requests>=2.31,<3.0",
     "httpx>=0.28.1,<0.29.0",
     "inorbit-edge[video]~=1.24",
-    "inorbit-connector~=1.4",
-    "inorbit-edge-executor~=3.2.0",
+    # Pin inorbit-connector to 1.2.0 to be compatible with pydantic 2.6.x
+    "inorbit-connector==1.2.0",
+    "inorbit-edge-executor==3.2.0",
     "prometheus-client>=0.14.1",
     "pytz>=2022.7",
     # NOTE: both pyyaml and ruamel.yaml packages are included here. Otherwise, the
@@ -18,8 +19,12 @@ requirements = [
     # to ruamel.yaml or fix the dependency issue and them remove pyyaml from here.
     "pyyaml>=6.0,<6.1",
     "ruamel.yaml>=0.18,<0.19",
-    "pydantic>=2.6,<3.0",
-    "pydantic-settings>=2.6,<3.0",
+    # Pin pydantic to 2.6.x to be compatible with typing-extensions 4.7.1
+    "pydantic>=2.6,<2.7",
+    # Pin pydantic-settings to 2.2.x to be compatible with pydantic 2.6.x
+    "pydantic-settings>=2.2,<2.3",
+    # Pin typing-extensions to 4.7.x to satisfy inorbit-edge-executor requirement
+    "typing-extensions~=4.7.1",
     "psutil==5.9",
     "tenacity>=9.1.2",
 ]

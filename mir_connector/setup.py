@@ -7,7 +7,7 @@ from setuptools import setup
 
 requirements = [
     "requests>=2.31,<3.0",
-    "httpx>=0.28.0,<0.29.0",
+    "httpx>=0.28.1,<0.29.0",
     "inorbit-edge[video]~=1.24",
     "inorbit-connector~=1.4",
     "inorbit-edge-executor~=3.2.0",

@@ -10,13 +10,16 @@ ENV DEFAULT_CONFIG_FILE=/config/fleet.yaml
 # Set the working directory in the container
 WORKDIR /app
 
+# Create directories for persistent data
+RUN mkdir -p /app/data /app/logs
+
 # Copy the application code into the container
 COPY . .
 
 # Install the dependencies. The --no-install-recommends prevents from automatically installing
 # recommended packages, saving image size.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc python3-dev
+    gcc python3-dev curl
 RUN pip install --upgrade pip
 
 # Install the connector. The --no-cache-dir flag prevents from caching the downloaded packages,
@@ -26,4 +29,5 @@ ENV PYTHONPATH="/app"
 
 # Run the connector.
 # The configuration file can be set using the CONFIG_FILE environment variable and will default to /config/fleet.yaml
-CMD ["sh", "-c", "inorbit_mir_connector -c ${CONFIG_FILE:-${DEFAULT_CONFIG_FILE}} -id $ROBOT_ID"]
+# The log level can be set using the LOG_LEVEL environment variable and will default to INFO
+CMD ["sh", "-c", "inorbit_mir_connector -c ${CONFIG_FILE:-${DEFAULT_CONFIG_FILE}} -id $ROBOT_ID --log-level ${LOG_LEVEL:-INFO}"]

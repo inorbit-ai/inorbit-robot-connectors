@@ -133,6 +133,17 @@ class MirConnector(Connector):
         # Initialize status as None to prevent publishing before the robot is connected
         self.status = None
 
+    def _is_robot_online(self) -> bool:
+        """Check if the robot is online based on MiR API connectivity.
+
+        Override the base connector's default implementation to provide
+        robot-specific health checks based on API connectivity.
+
+        Returns:
+            bool: True if MiR API is connected and responsive, False otherwise.
+        """
+        return self.robot.api_connected
+
     async def _inorbit_command_handler(self, command_name, args, options):
         """Callback method for command messages.
 

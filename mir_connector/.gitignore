@@ -7,3 +7,5 @@ build/
 *.db
 venv*/
 .venv/
+certs/
+docker/docker-compose.yaml

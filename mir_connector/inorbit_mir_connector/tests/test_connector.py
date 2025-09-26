@@ -499,3 +499,21 @@ async def test_missions_garbage_collector(connector):
     )
     connector.mir_api.delete_mission_definition.assert_any_call("not_in_queue_so_safe_to_delete")
     assert connector.mir_api.delete_mission_definition.call_count == 2
+
+
+def test_is_robot_online_api_connected(connector):
+    """Test that _is_robot_online returns True when MiR API is connected."""
+    # Set the underlying attribute that api_connected property reads from
+    connector.robot._last_call_successful = True
+
+    # Verify _is_robot_online returns True (via api_connected property)
+    assert connector._is_robot_online() is True
+
+
+def test_is_robot_online_api_disconnected(connector):
+    """Test that _is_robot_online returns False when MiR API is disconnected."""
+    # Set the underlying attribute that api_connected property reads from
+    connector.robot._last_call_successful = False
+
+    # Verify _is_robot_online returns False (via api_connected property)
+    assert connector._is_robot_online() is False

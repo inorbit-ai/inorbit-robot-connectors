@@ -1,0 +1,122 @@
+# Example Docker Compose for MiR Connector
+#
+# This setup uses your existing fleet configuration (my_fleet.yaml) and makes it 
+# easy to deploy one or more robots. Each robot runs in its own container for 
+# better isolation and monitoring.
+#
+# QUICK START:
+# 1. cp docker-compose.example.yaml docker-compose.yaml
+# 2. Edit docker-compose.yaml with your actual robot IDs
+# 3. cp config/example.env config/.env (fill in your credentials)
+# 4. docker compose up -d  # Starts ALL robots
+# 5. docker compose logs -f  # View logs from ALL robots
+#
+# ADDING ROBOTS:
+# 1. Add robot section to config/my_fleet.yaml 
+# 2. Add corresponding service section below
+# 3. docker compose up -d
+
+version: '3.8'
+
+# ==============================================================================
+# SHARED TEMPLATE - Reduces duplication and ensures consistency
+# ==============================================================================
+x-mir-connector: &mir-connector
+  # Build from local source
+  build:
+    context: ../
+    dockerfile: docker/Dockerfile
+  
+  # Load environment variables from your config/.env
+  env_file:
+    - ../config/.env
+  
+  # Base environment - robot-specific ROBOT_ID added per service
+  environment:
+    - CONFIG_FILE=/config/fleet.yaml
+    - LOG_LEVEL=${LOG_LEVEL:-INFO}
+  
+  # Volume mounts - reuse your existing structure
+  volumes:
+    # Your fleet config - single source of truth
+    - ../config/my_fleet.yaml:/config/fleet.yaml:ro
+    
+    # Persistent data storage (databases, logs, etc.)
+    - ./data:/app/data
+    
+    # User scripts (shared across all robots)
+    - ../config/user_scripts:/app/user_scripts:ro
+    
+    # SSL certificates for MiR robot verification
+    - ../certs:/app/certs:ro
+  
+  # Use host networking to access MiR robots
+  network_mode: host
+  
+  # Auto-restart policy - works with built-in health monitoring
+  restart: unless-stopped
+  
+  # Logging configuration
+  logging:
+    driver: json-file
+    options:
+      max-size: 100m
+      max-file: "5"
+  
+  # Resource limits (adjust based on your server)
+  deploy:
+    resources:
+      limits:
+        memory: 512M
+        cpus: '1.0'
+      reservations:
+        memory: 256M
+        cpus: '0.5'
+
+# ==============================================================================
+# SERVICES - One per robot (customize with your actual robot IDs)
+# ==============================================================================
+services:
+  # Example Robot 1 - Replace 'robot-1' with your actual robot ID
+  robot-1:
+    <<: *mir-connector
+    container_name: mir_connector_robot_1
+    environment:
+      - ROBOT_ID=robot-1
+      - CONFIG_FILE=/config/fleet.yaml
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+
+  # Example Robot 2 - Replace 'robot-2' with your actual robot ID  
+  robot-2:
+    <<: *mir-connector
+    container_name: mir_connector_robot_2
+    environment:
+      - ROBOT_ID=robot-2
+      - CONFIG_FILE=/config/fleet.yaml
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+
+  # ==============================================================================
+  # TEMPLATE FOR ADDING MORE ROBOTS
+  # ==============================================================================
+  # 
+  # To add additional robots:
+  # 1. Add robot section to config/my_fleet.yaml
+  # 2. Copy and customize the template below
+  # 3. Run: docker compose up -d
+  #
+  # your-robot-id:
+  #   <<: *mir-connector
+  #   container_name: mir_connector_your_robot_id
+  #   environment:
+  #     - ROBOT_ID=your-robot-id
+  #     - CONFIG_FILE=/config/fleet.yaml
+  #     - LOG_LEVEL=${LOG_LEVEL:-INFO}
+  #   # Note: Each robot uses its own database file:
+  #   # /app/data/missions_your-robot-id.db (specified in fleet config)
+
+# ==============================================================================
+# VOLUMES - For persistent data
+# ==============================================================================
+volumes:
+  connector_data:
+    driver: local

@@ -22,7 +22,6 @@
 common:
   # Basic settings
   location_tz: America/Los_Angeles
-  log_level: INFO
 
   # Connector settings
   connector_type: MiR250           # Options: MiR100, MiR250

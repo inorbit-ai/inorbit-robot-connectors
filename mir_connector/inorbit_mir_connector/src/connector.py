@@ -133,6 +133,17 @@ class MirConnector(Connector):
         # Initialize status as None to prevent publishing before the robot is connected
         self.status = None
 
+    def _is_robot_online(self) -> bool:
+        """Check if the robot is online based on MiR API connectivity.
+
+        Override the base connector's default implementation to provide
+        robot-specific health checks based on API connectivity.
+
+        Returns:
+            bool: True if MiR API is connected and responsive, False otherwise.
+        """
+        return self.robot.api_connected
+
     async def _inorbit_command_handler(self, command_name, args, options):
         """Callback method for command messages.
 
@@ -381,9 +392,6 @@ class MirConnector(Connector):
         }
         self._robot_session.publish_pose(**pose_data)
 
-        # Mark successful publish for EdgeSDK health monitoring
-        self._mark_successful_publish()
-
         # publish odometry
         odometry = {
             "linear_speed": self.status.get("velocity", {}).get("linear", 0),
@@ -503,9 +511,6 @@ class MirConnector(Connector):
             self._logger.info(f"API connection status changed: {key_values.get('api_connected')}")
         self._last_api_connected = key_values.get("api_connected")
         self._robot_session.publish_key_values(key_values)
-
-        # Mark successful publish for EdgeSDK health monitoring
-        self._mark_successful_publish()
 
         # publish mission data if available
         if self.mission_tracking:

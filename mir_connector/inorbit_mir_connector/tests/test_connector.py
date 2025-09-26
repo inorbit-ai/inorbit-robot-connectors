@@ -501,37 +501,19 @@ async def test_missions_garbage_collector(connector):
     assert connector.mir_api.delete_mission_definition.call_count == 2
 
 
-@pytest.mark.asyncio
-async def test_resilience_integration(connector_with_mission_tracking, monkeypatch):
-    """Test that MiR connector integrates with base connector resilience features."""
-    connector = connector_with_mission_tracking
-    connector.mission_tracking.report_mission = AsyncMock()
+def test_is_robot_online_api_connected(connector):
+    """Test that _is_robot_online returns True when MiR API is connected."""
+    # Mock robot.api_connected to return True
+    connector.robot._last_call_successful = True
 
-    # Mock the _mark_successful_publish method to verify it's called
-    connector._mark_successful_publish = Mock()
+    # Verify _is_robot_online returns True
+    assert connector._is_robot_online() is True
 
-    status_data = {
-        "battery_percentage": 93.5,
-        "map_id": "test-map-id",
-        "position": {"x": 1.0, "y": 2.0, "orientation": 90.0},
-        "velocity": {"linear": 0.5, "angular": 0.1},
-        "robot_name": "TestRobot",
-        "errors": [],
-        "state_text": "Ready",
-        "mode_text": "Manual",
-        "robot_model": "MiR100",
-    }
 
-    # Mock the robot status and metrics
-    connector.robot._status = status_data
-    connector.robot._metrics = {"mir_robot_battery_percent": 93.5}
-    connector.robot._diagnostics = {
-        "/Power System/Battery": {"values": {"Remaining battery capacity [%]": 93.5}}
-    }
+def test_is_robot_online_api_disconnected(connector):
+    """Test that _is_robot_online returns False when MiR API is disconnected."""
+    # Mock robot.api_connected to return False
+    connector.robot._last_call_successful = False
 
-    # Run the execution loop
-    await connector._execution_loop()
-
-    # Verify that _mark_successful_publish was called after both publish operations
-    # It should be called twice: once after publish_pose and once after publish_key_values
-    assert connector._mark_successful_publish.call_count == 2
+    # Verify _is_robot_online returns False
+    assert connector._is_robot_online() is False

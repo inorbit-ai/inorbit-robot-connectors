@@ -503,17 +503,17 @@ async def test_missions_garbage_collector(connector):
 
 def test_is_robot_online_api_connected(connector):
     """Test that _is_robot_online returns True when MiR API is connected."""
-    # Mock robot.api_connected to return True
+    # Set the underlying attribute that api_connected property reads from
     connector.robot._last_call_successful = True
 
-    # Verify _is_robot_online returns True
+    # Verify _is_robot_online returns True (via api_connected property)
     assert connector._is_robot_online() is True
 
 
 def test_is_robot_online_api_disconnected(connector):
     """Test that _is_robot_online returns False when MiR API is disconnected."""
-    # Mock robot.api_connected to return False
+    # Set the underlying attribute that api_connected property reads from
     connector.robot._last_call_successful = False
 
-    # Verify _is_robot_online returns False
+    # Verify _is_robot_online returns False (via api_connected property)
     assert connector._is_robot_online() is False

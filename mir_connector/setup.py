@@ -8,8 +8,8 @@ from setuptools import setup
 requirements = [
     "requests>=2.31,<3.0",
     "httpx~=0.28",
-    "inorbit-edge[video]~=1.22",
-    "inorbit-connector~=1.2.1",
+    "inorbit-edge[video]~=1.24",
+    "inorbit-connector~=1.4",
     "inorbit-edge-executor~=3.2.0",
     "prometheus-client>=0.14.1",
     "pytz>=2022.7",

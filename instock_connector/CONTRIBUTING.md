@@ -63,10 +63,10 @@ source .venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
 ```
 
-Then run `bump2version` and choose the part of the version to be bumped, and don't forget to push changes and tags:
+Then run `bump-my-version` and choose the part of the version to be bumped, and don't forget to push changes and tags:
 
 ```bash
-bump2version patch # possible: major / minor / patch
+bump-my-version bump patch # possible: major / minor / patch
 git push
 git push --tags
 ```

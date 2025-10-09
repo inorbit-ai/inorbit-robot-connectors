@@ -32,7 +32,7 @@ test_requirements = [
 dev_requirements = {
     "twine==4.0",
     "build==1.0",
-    "bump-my-version==0.15",
+    "bump-my-version~=1.2.4",
     "black",
     "flake8",
 }

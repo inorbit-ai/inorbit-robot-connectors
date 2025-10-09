@@ -1,9 +1,11 @@
 [tool.bumpversion]
 current_version = "0.2.2"
 commit = true
-message = "Bump version: {current_version} → {new_version}"
+message = "Bump mir_connector version: {current_version} → {new_version}"
 tag = true
 sign_tags = true
+tag_name = "mir_connector v{new_version}"
+tag_message = "Bump mir_connector version: {current_version} → {new_version}"
 
 [[tool.bumpversion.files]]
 filename = "setup.py"

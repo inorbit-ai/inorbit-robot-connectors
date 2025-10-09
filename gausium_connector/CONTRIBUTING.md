@@ -53,7 +53,7 @@ reuse annotate --copyright "InOrbit, Inc." --license "MIT" --recursive . --skip-
 > [!NOTE]
 > This section is only relevant for maintainers.
 
-To bump the version of the Connector, use the `bump-my-version` tool.
+To bump the version of the Connector, use the `bump-my-version` tool. Due to the repository being shared with other connectors, the settings in [setup.cfg](setup.cfg) ensure commit and tag messages are customized to include the connector name.
 
 ```bash
 bump-my-version bump minor
@@ -63,6 +63,11 @@ To prevent changes from being applied, use
 
 ```bash
 bump-my-version bump minor --dry-run --verbose
+```
+
+After running the command, a commit and tag will be created. To push the changes to the remote repository, run:
+```bash
+git push --tags
 ```
 
 ## Build and publish the package
@@ -76,7 +81,7 @@ bump-my-version bump minor --dry-run --verbose
 New releases are built and published to PyPi and the Docker repository automatically by GitHub Actions when a new version bump commit is pushed.
 
 > [!IMPORTANT]
-> The message of the last commit must contain "Bump version" for the publish job to run. e.g. "Bump version: 1.0.0 -> 1.0.1"
+> The message of the last commit must match the configured pattern, e.g. "Bump gausium_connector version: 1.0.0 → 1.0.1", for the publish job to run.
 
 To manually build and publish the package to https://test.pypi.org/, run:
 

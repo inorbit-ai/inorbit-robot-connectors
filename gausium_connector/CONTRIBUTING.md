@@ -81,7 +81,7 @@ git push --tags
 New releases are built and published to PyPi and the Docker repository automatically by GitHub Actions when a new version bump commit is pushed.
 
 > [!IMPORTANT]
-> The message of the last commit must contain "Bump version" for the publish job to run. e.g. "Gausium Connector: Bump version: 1.0.0 -> 1.0.1"
+> The message of the last commit must match the configured pattern, e.g. "Bump gausium_connector version: 1.0.0 → 1.0.1", for the publish job to run.
 
 To manually build and publish the package to https://test.pypi.org/, run:
 

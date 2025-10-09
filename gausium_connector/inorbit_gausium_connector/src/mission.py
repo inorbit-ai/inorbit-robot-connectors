@@ -5,7 +5,11 @@
 import time
 from typing import Callable
 
-from inorbit_gausium_connector.src.constants import MissionState, MissionStatus
+from inorbit_gausium_connector.src.constants import (
+    CLEANING_MODE_TRANSLATION,
+    MissionState,
+    MissionStatus,
+)
 from inorbit_gausium_connector.src.robot.constants import TaskState, WorkType
 
 
@@ -91,7 +95,9 @@ class MissionTracking:
             "data": {
                 "Map name": status_data.get("mapName"),
                 "Task queue ID": task_queue.get("task_queue_id"),
-                "Work mode": task_queue.get("work_mode", {}).get("name"),
+                "Work mode": MissionTracking._translate_cleaning_mode(
+                    task_queue.get("work_mode", {}).get("name")
+                ),
                 "Total area": task_queue.get("total_area"),
                 "Loop count": task_queue.get("loop_count"),
             },
@@ -115,3 +121,16 @@ class MissionTracking:
         new_report["state"] = MissionState.completed.value
         new_report["endTs"] = time.time()
         return new_report
+
+    @staticmethod
+    def _translate_cleaning_mode(cleaning_mode: str | None) -> str | None:
+        """Translate the reported cleaning mode to english"""
+
+        # Handle None values
+        if cleaning_mode is None:
+            return None
+
+        # Remove special characters
+        cleaning_mode_name = cleaning_mode.replace("_", "")
+
+        return CLEANING_MODE_TRANSLATION.get(cleaning_mode_name, cleaning_mode_name)

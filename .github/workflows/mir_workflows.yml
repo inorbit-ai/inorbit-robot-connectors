@@ -61,7 +61,7 @@ jobs:
           pytest
 
   publish-pypi:
-    if: contains(github.event.head_commit.message, 'Bump version')
+    if: contains(github.event.head_commit.message, 'Bump mir_connector version')
     needs: [test, lint]
     runs-on: ubuntu-latest
     strategy:

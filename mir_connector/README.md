@@ -147,11 +147,16 @@ To prevent changes from being applied, use
 bump-my-version bump minor --dry-run --verbose
 ```
 
+After running the command, a commit and tag will be created. To push the changes to the remote repository, run:
+```bash
+git push --tags
+```
+
 ### Build and publish the package
 
 New releases are built and published to PyPi and the Docker repository automatically by GitHub Actions when a new version bump commit is pushed.
 
-> _Note:_ The message of the last commit must contain "Bump version" for the publish job to run. e.g. "Bump version: 1.0.0 -> 1.0.1"
+> _Note:_ The message of the last commit must contain "Bump mir_connector version" for the publish job to run. e.g. "Bump mir_connector version: 1.0.0 -> 1.0.1"
 
 To manually build and publish the package to https://test.pypi.org/, run:
 

@@ -244,8 +244,19 @@ class GausiumConnector(Connector):
             if script_name == CustomScripts.START_TASK_QUEUE.value:
                 # The most important argument
                 task_queue_name = script_args.get("task_queue_name")
-                # Defaults to the current map. Usually not needed
-                map_name = script_args.get("map_name")
+                # The map to start the task on. Defaults to the current map if not specified,
+                # but it is recommended to include it. If the task is defined for a different map,
+                # the action will succeed but the robot will not be able to start the task.
+                map_name = script_args.get("map_name", self.robot_state.current_map.map_name)
+                # If the map is not the current map, fail to execute the action
+                if map_name != self.robot_state.current_map.map_name:
+                    self._logger.error(
+                        f"Cannot start task queue {task_queue_name} on map {map_name}."
+                        f"The robot is not in the specified map: {map_name} != {self.robot_state.current_map.map_name}."
+                    )
+                    return options["result_function"](
+                        CommandResultCode.FAILURE, "The robot is not in the specified map"
+                    )
                 # Whether to loop the task. Defaults to False
                 loop = script_args.get("loop", False)
                 # Number of loops. Defaults to 0

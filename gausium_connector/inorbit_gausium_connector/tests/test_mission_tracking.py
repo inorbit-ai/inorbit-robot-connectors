@@ -169,3 +169,129 @@ class TestMissionTracking:
             # Original report should not be modified
             assert report["inProgress"] is True
             assert report["state"] == MissionState.in_progress.value
+
+    def test_translate_cleaning_mode_known_modes(self):
+        """Test translating known cleaning modes from Chinese to English"""
+        # Test various known cleaning modes
+        assert MissionTracking._translate_cleaning_mode("尘推") == "Dust mop"
+        assert MissionTracking._translate_cleaning_mode("抛光") == "Polish"
+        assert MissionTracking._translate_cleaning_mode("快速尘推") == "High-speed dust mop"
+        assert MissionTracking._translate_cleaning_mode("深度抛光") == "Deep polish"
+        assert MissionTracking._translate_cleaning_mode("地毯清洁") == "Carpet cleaning"
+        assert MissionTracking._translate_cleaning_mode("扫地") == "Sweep the floor"
+        assert MissionTracking._translate_cleaning_mode("洗地") == "Wash the floor"
+        assert MissionTracking._translate_cleaning_mode("吸尘") == "Vacuum"
+
+    def test_translate_cleaning_mode_with_underscores(self):
+        """Test that underscores are removed from cleaning mode names"""
+        # Test that underscores are properly removed
+        assert MissionTracking._translate_cleaning_mode("__地毯清洁") == "Carpet cleaning"
+        assert MissionTracking._translate_cleaning_mode("_尘推_") == "Dust mop"
+        assert MissionTracking._translate_cleaning_mode("test_mode") == "testmode"
+
+    def test_translate_cleaning_mode_unknown_modes(self):
+        """Test that unknown cleaning modes are returned as-is"""
+        # Test unknown modes return the original string (with underscores removed)
+        assert MissionTracking._translate_cleaning_mode("unknown_mode") == "unknownmode"
+        assert MissionTracking._translate_cleaning_mode("custom_cleaning") == "customcleaning"
+        assert MissionTracking._translate_cleaning_mode("") == ""
+
+    def test_translate_cleaning_mode_none_and_empty(self):
+        """Test handling of None and empty values"""
+        # Test None value
+        assert MissionTracking._translate_cleaning_mode(None) is None
+
+        # Test empty string
+        assert MissionTracking._translate_cleaning_mode("") == ""
+
+    def test_build_report_from_robot_data_includes_work_mode_translation(
+        self, robot_status_data_task
+    ):
+        """Test that build_report_from_robot_data includes translated work mode in the report"""
+        robot_status = robot_status_data_task["data"]["robotStatus"]
+        status_data = robot_status_data_task["data"]["statusData"]
+
+        report = MissionTracking.build_report_from_robot_data(robot_status, status_data)
+
+        # Verify that work mode is included and translated
+        assert "data" in report
+        assert "Work mode" in report["data"]
+        # The test data has work_mode.name = "vacuum", which should be returned as-is
+        # since it's not in Chinese
+        assert report["data"]["Work mode"] == "vacuum"
+
+    def test_build_report_from_robot_data_with_chinese_work_mode(self):
+        """Test build_report_from_robot_data with Chinese work mode that needs translation"""
+        robot_status = {"workType": "EXECUTE_TASK"}
+        status_data = {
+            "status": "STARTED",
+            "taskQueue": {
+                "task_queue_id": "test-mission",
+                "name": "Test Mission",
+                "estimate_time": 1.0,
+                "tasks": [{"name": "TestTask", "start_param": {}}],
+                "work_mode": {
+                    "name": "尘推",  # Chinese for "Dust mop"
+                },
+                "total_area": 100.0,
+                "loop_count": 1,
+            },
+            "finished_task_count": 0,
+            "mapName": "TestMap",
+            "startTime": 1234567890,
+        }
+
+        report = MissionTracking.build_report_from_robot_data(robot_status, status_data)
+
+        # Verify that the Chinese work mode is translated
+        assert report["data"]["Work mode"] == "Dust mop"
+
+    def test_build_report_from_robot_data_missing_work_mode(self):
+        """Test build_report_from_robot_data when work_mode is missing"""
+        robot_status = {"workType": "EXECUTE_TASK"}
+        status_data = {
+            "status": "STARTED",
+            "taskQueue": {
+                "task_queue_id": "test-mission",
+                "name": "Test Mission",
+                "estimate_time": 1.0,
+                "tasks": [{"name": "TestTask", "start_param": {}}],
+                # work_mode is missing
+                "total_area": 100.0,
+                "loop_count": 1,
+            },
+            "finished_task_count": 0,
+            "mapName": "TestMap",
+            "startTime": 1234567890,
+        }
+
+        report = MissionTracking.build_report_from_robot_data(robot_status, status_data)
+
+        # Verify that work mode is None when missing
+        assert report["data"]["Work mode"] is None
+
+    def test_build_report_from_robot_data_work_mode_none(self):
+        """Test build_report_from_robot_data when work_mode.name is None"""
+        robot_status = {"workType": "EXECUTE_TASK"}
+        status_data = {
+            "status": "STARTED",
+            "taskQueue": {
+                "task_queue_id": "test-mission",
+                "name": "Test Mission",
+                "estimate_time": 1.0,
+                "tasks": [{"name": "TestTask", "start_param": {}}],
+                "work_mode": {
+                    "name": None,
+                },
+                "total_area": 100.0,
+                "loop_count": 1,
+            },
+            "finished_task_count": 0,
+            "mapName": "TestMap",
+            "startTime": 1234567890,
+        }
+
+        report = MissionTracking.build_report_from_robot_data(robot_status, status_data)
+
+        # Verify that work mode is None
+        assert report["data"]["Work mode"] is None

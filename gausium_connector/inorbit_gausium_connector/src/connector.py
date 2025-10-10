@@ -251,8 +251,9 @@ class GausiumConnector(Connector):
                 # If the map is not the current map, fail to execute the action
                 if map_name != self.robot_state.current_map.map_name:
                     self._logger.error(
-                        f"Cannot start task queue {task_queue_name} on map {map_name}."
-                        f"The robot is not in the specified map: {map_name} != {self.robot_state.current_map.map_name}."
+                        f"Cannot start task queue {task_queue_name} on map {map_name}: "
+                        f"the robot is not in the specified map. "
+                        f"Current map: {self.robot_state.current_map.map_name}"
                     )
                     return options["result_function"](
                         CommandResultCode.FAILURE, "The robot is not in the specified map"

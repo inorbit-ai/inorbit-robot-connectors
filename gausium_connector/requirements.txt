@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-inorbit-connector==1.2.0
+inorbit-connector==1.4.0
 httpx~=0.28
 pytz>=2022.7
 ruamel.yaml>=0.18,<0.19

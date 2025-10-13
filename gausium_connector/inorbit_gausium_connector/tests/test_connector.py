@@ -142,7 +142,8 @@ class TestGausiumConnector:
         # Now using the actual property values from mock_map_data
         mock_map_config.assert_called_once_with(
             file=mock_temp_path,
-            map_id="new_map",
+            map_id="robot_map",
+            map_label="new_map",
             frame_id="new_map",
             origin_x=mock_map_data.origin_x,
             origin_y=mock_map_data.origin_y,
@@ -577,3 +578,12 @@ class TestGausiumConnector:
         # Test with robot unavailable
         connector.robot_api._last_call_successful = False
         assert connector.is_robot_available() is False
+
+    def test_is_robot_online(self, connector):
+        # Test with robot online (API call successful)
+        connector.robot_api._last_call_successful = True
+        assert connector._is_robot_online() is True
+
+        # Test with robot offline (API call failed)
+        connector.robot_api._last_call_successful = False
+        assert connector._is_robot_online() is False

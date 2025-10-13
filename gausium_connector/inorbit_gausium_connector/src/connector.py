@@ -180,7 +180,8 @@ class GausiumConnector(Connector):
                     # Create a new map configuration
                     self.config.maps[frame_id] = MapConfig(
                         file=temp_path,
-                        map_id=map_data.map_name,
+                        map_id=map_data.map_id,
+                        map_label=map_data.map_name,
                         frame_id=frame_id,
                         origin_x=map_data.origin_x,
                         origin_y=map_data.origin_y,
@@ -374,6 +375,17 @@ class GausiumConnector(Connector):
             return options["result_function"](
                 CommandResultCode.FAILURE, f"'{command_name}' is not implemented"
             )
+
+    @override
+    def _is_robot_online(self) -> bool:
+        """Check if the robot is online.
+
+        Uses the robot API status to determine if the robot is available.
+
+        Returns:
+            bool: True if the robot is online, False otherwise.
+        """
+        return self.is_robot_available()
 
     def is_robot_available(self) -> bool:
         """Check if the robot is available for receiving commands.

@@ -4,13 +4,11 @@ on:
   push:
     branches: 
       - main
-      - mir-dev
     paths:
       - mir_connector/**
   pull_request:
     branches: 
       - main
-      - mir-dev
     paths:
       - mir_connector/**
 

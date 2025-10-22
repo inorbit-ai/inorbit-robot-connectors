@@ -63,7 +63,6 @@ async def test_report_mission(
     mission_tracking, sample_metrics_data, sample_status_data, sample_mir_mission_data
 ):
     mission_tracking.mir_mission_tracking_enabled = True
-    mission_tracking.io_mission_tracking_enabled = True
     mission_tracking.get_current_mission = AsyncMock(return_value=sample_mir_mission_data)
     await mission_tracking.report_mission(sample_status_data, sample_metrics_data)
     reported_mission = mission_tracking.inorbit_sess.publish_key_values.call_args.kwargs[

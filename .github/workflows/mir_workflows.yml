@@ -14,29 +14,26 @@ on:
 
 jobs:
   lint:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.11"]
-        os: [ubuntu-latest]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mir_connector
     steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v3
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
       - name: Lint with flake8
-        uses: py-actions/flake8@v2
-        with:
-          path: mir_connector
-          max-line-length: 100
+        run: |
+          flake8 inorbit_mir_connector --max-line-length=100
       - name: Check with black
-        uses: psf/black@stable
-        with:
-          version: "~= 23.0"
-          src: mir_connector
-          options: "--diff --check --line-length=100"
+        run: |
+          black --diff --check --line-length=100 inorbit_mir_connector
   test:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -44,45 +41,45 @@ jobs:
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
         os: [ubuntu-latest, windows-latest, macOS-latest]
+    defaults:
+      run:
+        working-directory: mir_connector
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
         run: |
-          cd mir_connector
           python -m pip install --upgrade pip
-          python -m pip install -e .["test"]
+          python -m pip install -e .[test]
       - name: Test with pytest
         run: |
-          cd  mir_connector
           pytest
 
   publish-pypi:
     if: contains(github.event.head_commit.message, 'Bump mir_connector version')
     needs: [test, lint]
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: true
     environment: release
     permissions:
         id-token: write
+    defaults:
+      run:
+        working-directory: mir_connector
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v4
         with:
           python-version: "3.11"
       - name: Install Dependencies
         run: |
-          cd mir_connector
           python -m pip install --upgrade pip
           python -m pip install .[dev]
       - name: Build Package
         run: |
-          cd mir_connector
           python -m build --sdist
           twine check dist/*
       - name: Publish to PyPI
@@ -95,8 +92,6 @@ jobs:
     if: ${{ contains(github.event.head_commit.message, 'Bump mir_connector version') }}
     needs: [test, lint]
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: true
     environment: release
     steps:
       - name: Check out the repo

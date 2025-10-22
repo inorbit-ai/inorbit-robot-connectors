@@ -12,16 +12,15 @@ MISSION_STATE_ABORT = "Abort"
 
 
 class MirInorbitMissionTracking:
+
     def __init__(
         self,
         mir_api,
         inorbit_sess,
         robot_tz_info,
-        loglevel="INFO",
         enable_io_mission_tracking=True,
     ):
         self.logger = logging.getLogger(name=self.__class__.__name__)
-        self.logger.setLevel(loglevel)
         # Use for mission tracking
         # If set to False, mission tracking data will not be published to InOrbit
         self.io_mission_tracking_enabled = enable_io_mission_tracking
@@ -38,13 +37,32 @@ class MirInorbitMissionTracking:
         self.inorbit_sess = inorbit_sess
         self.robot_tz_info = robot_tz_info
 
-    def get_current_mission(self):
+    def _safe_localize_timestamp(self, timestamp_str: str) -> float:
+        """Convert ISO timestamp string to Unix timestamp, handling timezone conversion.
+
+        If timestamp lacks timezone info, applies robot's timezone.
+        If timestamp already has timezone info, uses it directly.
+        """
+        try:
+            dt = datetime.fromisoformat(timestamp_str)
+            # If datetime already has timezone info, just convert to timestamp
+            if dt.tzinfo is not None:
+                return dt.timestamp()
+            # If datetime is naive, localize it to robot timezone
+            else:
+                return self.robot_tz_info.localize(dt).timestamp()
+        except Exception as e:
+            self.logger.warning(f"Failed to parse timestamp '{timestamp_str}': {e}")
+            # Return current time as fallback
+            return datetime.now().timestamp()
+
+    async def get_current_mission(self):
         """Return the current mission, it's either executing or just ended"""
         mission = None
         if self.executing_mission_id is None:
-            self.executing_mission_id = self.mir_api.get_executing_mission_id()
+            self.executing_mission_id = await self.mir_api.get_executing_mission_id()
         if self.executing_mission_id:
-            mission = self.mir_api.get_mission(self.executing_mission_id)
+            mission = await self.mir_api.get_mission(self.executing_mission_id)
             if mission["state"] != MISSION_STATE_EXECUTING:
                 # Update executing_mission_id so the next call to this method returns the next
                 # executing mission or None.
@@ -52,15 +70,14 @@ class MirInorbitMissionTracking:
                 self.executing_mission_id = None
         return mission
 
-    def report_mission(self, status, metrics):
+    async def report_mission(self, status, metrics):
         # Hack to allow MiR defined missions and InOrbit missions to co-exist
         # When an InOrbit mission is running, we disable tracking for MiR defined
-        # missions
-        if not self.inorbit_sess.missions_module.executor.wait_until_idle(0):
-            self.mir_mission_tracking_enabled = False
+        # missions. if `self.io_mission_tracking_enabled` is False, data will not be
+        # published anyway
         if not self.mir_mission_tracking_enabled:
             return
-        mission = self.get_current_mission()
+        mission = await self.get_current_mission()
         if mission:
             completed_percent = len(mission["actions"]) / len(mission["definition"]["actions"])
             # Merge 'Abort' and 'Aborted' values into a single state
@@ -78,10 +95,7 @@ class MirInorbitMissionTracking:
                 "inProgress": mission["state"] == MISSION_STATE_EXECUTING,
                 "state": mission["state"],
                 "label": mission["definition"]["name"],
-                "startTs": self.robot_tz_info.localize(
-                    datetime.fromisoformat(mission["started"])
-                ).timestamp()
-                * 1000,
+                "startTs": self._safe_localize_timestamp(mission["started"]) * 1000,
                 "data": {
                     "Total Distance (m)": metrics.get(
                         "mir_robot_distance_moved_meters_total", "N/A"
@@ -96,12 +110,7 @@ class MirInorbitMissionTracking:
                 },
             }
             if mission.get("finished") is not None:
-                mission_values["endTs"] = (
-                    self.robot_tz_info.localize(
-                        datetime.fromisoformat(mission["finished"])
-                    ).timestamp()
-                    * 1000
-                )
+                mission_values["endTs"] = self._safe_localize_timestamp(mission["finished"]) * 1000
                 mission_values["completedPercent"] = 1
                 mission_values["status"] = (
                     "OK" if mission["state"] == MISSION_STATE_DONE else "error"

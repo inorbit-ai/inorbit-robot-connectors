@@ -7,8 +7,11 @@ from setuptools import setup
 
 requirements = [
     "requests>=2.31,<3.0",
-    "inorbit-edge[video]>=1.17",
-    "inorbit-connector==0.4.0",
+    "httpx>=0.28.1,<0.29.0",
+    "inorbit-edge[video]~=1.24",
+    # Pin inorbit-connector to 1.2.0 to be compatible with pydantic 2.6.x
+    "inorbit-connector==1.2.0",
+    "inorbit-edge-executor==3.2.0",
     "prometheus-client>=0.14.1",
     "pytz>=2022.7",
     # NOTE: both pyyaml and ruamel.yaml packages are included here. Otherwise, the
@@ -16,26 +19,31 @@ requirements = [
     # to ruamel.yaml or fix the dependency issue and them remove pyyaml from here.
     "pyyaml>=6.0,<6.1",
     "ruamel.yaml>=0.18,<0.19",
-    "pydantic>=2.5",
+    # Pin pydantic to 2.6.x to be compatible with typing-extensions 4.7.1
+    "pydantic>=2.6,<2.7",
+    # Pin pydantic-settings to 2.2.x to be compatible with pydantic 2.6.x
+    "pydantic-settings>=2.2,<2.3",
+    # Pin typing-extensions to 4.7.x to satisfy inorbit-edge-executor requirement
+    "typing-extensions~=4.7.1",
     "psutil==5.9",
-    "websocket-client==1.7.0",
-    "uuid==1.30",
-    "tenacity==9.0.0",
+    "tenacity>=9.1.2",
 ]
 
 test_requirements = [
     "pytest>=3",
     "requests_mock==1.11",
     "deepdiff==6.7",
+    "pytest-asyncio>=0.23",
+    "pytest-httpx~=0.35",
 ]
 
-dev_requirements = {
+dev_requirements = [
     "twine==4.0",
     "build==1.0",
     "bump-my-version~=1.2.4",
     "black",
     "flake8",
-}
+]
 
 extra_requirements = {
     "test": [*test_requirements],
@@ -46,7 +54,7 @@ setup(
     name="inorbit_mir_connector",
     description="InOrbit Edge-SDK connector for MiR robots. It polls data from MiR API and sends "
     + "it to InOrbit cloud through the edge-sdk.",
-    long_description=open("README.md").read(),
+    long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     project_urls={
         "repository": "https://github.com/inorbit-ai/inorbit-robot-connectors/tree/main/mir_connector",  # noqa: E501
@@ -69,10 +77,10 @@ setup(
     keywords=["connector", "edge-sdk", "inorbit", "robops", "mir"],
     entry_points={
         "console_scripts": [
-            "inorbit-mir100-connector=inorbit_mir_connector.mir100_start:start",
+            "inorbit_mir_connector=inorbit_mir_connector.inorbit_mir_connector:start",
         ]
     },
-    python_requires=">=3.7",
+    python_requires=">=3.10",
     # Do not edit this string manually, always use bump-my-version. See
     # https://github.com/inorbit-ai/inorbit-robot-connectors/tree/main/mir_connector#version-bump
     version="0.2.2",

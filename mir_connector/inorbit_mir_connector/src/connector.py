@@ -323,11 +323,7 @@ class MirConnector(Connector):
         self.robot.start()
 
         # Initialize mission executor
-        try:
-            await self.mission_executor.initialize()
-            self._logger.info("Mission executor initialized successfully")
-        except Exception as e:
-            self._logger.error(f"Failed to initialize mission executor: {e}")
+        await self.mission_executor.initialize()
 
         # Start temporary mission groups
         await self.mission_group.start()
@@ -487,6 +483,7 @@ class MirConnector(Connector):
 
         # publish mission data
         try:
+            print("reporting mission")
             await self.mission_tracking.report_mission(self.status, self.metrics or {})
         except Exception:
             self._logger.exception("Error reporting mission")

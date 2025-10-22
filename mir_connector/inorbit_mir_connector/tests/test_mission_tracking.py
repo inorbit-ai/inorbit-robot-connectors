@@ -58,6 +58,7 @@ async def test_toggle_mir_tracking(
     await mission_tracking.report_mission(sample_status_data, sample_metrics_data)
     assert len(mission_tracking.get_current_mission.call_args_list) == 0
 
+
 @pytest.mark.asyncio
 async def test_report_mission(
     mission_tracking, sample_metrics_data, sample_status_data, sample_mir_mission_data

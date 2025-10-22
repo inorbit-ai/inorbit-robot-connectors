@@ -32,7 +32,6 @@ def example_mir_configuration_dict(example_configuration_dict):
             "mir_password": "admin",
             "mir_api_version": "v2.0",
             "mir_firmware_version": "v2",
-            "enable_mission_tracking": True,
         },
     }
 

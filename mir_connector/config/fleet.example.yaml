@@ -36,9 +36,6 @@ common:
   verify_ssl: true
   ssl_verify_hostname: true
 
-  # Mission tracking
-  enable_mission_tracking: false
-
   # Mission database (each robot should have its own)
   # Use "dummy" for testing (no persistence) or set a file path for SQLite
   # mission_database_file: ./missions_restocker-rs-1.db

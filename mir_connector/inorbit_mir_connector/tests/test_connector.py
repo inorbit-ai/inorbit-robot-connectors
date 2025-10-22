@@ -34,7 +34,6 @@ def connector(monkeypatch, tmp_path):
                 "mir_password": "pass",
                 "mir_api_version": "v2.0",
                 "mir_firmware_version": "v2",
-                "enable_mission_tracking": False,
                 "enable_temporary_mission_group": True,
             },
             user_scripts_dir=tmp_path,
@@ -83,7 +82,6 @@ def connector_with_mission_tracking(monkeypatch, tmp_path):
                 "mir_password": "pass",
                 "mir_api_version": "v2.0",
                 "mir_firmware_version": "v2",
-                "enable_mission_tracking": True,  # Enable mission tracking
             },
             user_scripts_dir=tmp_path,
         ),

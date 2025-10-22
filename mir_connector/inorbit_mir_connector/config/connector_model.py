@@ -43,7 +43,6 @@ class MirConnectorConfig(BaseSettings):
     mir_password: str
     mir_api_version: str
     mir_firmware_version: str
-    enable_mission_tracking: bool
     enable_temporary_mission_group: Optional[bool] = True
     default_waypoint_mission_id: Optional[str] = None
 

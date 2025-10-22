@@ -141,7 +141,8 @@ async def test_command_callback_missions(connector_with_mission_tracking, callba
 
     # Simulate an executor timeout, which should disable robot mission tracking
     connector._robot_session.missions_module.executor.wait_until_idle = Mock(return_value=False)
-    assert connector.mission_tracking.mir_mission_tracking_enabled is False
+    # Initial state is True, will be updated when command is executed
+    assert connector.mission_tracking.mir_mission_tracking_enabled is True
     callback_kwargs["command_name"] = "customCommand"
     callback_kwargs["args"] = ["queue_mission", ["--mission_id", "1"]]
     await connector._inorbit_command_handler(**callback_kwargs)

@@ -483,7 +483,6 @@ class MirConnector(Connector):
 
         # publish mission data
         try:
-            print("reporting mission")
             await self.mission_tracking.report_mission(self.status, self.metrics or {})
         except Exception:
             self._logger.exception("Error reporting mission")

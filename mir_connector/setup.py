@@ -11,7 +11,7 @@ requirements = [
     "inorbit-edge[video]~=1.24",
     # Pin inorbit-connector to 1.2.0 to be compatible with pydantic 2.6.x
     "inorbit-connector==1.2.0",
-    "inorbit-edge-executor==3.2.0",
+    "inorbit-edge-executor==3.2.4",
     "prometheus-client>=0.14.1",
     "pytz>=2022.7",
     # NOTE: both pyyaml and ruamel.yaml packages are included here. Otherwise, the

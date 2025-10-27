@@ -10,7 +10,6 @@ common:
   mir_firmware_version: v3
   mir_use_ssl: false
   
-  enable_mission_tracking: false
   enable_temporary_mission_group: true
   
   env_vars:

@@ -152,7 +152,6 @@ def _restructure_connector_config(config: Dict[str, Any]) -> Dict[str, Any]:
         "verify_ssl",
         "ssl_ca_bundle",
         "ssl_verify_hostname",
-        "enable_mission_tracking",
         "enable_temporary_mission_group",
         "default_waypoint_mission_id",
     ]
@@ -195,12 +194,6 @@ def _restructure_connector_config(config: Dict[str, Any]) -> Dict[str, Any]:
         for field in ["api_version", "firmware_version"]:
             if field in mir_api:
                 result["connector_config"][f"mir_{field}"] = mir_api[field]
-
-    # Handle mission_tracking section (new format)
-    if "mission_tracking" in result:
-        mission_tracking = result.pop("mission_tracking")
-        if "enabled" in mission_tracking:
-            result["connector_config"]["enable_mission_tracking"] = mission_tracking["enabled"]
 
     # Handle logging section (new format)
     if "logging" in result:

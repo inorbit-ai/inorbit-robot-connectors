@@ -21,14 +21,10 @@ class MirInorbitMissionTracking:
         enable_io_mission_tracking=True,
     ):
         self.logger = logging.getLogger(name=self.__class__.__name__)
-        # Use for mission tracking
-        # If set to False, mission tracking data will not be published to InOrbit
-        self.io_mission_tracking_enabled = enable_io_mission_tracking
         # Hack to allow MiR defined missions and InOrbit missions to co-exist
         # When an InOrbit mission is running, we disable tracking for MiR defined
-        # missions. if `self.io_mission_tracking_enabled` is False, data will not be
-        # published anyway
-        self.mir_mission_tracking_enabled = False
+        # missions.
+        self.mir_mission_tracking_enabled = True
         self.executing_mission_id = None
         self.last_reported_mission_id = None
         self.last_reported_mission_progress = 0.0
@@ -73,8 +69,7 @@ class MirInorbitMissionTracking:
     async def report_mission(self, status, metrics):
         # Hack to allow MiR defined missions and InOrbit missions to co-exist
         # When an InOrbit mission is running, we disable tracking for MiR defined
-        # missions. if `self.io_mission_tracking_enabled` is False, data will not be
-        # published anyway
+        # missions.
         if not self.mir_mission_tracking_enabled:
             return
         mission = await self.get_current_mission()
@@ -118,10 +113,9 @@ class MirInorbitMissionTracking:
             else:
                 mission_values["completedPercent"] = completed_percent
 
-            if self.io_mission_tracking_enabled:
-                self.logger.info(f"Reporting mission: {mission_values}")
-                self.inorbit_sess.publish_key_values(
-                    key_values={"mission_tracking": mission_values}, is_event=True
-                )
+            self.logger.debug(f"Reporting mission: {mission_values}")
+            self.inorbit_sess.publish_key_values(
+                key_values={"mission_tracking": mission_values}, is_event=True
+            )
             self.last_reported_mission_progress = completed_percent
             self.last_reported_mission_id = mission["id"]

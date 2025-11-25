@@ -333,15 +333,15 @@ class PhantasConnector(Connector):
                         CommandResultCode.FAILURE, "Invalid arguments"
                     )
                 status = self.robot.status
-                map_name = status.get("localizationInfo", {}).get("map", {}).get("id")
+                map_id = status.get("localizationInfo", {}).get("map", {}).get("id")
                 map_name = status.get("localizationInfo", {}).get("map", {}).get("name")
-                if not all([map_name, map_name]):
+                if not all([map_id, map_name]):
                     return options["result_function"](
                         CommandResultCode.FAILURE, "No map data available"
                     )
                 await self.robot_api.create_nosite_task(
                     task_name="InOrbit task",
-                    map_id=map_name,
+                    map_id=map_id,
                     map_name=map_name,
                     area_id=area_id,
                     cleaning_mode=CleaningModes[cleaning_mode],

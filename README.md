@@ -28,7 +28,7 @@ Take a look at its [README](mir_connector/README.md) for more details.
 
 Two different connectors are available for Gausium robots:
 - [Gausium Open Platform Connector](gausium_open_platform_connector/README.md) for connecting robots through the Gausium Open Platform API.
-- [Gausium Connector](gausium_connector/README.md) for connecting robots through the Gaussian Cloud API or directly to supported robots.
+- [Gausium Legacy Connector](gausium_legacy_connector/README.md) for connecting robots through the Gaussian Cloud API or directly to supported robots.
 
 Both are single robot connectors, meaning one instance of it per robot in the fleet must be deployed, allowing for grater resiliency and robustness of the fleet integration. The connectors make use of the Gaussian Cloud API, which also works while configured to run locally, to make possible the integration and enable interoperability.
 

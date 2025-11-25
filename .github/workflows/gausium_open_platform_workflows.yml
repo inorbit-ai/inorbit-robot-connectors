@@ -8,15 +8,11 @@ on:
   push:
     branches:
       - main
-      # TODO: remove this after testing
-      - b-Tomas/gausium-open-platform-connector
     paths:
       - gausium_open_platform_connector/**
   pull_request:
     branches:
       - main
-      # TODO: remove this after testing
-      - b-Tomas/gausium-open-platform-connector
     paths:
       - gausium_open_platform_connector/**
 
@@ -46,13 +42,12 @@ jobs:
 
   reuse:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: gausium_open_platform_connector
     steps:
       - uses: actions/checkout@v5
       - name: REUSE Compliance Check
         uses: fsfe/reuse-action@v6
+        with:
+          args: --root gausium_open_platform_connector lint
 
   publish-docker:
     if: ${{ contains(github.event.head_commit.message, 'Bump inorbit_gausium_open_platform_connector version') }}

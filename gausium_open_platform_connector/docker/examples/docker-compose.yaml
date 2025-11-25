@@ -1,0 +1,45 @@
+# SPDX-FileCopyrightText: 2025 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
+# Example docker compose file for running multiple instances of the Gausium Open Platform Connector
+#
+# Requires CONNECTOR_VERSION to be set to the preferred version of the connector
+# Optionally, each instance may use a different docker image version
+#
+# This compose file runs a fleet of multiple robots. The configuration for each robot is in the same
+# shared file `fleet.yaml`, which is mounted into the container as `/config/fleet.yaml`, the
+# default location for the connector to read the robot configuration from.
+# Each service instance uses the ROBOT_ID environment variable to select its configuration from the fleet.yaml file.
+
+x-common-deploy-config: &common-deploy-config
+  image: us-central1-docker.pkg.dev/inorbit-integrations/connectors/gausium_open_platform_connector:${CONNECTOR_VERSION}
+  volumes:
+    - ./fleet.yaml:/config/fleet.yaml:ro
+    - ./logs/:/logs/
+  env_file:
+    - ./.env
+  deploy:
+    resources:
+      limits:
+        memory: 350M
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: 100m
+      max-file: "5"
+
+services:
+  hooli-phantas-1:
+    <<: *common-deploy-config
+    environment:
+      ROBOT_ID: hooli-phantas-1
+  hooli-phantas-2:
+    <<: *common-deploy-config
+    environment:
+      ROBOT_ID: hooli-phantas-2
+  hooli-scrubber-1:
+    <<: *common-deploy-config
+    environment:
+      ROBOT_ID: hooli-scrubber-1

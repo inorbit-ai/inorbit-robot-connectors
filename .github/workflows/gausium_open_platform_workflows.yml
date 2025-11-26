@@ -1,0 +1,89 @@
+# SPDX-FileCopyrightText: 2025 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
+name: Gausium Open Platform Connector
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - gausium_open_platform_connector/**
+  pull_request:
+    branches:
+      - main
+    paths:
+      - gausium_open_platform_connector/**
+
+jobs:
+  lint-and-test:
+    name: Lint and Test
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: gausium_open_platform_connector
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install tox tox-gh-actions
+      - name: Test with tox
+        run: tox
+
+  reuse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: REUSE Compliance Check
+        uses: fsfe/reuse-action@v6
+        with:
+          args: --root gausium_open_platform_connector lint
+
+  publish-docker:
+    if: ${{ contains(github.event.head_commit.message, 'Bump inorbit_gausium_open_platform_connector version') }}
+    needs: [lint-and-test, reuse]
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v5
+      - name: Set version environment variable
+        run: |
+          INORBIT_GAUSIUM_OPEN_PLATFORM_CONNECTOR_VERSION=$(grep -oP '(?<=current_version = ")[^"]*' pyproject.toml | head -1)
+          echo "INORBIT_GAUSIUM_OPEN_PLATFORM_CONNECTOR_VERSION=$INORBIT_GAUSIUM_OPEN_PLATFORM_CONNECTOR_VERSION" >> $GITHUB_ENV
+          echo "INORBIT_GAUSIUM_OPEN_PLATFORM_CONNECTOR_VERSION is '$INORBIT_GAUSIUM_OPEN_PLATFORM_CONNECTOR_VERSION'"
+        working-directory: gausium_open_platform_connector
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: us-central1-docker.pkg.dev/inorbit-integrations/connectors/gausium_open_platform_connector
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ env.INORBIT_GAUSIUM_OPEN_PLATFORM_CONNECTOR_VERSION }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to Google Artifact Registry
+        uses: docker/login-action@v3
+        with:
+          registry: us-central1-docker.pkg.dev
+          username: _json_key
+          password: ${{ secrets.GAR_JSON_KEY }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: "{{defaultContext}}:gausium_open_platform_connector"
+          file: ./docker/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}

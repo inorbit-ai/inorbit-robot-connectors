@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: 2025 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
+# Robot IDs must be unique. For that reason, we encourage users to pick prefixes for their robot IDs.
+# To allocate a pool of robot IDs for your fleet, please contact support@inorbit.ai.
+hooli-phantas-1:
+  location_tz: America/Los_Angeles
+  logging:
+    log_level: INFO
+  connector_type: Gausium Phantas S
+  connector_config:
+    serial_number: GS000-0000-000-0001
+
+hooli-phantas-2:
+  location_tz: America/Los_Angeles
+  logging:
+    log_level: INFO
+  connector_type: Gausium Phantas S
+  connector_config:
+    serial_number: GS000-0000-000-0002
+
+hooli-scrubber-1:
+  location_tz: America/Los_Angeles
+  logging:
+    log_level: INFO
+  connector_type: Scrubber 50
+  connector_config:
+    serial_number: GS000-0000-000-0003

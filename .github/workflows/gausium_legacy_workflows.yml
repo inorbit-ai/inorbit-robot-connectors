@@ -5,12 +5,12 @@ on:
     branches:
       - main
     paths:
-      - gausium_connector/**
+      - gausium_legacy_connector/**
   pull_request:
     branches:
       - main
     paths:
-      - gausium_connector/**
+      - gausium_legacy_connector/**
 
 jobs:
   lint:
@@ -29,13 +29,13 @@ jobs:
       - name: Lint with flake8
         uses: py-actions/flake8@v2
         with:
-          path: gausium_connector
+          path: gausium_legacy_connector
           max-line-length: 100
       - name: Check with black
         uses: psf/black@stable
         with:
           version: "~= 23.0"
-          src: gausium_connector
+          src: gausium_legacy_connector
           options: "--diff --check --line-length=100"
 
   reuse:
@@ -45,7 +45,7 @@ jobs:
       - name: REUSE Compliance Check
         uses: fsfe/reuse-action@v1
         with:
-          args: --root gausium_connector lint
+          args: --root gausium_legacy_connector lint
 
   test:
     runs-on: ${{ matrix.os }}
@@ -62,16 +62,16 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
         run: |
-          cd gausium_connector
+          cd gausium_legacy_connector
           python -m pip install --upgrade pip
           python -m pip install -e .["test"]
       - name: Test with pytest
         run: |
-          cd gausium_connector
+          cd gausium_legacy_connector
           pytest
 
   publish-docker:
-    if: ${{ contains(github.event.head_commit.message, 'Bump gausium_connector version') }}
+    if: ${{ contains(github.event.head_commit.message, 'Bump gausium_legacy_connector version') }}
     needs: [test, lint]
     runs-on: ubuntu-latest
     strategy:
@@ -83,7 +83,7 @@ jobs:
 
       - name: Set version environment variable
         run: |
-          CONNECTOR_VERSION=$(grep -oP '(?<=version = )[^\s]*' gausium_connector/setup.cfg)
+          CONNECTOR_VERSION=$(grep -oP '(?<=version = )[^\s]*' gausium_legacy_connector/setup.cfg)
           echo "CONNECTOR_VERSION=$CONNECTOR_VERSION" >> $GITHUB_ENV
           echo "CONNECTOR_VERSION is '$CONNECTOR_VERSION'"
 
@@ -100,7 +100,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: "{{defaultContext}}:gausium_connector"
+          context: "{{defaultContext}}:gausium_legacy_connector"
           file: ./docker/Dockerfile
           push: true
           tags: us-central1-docker.pkg.dev/inorbit-integrations/connectors/gausium_connector:${{ env.CONNECTOR_VERSION }}

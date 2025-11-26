@@ -26,11 +26,13 @@ Take a look at its [README](mir_connector/README.md) for more details.
 
 ### Gausium Robotics
 
-The [InOrbit](https://inorbit.ai/) Connector for [Gausium](https://gausium.com/) robots.
+Two different connectors are available for Gausium robots:
+- [Gausium Open Platform Connector](gausium_open_platform_connector/README.md) for connecting robots through the Gausium Open Platform API.
+- [Gausium Legacy Connector](gausium_legacy_connector/README.md) for connecting robots through the Gaussian Cloud API or directly to supported robots.
 
-Similar to the MiR connector, it is a single robot connector, meaning one instance of it per robot in the fleet must be deployed, allowing for grater resiliency and robustness of the fleet integration. The connector makes use of the Gaussian Cloud API, which also works while configured to run locally, to make possible the integration and enable interoperability.
+Both are single robot connectors, meaning one instance of it per robot in the fleet must be deployed, allowing for grater resiliency and robustness of the fleet integration. The connectors make use of the Gaussian Cloud API, which also works while configured to run locally, to make possible the integration and enable interoperability.
 
-Take a look at its [README](gausium_connector/README.md) for more details.
+Take a look at the READMEs of each connector for more details.
 
 ### Instock ASRS
 

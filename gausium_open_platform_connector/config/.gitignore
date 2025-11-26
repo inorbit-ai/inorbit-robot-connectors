@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: 2025 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
+# Ignore all but the examples
+*
+!.gitignore
+!*example.*
+!README.md

@@ -361,7 +361,7 @@ class MirConnector(Connector):
             "yaw": math.radians(self.status.get("position", {}).get("orientation", 0)),
             "frame_id": self.status.get("map_id", ""),
         }
-        self._robot_session.publish_pose(**pose_data)
+        self.publish_pose(**pose_data)
 
         # publish odometry
         odometry = {

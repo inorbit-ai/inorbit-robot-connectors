@@ -369,6 +369,9 @@ async def test_connector_loop(connector_with_mission_tracking, monkeypatch):
     connector.robot._status = status_data
     connector.mir_api.get_status.return_value = status_data
 
+    # Mock publish_map to avoid map loading during the test
+    connector.publish_map = MagicMock()
+
     metrics_data = {
         "mir_robot_localization_score": 0.027316320645337056,
         "mir_robot_position_x_meters": 9.52050495147705,
@@ -403,10 +406,10 @@ async def test_connector_loop(connector_with_mission_tracking, monkeypatch):
     await connector._execution_loop()
 
     assert connector._robot_session.publish_pose.call_args == call(
-        x=9.52050495147705,
-        y=7.156267166137695,
-        yaw=1.8204675458317707,
-        frame_id="20f762ff-5e0a-11ee-abc8-0001299981c4",
+        9.52050495147705,
+        7.156267166137695,
+        1.8204675458317707,
+        "20f762ff-5e0a-11ee-abc8-0001299981c4",
     )
     assert connector._robot_session.publish_odometry.call_args == call(
         linear_speed=1.1, angular_speed=math.pi

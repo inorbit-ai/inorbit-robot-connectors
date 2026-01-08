@@ -364,14 +364,13 @@ class MirConnector(Connector):
         self.publish_pose(**pose_data)
 
         # publish odometry
-        odometry = {
-            "linear_speed": self.status.get("velocity", {}).get("linear", 0),
-            "angular_speed": math.radians(self.status.get("velocity", {}).get("angular", 0)),
-        }
-        self._robot_session.publish_odometry(**odometry)
+        self.publish_odometry(
+            linear_speed=self.status.get("velocity", {}).get("linear", 0),
+            angular_speed=math.radians(self.status.get("velocity", {}).get("angular", 0)),
+        )
 
         # publish key values
-        if self._robot_session.missions_module.executor.wait_until_idle(0):
+        if self._get_session().missions_module.executor.wait_until_idle(0):
             mode_text = self.status.get("mode_text")
             state_text = self.status.get("state_text")
             mission_text = self.status.get("mission_text")
@@ -401,6 +400,9 @@ class MirConnector(Connector):
         # Uptime always from status (more reliable)
         key_values["uptime"] = self.status.get("uptime")
 
+        # System stats to be published separately from key values
+        system_stats = {}
+
         diagnostics = self.diagnostics or {}
         try:
             # Battery from diagnostics, fallback to status
@@ -417,7 +419,7 @@ class MirConnector(Connector):
             if remaining_sec is not None:
                 key_values["battery_time_remaining"] = int(remaining_sec)
 
-            # CPU load from diagnostics
+            # CPU load from diagnostics (published as system stats)
             cpu_vals = (diagnostics.get(CPU_LOAD_PATH, {}) or {}).get("values", {})
             avg_cpu = None
             for k, v in cpu_vals.items():
@@ -425,7 +427,7 @@ class MirConnector(Connector):
                     avg_cpu = float(v)
                     break
             if avg_cpu is not None:
-                key_values["cpu_usage_percent"] = to_inorbit_percent(avg_cpu)
+                system_stats["cpu_load_percentage"] = to_inorbit_percent(avg_cpu)
 
             # CPU temperature from diagnostics
             cpu_temp_vals = (diagnostics.get(CPU_TEMP_PATH, {}) or {}).get("values", {})
@@ -437,16 +439,16 @@ class MirConnector(Connector):
             if pkg_temp is not None:
                 key_values["temperature_celsius"] = pkg_temp
 
-            # Memory and disk usage from diagnostics
+            # Memory and disk usage from diagnostics (published as system stats)
             memory_vals = (diagnostics.get(MEMORY_PATH, {}) or {}).get("values", {})
             memory_usage_pct = calculate_usage_percent(memory_vals, "memory_usage_percent")
             if memory_usage_pct is not None:
-                key_values["memory_usage_percent"] = to_inorbit_percent(memory_usage_pct)
+                system_stats["ram_usage_percentage"] = to_inorbit_percent(memory_usage_pct)
 
             disk_vals = (diagnostics.get(HARDDRIVE_PATH, {}) or {}).get("values", {})
             disk_usage_pct = calculate_usage_percent(disk_vals, "disk_usage_percent")
             if disk_usage_pct is not None:
-                key_values["disk_usage_percent"] = to_inorbit_percent(disk_usage_pct)
+                system_stats["hdd_usage_percentage"] = to_inorbit_percent(disk_usage_pct)
 
             # WiFi details from diagnostics
             wifi_vals = (diagnostics.get(WIFI_PATH, {}) or {}).get("values", {})
@@ -479,7 +481,11 @@ class MirConnector(Connector):
         ):
             self._logger.info(f"API connection status changed: {key_values.get('api_connected')}")
         self._last_api_connected = key_values.get("api_connected")
-        self._robot_session.publish_key_values(key_values)
+        self.publish_key_values(**key_values)
+
+        # Publish system stats (CPU, RAM, disk) separately from key values
+        if system_stats:
+            self.publish_system_stats(**system_stats)
 
         # publish mission data
         try:
@@ -490,7 +496,7 @@ class MirConnector(Connector):
     def publish_api_error(self):
         """Publish an error message when the API call fails.
         This value can be used for setting up status and incidents in InOrbit"""
-        self._robot_session.publish_key_values({"api_connected": False})
+        self.publish_key_values(api_connected=False)
 
     async def send_waypoint_over_missions(self, pose):
         """Use the connector's mission group to create a move mission to a designated pose."""

@@ -21,7 +21,7 @@ requirements = [
     "tenacity>=9.1.2",
     # InOrbit
     "inorbit-edge[video]>=1.25",
-    "inorbit-connector~=1.4.0",
+    "inorbit-connector~=2.2.0",
     "inorbit-edge-executor~=3.2.5",
 ]
 

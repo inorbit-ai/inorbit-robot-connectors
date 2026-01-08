@@ -284,48 +284,14 @@ class MirApiV2(MirApiBaseClass):
         response = await self._get(DIAGNOSTICS_ENDPOINT_V2)
         return response.json()
 
-    def get_map_sync(self, map_id: str):
-        """Queries /maps/{map_id} endpoint synchronously
+    async def get_map(self, map_id: str):
+        """Queries /maps/{map_id} endpoint.
 
-        This is a workaround to the publish_map method in the connnector not being async.
+        Args:
+            map_id: The ID of the map to fetch
+
+        Returns:
+            Map data including base_map (base64 encoded image), resolution, origin_x, origin_y
         """
-        # Timeout for the second part of the request, where the actual image is downloaded
-        image_timeout = max(self._timeout, 30)
-
-        # Download the image - use the same SSL settings as the async client
-        if isinstance(self._ssl_verify, httpx.AsyncHTTPTransport):
-            # For custom transport, create equivalent sync transport with stored SSL context
-            sync_transport = httpx.HTTPTransport(verify=self._ssl_context)
-            with httpx.Client(
-                base_url=self._base_url,
-                timeout=image_timeout,
-                transport=sync_transport,
-            ) as client:
-                try:
-                    response = client.get(
-                        f"maps/{map_id}",
-                        headers={"Accept-Language": "en_US"},
-                        auth=self._auth,
-                    )
-                    response.raise_for_status()
-                except Exception as e:
-                    self._last_call_successful = False
-                    raise e
-        else:
-            with httpx.Client(
-                base_url=self._base_url,
-                timeout=image_timeout,
-                verify=self._ssl_verify,
-            ) as client:
-                try:
-                    response = client.get(
-                        f"maps/{map_id}",
-                        headers={"Accept-Language": "en_US"},
-                        auth=self._auth,
-                    )
-                    response.raise_for_status()
-                except Exception as e:
-                    self._last_call_successful = False
-                    raise e
-
+        response = await self._get(f"maps/{map_id}")
         return response.json()

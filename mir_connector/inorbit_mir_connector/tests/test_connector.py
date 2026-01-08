@@ -56,7 +56,7 @@ def connector(monkeypatch, tmp_path):
     connector.mir_api.delete_mission_definition = AsyncMock()
     connector.mir_api.get_mission_groups = AsyncMock(return_value=[])
     connector.mir_api.create_mission_group = AsyncMock()
-    connector._robot_session = MagicMock()
+    connector._get_session = MagicMock(return_value=MagicMock())
     return connector
 
 
@@ -103,7 +103,7 @@ def connector_with_mission_tracking(monkeypatch, tmp_path):
     connector.mir_api.delete_mission_definition = AsyncMock()
     connector.mir_api.get_mission_groups = AsyncMock(return_value=[])
     connector.mir_api.create_mission_group = AsyncMock()
-    connector._robot_session = MagicMock()
+    connector._get_session = MagicMock(return_value=MagicMock())
     return connector
 
 
@@ -140,7 +140,7 @@ async def test_command_callback_missions(connector_with_mission_tracking, callba
         connector.mir_api.reset_mock()
 
     # Simulate an executor timeout, which should disable robot mission tracking
-    connector._robot_session.missions_module.executor.wait_until_idle = Mock(return_value=False)
+    connector._get_session().missions_module.executor.wait_until_idle = Mock(return_value=False)
     # Initial state is True, will be updated when command is executed
     assert connector.mission_tracking.mir_mission_tracking_enabled is True
     callback_kwargs["command_name"] = "customCommand"
@@ -152,7 +152,7 @@ async def test_command_callback_missions(connector_with_mission_tracking, callba
     reset_mock()
 
     # Queue mission
-    connector._robot_session.missions_module.executor.wait_until_idle = Mock(return_value=True)
+    connector._get_session().missions_module.executor.wait_until_idle = Mock(return_value=True)
     callback_kwargs["command_name"] = "customCommand"
     callback_kwargs["args"] = ["queue_mission", ["--mission_id", "2"]]
     await connector._inorbit_command_handler(**callback_kwargs)
@@ -174,7 +174,7 @@ async def test_command_callback_missions(connector_with_mission_tracking, callba
     callback_kwargs["command_name"] = "customCommand"
     callback_kwargs["args"] = ["abort_missions", []]
     await connector._inorbit_command_handler(**callback_kwargs)
-    assert connector._robot_session.missions_module.executor.cancel_mission.call_args == call("*")
+    assert connector._get_session().missions_module.executor.cancel_mission.call_args == call("*")
     assert connector.mir_api.abort_all_missions.call_args == call()
     callback_kwargs["options"]["result_function"].assert_called_with(CommandResultCode.SUCCESS)
     reset_mock()
@@ -403,18 +403,25 @@ async def test_connector_loop(connector_with_mission_tracking, monkeypatch):
         }
     }
 
+    # Get the mock session before the execution loop to ensure it's used consistently
+    # The deferred system stats publish will call _get_robot_session(robot_id)
+    mock_session = connector._get_session()
+    connector._get_robot_session = MagicMock(return_value=mock_session)
+
     await connector._execution_loop()
 
-    assert connector._robot_session.publish_pose.call_args == call(
+    # System stats are now deferred, manually trigger the publish
+    connector._FleetConnector__publish_pending_system_stats()
+
+    pose_args, pose_kwargs = mock_session.publish_pose.call_args
+    assert pose_args[:4] == (
         9.52050495147705,
         7.156267166137695,
         1.8204675458317707,
         "20f762ff-5e0a-11ee-abc8-0001299981c4",
     )
-    assert connector._robot_session.publish_odometry.call_args == call(
-        linear_speed=1.1, angular_speed=math.pi
-    )
-    assert connector._robot_session.publish_key_values.call_args == call(
+    assert mock_session.publish_odometry.call_args == call(linear_speed=1.1, angular_speed=math.pi)
+    assert mock_session.publish_key_values.call_args == call(
         {
             "connector_version": get_module_version(),
             "robot_name": "Miriam",
@@ -436,11 +443,101 @@ async def test_connector_loop(connector_with_mission_tracking, monkeypatch):
     # Test error handling - clear robot status to simulate failure
     connector.robot._status = {}  # Empty status should cause early return
     connector.status = None  # Clear connector's cached status too
-    connector._robot_session.reset_mock()
+    mock_session.reset_mock()
     await connector._execution_loop()
-    assert not connector._robot_session.publish_pose.called
-    assert not connector._robot_session.publish_odometry.called
-    assert not connector._robot_session.publish_key_values.called
+    # System stats are deferred, manually trigger the publish
+    connector._FleetConnector__publish_pending_system_stats()
+    assert not mock_session.publish_pose.called
+    assert not mock_session.publish_odometry.called
+    assert not mock_session.publish_key_values.called
+
+
+@pytest.mark.asyncio
+async def test_connector_loop_publishes_system_stats(connector_with_mission_tracking, monkeypatch):
+    """Test that system stats (CPU, RAM, disk) are published separately from key values."""
+    connector = connector_with_mission_tracking
+    connector.mission_tracking.report_mission = AsyncMock()
+
+    status_data = {
+        "robot_name": "Miriam",
+        "uptime": 3552693,
+        "errors": [],
+        "distance_to_next_target": 0.1,
+        "mission_text": "Idle",
+        "state_text": "Ready",
+        "mode_text": "Manual",
+        "robot_model": "MiR100",
+        "map_id": "test-map-id",
+        "position": {"x": 1.0, "y": 2.0, "orientation": 90.0},
+        "velocity": {"linear": 0.0, "angular": 0.0},
+    }
+
+    connector.robot._status = status_data
+    connector.mir_api.get_status.return_value = status_data
+    connector.publish_map = MagicMock()
+
+    # Mock diagnostics with CPU, memory, and disk data
+    connector.robot._diagnostics = {
+        "/Power System/Battery": {
+            "values": {
+                "Remaining battery capacity [%]": 85.0,
+                "Remaining battery time [sec]": 7200,
+            }
+        },
+        "/Computer/PC/CPU Load": {
+            "values": {
+                "Average CPU load [%]": 45.0,
+            }
+        },
+        "/Computer/PC/Memory": {
+            "values": {
+                "Used": 4000.0,
+                "Total size": 8000.0,
+            }
+        },
+        "/Computer/PC/Harddrive": {
+            "values": {
+                "Used": 50000.0,
+                "Total size": 100000.0,
+            }
+        },
+    }
+
+    connector.robot._metrics = {"mir_robot_localization_score": 0.5}
+    connector.mir_api.get_metrics.return_value = connector.robot._metrics
+
+    # Get the mock session and ensure both _get_session() and _get_robot_session() return the same
+    # mock
+    # This is needed because __publish_pending_system_stats() calls _get_robot_session(robot_id)
+    mock_session = connector._get_session()
+    # Make _get_session() return the same mock consistently
+    connector._get_session = MagicMock(return_value=mock_session)
+    # Make _get_robot_session() also return the same mock (it's called with robot_id)
+    connector._get_robot_session = MagicMock(return_value=mock_session)
+
+    await connector._execution_loop()
+
+    # Manually trigger the publish since we're calling _execution_loop() directly
+    connector._FleetConnector__publish_pending_system_stats()
+
+    # Verify system stats are published with correct values
+    assert mock_session.publish_system_stats.called
+    system_stats_call = mock_session.publish_system_stats.call_args
+    assert system_stats_call == call(
+        cpu_load_percentage=0.45,  # 45% / 100
+        ram_usage_percentage=0.5,  # 4000 / 8000
+        hdd_usage_percentage=0.5,  # 50000 / 100000
+    )
+
+    # Verify key values do NOT contain system stats
+    key_values_call = mock_session.publish_key_values.call_args[0][0]
+    assert "cpu_usage_percent" not in key_values_call
+    assert "memory_usage_percent" not in key_values_call
+    assert "disk_usage_percent" not in key_values_call
+
+    # Verify battery is still in key values (robot-specific, not system stat)
+    assert key_values_call["battery percent"] == 0.85
+    assert key_values_call["battery_time_remaining"] == 7200
 
 
 @pytest.mark.asyncio

@@ -17,11 +17,10 @@ requirements = [
     "ruamel.yaml>=0.18,<0.19",
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.11,<3",
-    "psutil==5.9",
     "tenacity>=9.1.2",
     # InOrbit
     "inorbit-edge[video]>=1.25",
-    "inorbit-connector~=1.4.0",
+    "inorbit-connector~=2.2.0",
     "inorbit-edge-executor~=3.2.5",
 ]
 

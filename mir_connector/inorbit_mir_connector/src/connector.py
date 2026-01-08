@@ -3,18 +3,14 @@
 # SPDX-License-Identifier: MIT
 
 import base64
-import os
-import tempfile
 import pytz
 import math
 import uuid
-from PIL import Image
-import io
 
 # from typing import override # TODO(b-Tomas): Uncomment when updating to Python 3.13
 from inorbit_connector.connector import Connector
 from inorbit_connector.connector import CommandResultCode
-from inorbit_connector.models import MapConfig
+from inorbit_connector.models import MapConfigTemp
 from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND
 from inorbit_edge.robot import COMMAND_MESSAGE
 from inorbit_edge.robot import COMMAND_NAV_GOAL
@@ -100,7 +96,7 @@ class MirConnector(Connector):
         # Set up InOrbit Mission Tracking
         self.mission_tracking: MirInorbitMissionTracking = MirInorbitMissionTracking(
             mir_api=self.mir_api,
-            inorbit_sess=self._robot_session,
+            inorbit_sess=self._get_session(),
             robot_tz_info=self.robot_tz_info,
             enable_io_mission_tracking=True,
         )
@@ -109,7 +105,7 @@ class MirConnector(Connector):
         self.mission_executor: MirMissionExecutor = MirMissionExecutor(
             robot_id=robot_id,
             inorbit_api=MissionInOrbitAPI(
-                base_url=self._robot_session.inorbit_rest_api_endpoint,
+                base_url=self._get_session().inorbit_rest_api_endpoint,
                 api_key=self.config.api_key,
             ),
             mir_api=self.mir_api,
@@ -201,17 +197,17 @@ class MirConnector(Connector):
 
             if script_name == "queue_mission" and script_args[0] == "--mission_id":
                 self.mission_tracking.mir_mission_tracking_enabled = (
-                    self._robot_session.missions_module.executor.wait_until_idle(0)
+                    self._get_session().missions_module.executor.wait_until_idle(0)
                 )
                 await self.mir_api.queue_mission(script_args[1])
             elif script_name == "run_mission_now" and script_args[0] == "--mission_id":
                 self.mission_tracking.mir_mission_tracking_enabled = (
-                    self._robot_session.missions_module.executor.wait_until_idle(0)
+                    self._get_session().missions_module.executor.wait_until_idle(0)
                 )
                 await self.mir_api.abort_all_missions()
                 await self.mir_api.queue_mission(script_args[1])
             elif script_name == "abort_missions":
-                self._robot_session.missions_module.executor.cancel_mission("*")
+                self._get_session().missions_module.executor.cancel_mission("*")
                 await self.mir_api.abort_all_missions()
             elif script_name == "set_state":
                 if script_args[0] == "--state_id":
@@ -364,14 +360,13 @@ class MirConnector(Connector):
         self.publish_pose(**pose_data)
 
         # publish odometry
-        odometry = {
-            "linear_speed": self.status.get("velocity", {}).get("linear", 0),
-            "angular_speed": math.radians(self.status.get("velocity", {}).get("angular", 0)),
-        }
-        self._robot_session.publish_odometry(**odometry)
+        self.publish_odometry(
+            linear_speed=self.status.get("velocity", {}).get("linear", 0),
+            angular_speed=math.radians(self.status.get("velocity", {}).get("angular", 0)),
+        )
 
         # publish key values
-        if self._robot_session.missions_module.executor.wait_until_idle(0):
+        if self._get_session().missions_module.executor.wait_until_idle(0):
             mode_text = self.status.get("mode_text")
             state_text = self.status.get("state_text")
             mission_text = self.status.get("mission_text")
@@ -401,6 +396,9 @@ class MirConnector(Connector):
         # Uptime always from status (more reliable)
         key_values["uptime"] = self.status.get("uptime")
 
+        # System stats to be published separately from key values
+        system_stats = {}
+
         diagnostics = self.diagnostics or {}
         try:
             # Battery from diagnostics, fallback to status
@@ -417,7 +415,7 @@ class MirConnector(Connector):
             if remaining_sec is not None:
                 key_values["battery_time_remaining"] = int(remaining_sec)
 
-            # CPU load from diagnostics
+            # CPU load from diagnostics (published as system stats)
             cpu_vals = (diagnostics.get(CPU_LOAD_PATH, {}) or {}).get("values", {})
             avg_cpu = None
             for k, v in cpu_vals.items():
@@ -425,7 +423,7 @@ class MirConnector(Connector):
                     avg_cpu = float(v)
                     break
             if avg_cpu is not None:
-                key_values["cpu_usage_percent"] = to_inorbit_percent(avg_cpu)
+                system_stats["cpu_load_percentage"] = to_inorbit_percent(avg_cpu)
 
             # CPU temperature from diagnostics
             cpu_temp_vals = (diagnostics.get(CPU_TEMP_PATH, {}) or {}).get("values", {})
@@ -437,16 +435,16 @@ class MirConnector(Connector):
             if pkg_temp is not None:
                 key_values["temperature_celsius"] = pkg_temp
 
-            # Memory and disk usage from diagnostics
+            # Memory and disk usage from diagnostics (published as system stats)
             memory_vals = (diagnostics.get(MEMORY_PATH, {}) or {}).get("values", {})
             memory_usage_pct = calculate_usage_percent(memory_vals, "memory_usage_percent")
             if memory_usage_pct is not None:
-                key_values["memory_usage_percent"] = to_inorbit_percent(memory_usage_pct)
+                system_stats["ram_usage_percentage"] = to_inorbit_percent(memory_usage_pct)
 
             disk_vals = (diagnostics.get(HARDDRIVE_PATH, {}) or {}).get("values", {})
             disk_usage_pct = calculate_usage_percent(disk_vals, "disk_usage_percent")
             if disk_usage_pct is not None:
-                key_values["disk_usage_percent"] = to_inorbit_percent(disk_usage_pct)
+                system_stats["hdd_usage_percentage"] = to_inorbit_percent(disk_usage_pct)
 
             # WiFi details from diagnostics
             wifi_vals = (diagnostics.get(WIFI_PATH, {}) or {}).get("values", {})
@@ -479,7 +477,11 @@ class MirConnector(Connector):
         ):
             self._logger.info(f"API connection status changed: {key_values.get('api_connected')}")
         self._last_api_connected = key_values.get("api_connected")
-        self._robot_session.publish_key_values(key_values)
+        self.publish_key_values(**key_values)
+
+        # Publish system stats (CPU, RAM, disk) separately from key values
+        if system_stats:
+            self.publish_system_stats(**system_stats)
 
         # publish mission data
         try:
@@ -490,7 +492,7 @@ class MirConnector(Connector):
     def publish_api_error(self):
         """Publish an error message when the API call fails.
         This value can be used for setting up status and incidents in InOrbit"""
-        self._robot_session.publish_key_values({"api_connected": False})
+        self.publish_key_values(api_connected=False)
 
     async def send_waypoint_over_missions(self, pose):
         """Use the connector's mission group to create a move mission to a designated pose."""
@@ -569,90 +571,55 @@ class MirConnector(Connector):
         except Exception as ex:
             self._logger.error(f"Error deleting unused missions: {ex}")
 
-    # HACK(b-Tomas): This is a hack to publish the map data through the connector.
-    # All of this logic should be moved to the Connector base class.
-    # @override # TODO(b-Tomas): Uncomment when updating to Python 3.13
-    def publish_map(self, frame_id: str, is_update: bool = False) -> None:
-        """Publish a map to InOrbit. If `frame_id` is present in the maps config, it acts normal.
-        If `frame_id` is not present in the maps config, it will attempt to load the map from the
-        robot.
+    async def fetch_map(self, frame_id: str) -> MapConfigTemp | None:
+        """Fetch a map from the MiR robot for the given frame_id.
+
+        This method is called by the base Connector class when a map is not found
+        in the configuration. It fetches the map from the robot API and returns
+        the image bytes.
+
+        Args:
+            frame_id: The frame ID (map_id) to fetch from the robot
+
+        Returns:
+            MapConfigTemp with the map image bytes, or None if the map could not
+            be fetched.
         """
-        # If a map was provided by the user, publish it as normal
-        if frame_id in self.config.maps:
-            super().publish_map(frame_id, is_update)
-        # Else, attempt to load the map from the robot and publish it instead
-        else:
-            self._logger.info(
-                f"Map with frame_id {frame_id} not found in config, attempting to load from robot"
+        self._logger.info(f"Fetching map '{frame_id}' from robot")
+
+        try:
+            map_data = await self.mir_api.get_map(frame_id)
+            if not map_data:
+                self._logger.warning(f"No map data received for {frame_id}")
+                return None
+
+            image_b64 = map_data.get("base_map")
+            map_label = map_data.get("name")
+            resolution = map_data.get("resolution")
+            origin_x = map_data.get("origin_x")
+            origin_y = map_data.get("origin_y")
+
+            if (
+                not isinstance(image_b64, str)
+                or not isinstance(resolution, (int, float))
+                or not isinstance(origin_x, (int, float))
+                or not isinstance(origin_y, (int, float))
+            ):
+                self._logger.error(f"Incomplete map data for {frame_id}")
+                return None
+
+            map_bytes = base64.b64decode(image_b64)
+            self._logger.debug(f"Map image size: {len(map_bytes)} bytes")
+
+            return MapConfigTemp(
+                image=map_bytes,
+                map_id=frame_id,
+                map_label=map_label if isinstance(map_label, str) else None,
+                origin_x=float(origin_x),
+                origin_y=float(origin_y),
+                resolution=float(resolution),
             )
-            try:
-                map_id = frame_id
 
-                # Get the map image using the new API method
-                map_data = self.mir_api.get_map_sync(map_id)
-                if not map_data:
-                    self._logger.warning("No map data received from robot")
-                    return
-
-                image = map_data.get("base_map")
-                map_name = map_data.get("name")
-                resolution = map_data.get("resolution")
-                origin_x = map_data.get("origin_x")
-                origin_y = map_data.get("origin_y")
-
-            except Exception as ex:
-                self._logger.error(f"Failed to load map from robot: {ex}")
-                return
-
-            # Process and save the map image
-            if image and map_name and resolution and origin_x is not None and origin_y is not None:
-                # Generate a byte array from the base64 encoded image
-                map_data = base64.b64decode(image)
-                self._logger.debug(f"Map image size: {len(map_data)} bytes")
-                # Create a temporary file with .png extension to store the map image
-                fd, temp_path = tempfile.mkstemp(suffix=".png")
-                self._logger.debug(f"Created temporary file: {temp_path}")
-
-                # Flip the map image bytes vertically
-                # NOTE: This is done in order to display the image correctly in the
-                # InOrbit platform, but can be computationally expensive
-                try:
-                    # Create an image from the bytes
-                    image = Image.open(io.BytesIO(map_data))
-
-                    # Flip the image vertically
-                    flipped_image = image.transpose(Image.FLIP_TOP_BOTTOM)
-
-                    # Convert back to bytes
-                    img_byte_arr = io.BytesIO()
-                    flipped_image.save(img_byte_arr, format="PNG")
-                    flipped_bytes = img_byte_arr.getvalue()
-                except Exception as e:
-                    self._logger.error(f"Failed to flip map image: {e}")
-                    # If flipping fails, use the original bytes
-                    flipped_bytes = map_data
-
-                try:
-                    # Write the map image bytes to the temporary file
-                    with os.fdopen(fd, "wb") as tmp_file:
-                        tmp_file.write(flipped_bytes)
-
-                    # Create a new map configuration
-                    # Note: For Gausium robots, we may need to adjust origin and resolution
-                    # based on the robot's coordinate system
-                    self.config.maps[frame_id] = MapConfig(
-                        file=temp_path,
-                        map_id=map_id,
-                        origin_x=origin_x,
-                        origin_y=origin_y,
-                        resolution=resolution,
-                    )
-
-                    self._logger.info(f"Added map {frame_id} from robot to configuration")
-                    return super().publish_map(frame_id, is_update)
-                except Exception as e:
-                    self._logger.error(f"Failed to create temporary map file: {e}")
-                    os.unlink(temp_path)  # Clean up the file in case of error
-            else:
-                self._logger.error(f"No map data available for {frame_id}")
-                return
+        except Exception as ex:
+            self._logger.error(f"Failed to fetch map '{frame_id}' from robot: {ex}")
+            return None

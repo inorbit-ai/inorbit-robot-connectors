@@ -310,10 +310,11 @@ class MirApiBaseClass(ABC):
         pass
 
     @abstractmethod
-    def get_map_sync(self, map_id: str):
-        """Queries /maps/{map_id} endpoint
+    async def get_map(self, map_id: str):
+        """Queries /maps/{map_id} endpoint.
 
-        This is a workaround to the publish_map method in the connnector not being async.
+        Args:
+            map_id: The ID of the map to fetch
 
         Returns:
             Map data e.g.

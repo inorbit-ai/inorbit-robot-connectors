@@ -593,7 +593,10 @@ class MirConnector(Connector):
                 self._logger.warning(f"No map data received for {frame_id}")
                 return None
 
-            image_b64 = map_data.get("base_map")
+            # Field name differs by firmware: v2 uses "map", v3 uses "base_map"
+            firmware_version = self.config.connector_config.mir_firmware_version
+            map_field = "map" if firmware_version == "v2" else "base_map"
+            image_b64 = map_data.get(map_field)
             map_label = map_data.get("name")
             resolution = map_data.get("resolution")
             origin_x = map_data.get("origin_x")

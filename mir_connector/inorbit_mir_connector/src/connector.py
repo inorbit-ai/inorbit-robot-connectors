@@ -79,9 +79,12 @@ class MirConnector(Connector):
         )
 
         # Async robot wrapper managing polling
+        # Note: diagnostics endpoint does not exist on v2 firmware
+        enable_diagnostics = config.connector_config.mir_firmware_version != "v2"
         self.robot = Robot(
             mir_api=self.mir_api,
             default_update_freq=1.0,  # 1 Hz status by default
+            enable_diagnostics=enable_diagnostics,
         )
 
         # Configure the timezone

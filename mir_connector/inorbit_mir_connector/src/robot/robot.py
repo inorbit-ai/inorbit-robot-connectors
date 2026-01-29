@@ -22,6 +22,7 @@ class Robot:
         self,
         mir_api: MirApiBaseClass,
         default_update_freq: float,
+        enable_diagnostics: bool = True,
     ):
         self.logger = logging.getLogger(name=self.__class__.__name__)
         self._mir_api = mir_api
@@ -32,6 +33,7 @@ class Robot:
         self._default_update_freq = default_update_freq
         self._running_tasks: list[asyncio.Task] = []
         self._last_call_successful: bool = True
+        self._enable_diagnostics = enable_diagnostics
 
         # Circuit breaker pattern for error handling
         self._consecutive_errors = 0
@@ -49,7 +51,9 @@ class Robot:
         # Start metrics polling at a lower frequency (every 2 seconds)
         self._run_in_loop(self._update_metrics, frequency=0.5)
         # Start diagnostics polling at a lower frequency (every 2 seconds)
-        self._run_in_loop(self._update_diagnostics, frequency=0.5)
+        # Note: diagnostics endpoint does not exist on v2 firmware
+        if self._enable_diagnostics:
+            self._run_in_loop(self._update_diagnostics, frequency=0.5)
 
         self.logger.debug(f"Started {len(self._running_tasks)} polling tasks")
 

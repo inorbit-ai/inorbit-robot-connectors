@@ -382,12 +382,17 @@ class MirConnector(Connector):
         key_values = {
             "connector_version": get_module_version(),
             "robot_name": self.status.get("robot_name"),
+            "serial_number": self.status.get("serial_number"),
             "errors": self.status.get("errors"),
             "distance_to_next_target": self.status.get("distance_to_next_target"),
             "mission_text": mission_text,
             "state_text": state_text,
+            "state_id": self.status.get("state_id"),
             "mode_text": mode_text,
+            "mode_id": self.status.get("mode_id"),
             "robot_model": self.status.get("robot_model"),
+            "moved": self.status.get("moved"),
+            "safety_system_muted": self.status.get("safety_system_muted"),
             "waiting_for": self.mission_tracking.waiting_for_text,
             "api_connected": self.robot.api_connected,
         }
@@ -413,6 +418,11 @@ class MirConnector(Connector):
                     remaining_pct = float(v)
                 elif "Remaining battery time [sec]" in k:
                     remaining_sec = float(v)
+            # Fallback to status if diagnostics doesn't have battery data (e.g., v2 firmware)
+            if remaining_pct is None and self.status.get("battery_percentage") is not None:
+                remaining_pct = float(self.status.get("battery_percentage"))
+            if remaining_sec is None and self.status.get("battery_time_remaining") is not None:
+                remaining_sec = float(self.status.get("battery_time_remaining"))
             if remaining_pct is not None:
                 key_values["battery percent"] = to_inorbit_percent(remaining_pct)
             if remaining_sec is not None:

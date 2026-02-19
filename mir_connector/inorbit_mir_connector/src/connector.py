@@ -28,7 +28,6 @@ from ..config.connector_model import ConnectorConfig
 from .robot.robot import Robot
 from .utils import to_inorbit_percent, calculate_usage_percent
 
-
 # Available MiR states to select via actions
 MIR_STATE = {3: "READY", 4: "PAUSE", 11: "MANUALCONTROL"}
 

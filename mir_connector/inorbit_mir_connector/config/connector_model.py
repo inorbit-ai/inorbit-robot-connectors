@@ -15,7 +15,7 @@ from typing import Optional
 DEFAULT_ENV_FILE = "config/.env"
 
 # Expected values
-CONNECTOR_TYPES = ["MiR100", "MiR250"]
+CONNECTOR_TYPES = ["MiR100", "MiR200", "MiR250", "MiR500"]
 FIRMWARE_VERSIONS = ["v2", "v3"]
 MIR_API_VERSION = "v2.0"
 

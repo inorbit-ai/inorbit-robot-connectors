@@ -28,7 +28,6 @@ from ..config.connector_model import ConnectorConfig
 from .robot.robot import Robot
 from .utils import to_inorbit_percent, calculate_usage_percent
 
-
 # Available MiR states to select via actions
 MIR_STATE = {3: "READY", 4: "PAUSE", 11: "MANUALCONTROL"}
 
@@ -79,9 +78,12 @@ class MirConnector(Connector):
         )
 
         # Async robot wrapper managing polling
+        # Note: diagnostics endpoint does not exist on v2 firmware
+        enable_diagnostics = config.connector_config.mir_firmware_version != "v2"
         self.robot = Robot(
             mir_api=self.mir_api,
             default_update_freq=1.0,  # 1 Hz status by default
+            enable_diagnostics=enable_diagnostics,
         )
 
         # Configure the timezone
@@ -379,12 +381,17 @@ class MirConnector(Connector):
         key_values = {
             "connector_version": get_module_version(),
             "robot_name": self.status.get("robot_name"),
+            "serial_number": self.status.get("serial_number"),
             "errors": self.status.get("errors"),
             "distance_to_next_target": self.status.get("distance_to_next_target"),
             "mission_text": mission_text,
             "state_text": state_text,
+            "state_id": self.status.get("state_id"),
             "mode_text": mode_text,
+            "mode_id": self.status.get("mode_id"),
             "robot_model": self.status.get("robot_model"),
+            "moved": self.status.get("moved"),
+            "safety_system_muted": self.status.get("safety_system_muted"),
             "waiting_for": self.mission_tracking.waiting_for_text,
             "api_connected": self.robot.api_connected,
         }
@@ -410,6 +417,11 @@ class MirConnector(Connector):
                     remaining_pct = float(v)
                 elif "Remaining battery time [sec]" in k:
                     remaining_sec = float(v)
+            # Fallback to status if diagnostics doesn't have battery data (e.g., v2 firmware)
+            if remaining_pct is None and self.status.get("battery_percentage") is not None:
+                remaining_pct = float(self.status.get("battery_percentage"))
+            if remaining_sec is None and self.status.get("battery_time_remaining") is not None:
+                remaining_sec = float(self.status.get("battery_time_remaining"))
             if remaining_pct is not None:
                 key_values["battery percent"] = to_inorbit_percent(remaining_pct)
             if remaining_sec is not None:
@@ -593,7 +605,10 @@ class MirConnector(Connector):
                 self._logger.warning(f"No map data received for {frame_id}")
                 return None
 
-            image_b64 = map_data.get("base_map")
+            # Field name differs by firmware: v2 uses "map", v3 uses "base_map"
+            firmware_version = self.config.connector_config.mir_firmware_version
+            map_field = "map" if firmware_version == "v2" else "base_map"
+            image_b64 = map_data.get(map_field)
             map_label = map_data.get("name")
             resolution = map_data.get("resolution")
             origin_x = map_data.get("origin_x")

@@ -12,7 +12,7 @@ requirements = [
     "pytz>=2022.7",
     # NOTE: both pyyaml and ruamel.yaml packages are included here. Otherwise, the
     # edge-sdk dependency won't run. Consider migrating edge-sdk yaml dependency
-    # to ruamel.yaml or fix the dependency issue and them remove pyyaml from here.
+    # to ruamel.yaml or fix the dependency issue and then remove pyyaml from here.
     "pyyaml>=6.0,<6.1",
     "ruamel.yaml>=0.18,<0.19",
     "pydantic>=2.11,<3",

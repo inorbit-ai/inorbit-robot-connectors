@@ -195,11 +195,12 @@ def _restructure_connector_config(config: Dict[str, Any]) -> Dict[str, Any]:
             if field in mir_api:
                 result["connector_config"][f"mir_{field}"] = mir_api[field]
 
-    # Handle logging section (new format)
+    # Handle logging section - pass through to InorbitConnectorConfig
+    # Supports: log_level, config_file, defaults (including log_file for rotation)
     if "logging" in result:
-        logging_config = result.pop("logging")
-        if "log_level" in logging_config:
-            result["log_level"] = logging_config["log_level"]
+        # Keep logging section as-is for InorbitConnectorConfig to handle
+        # This enables log rotation via defaults.log_file
+        pass
 
     return result
 

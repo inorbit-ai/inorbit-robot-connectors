@@ -1,5 +1,5 @@
 [tool.bumpversion]
-current_version = "1.0.3"
+current_version = "1.0.4"
 commit = true
 message = "Bump mir_connector version: {current_version} → {new_version}"
 tag = true

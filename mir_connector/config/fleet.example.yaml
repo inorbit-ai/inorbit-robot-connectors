@@ -46,6 +46,12 @@ common:
 
   user_scripts_base_dir: ./user_scripts
 
+  # Logging settings (uses built-in rotation: 1MB max, 5 backup files)
+  logging:
+    log_level: INFO
+    defaults:
+      log_file: /app/inorbit-connector.log
+
   # Common environment variables
   env_vars:
     INORBIT_API_KEY: "${INORBIT_API_KEY}"

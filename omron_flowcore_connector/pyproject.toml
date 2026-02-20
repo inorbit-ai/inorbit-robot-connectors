@@ -1,0 +1,110 @@
+# SPDX-FileCopyrightText: 2025 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
+[project]
+name = "inorbit-omron-connector"
+version = "0.2.3"
+description = "InOrbit Connector for Omron FlowCore"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "MIT" }
+authors = [
+    { name = "InOrbit, Inc.", email = "support@inorbit.ai" },
+]
+maintainers = [
+    { name = "InOrbit, Inc.", email = "support@inorbit.ai" },
+]
+keywords = ["inorbit", "connector", "edge-connector", "robotics", "robops", "flowcore", "omron"]
+classifiers = [
+    "Topic :: Scientific/Engineering",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    "httpx~=0.28.1",
+    "pydantic~=2.12.5",
+    "pydantic-settings~=2.12.0",
+    "inorbit-connector~=2.2.0",
+    "typing-extensions~=4.15.0",
+    "inorbit-edge-executor~=4.0.1",
+    "aiosql~=9.5",
+    "aiosqlite~=0.19.0",
+    "async-timeout~=4.0.3",
+]
+
+[project.urls]
+Homepage = "https://github.com/inorbit-ai/flowcore-connector"
+Documentation = "https://github.com/inorbit-ai/flowcore-connector#readme"
+Repository = "https://github.com/inorbit-ai/flowcore-connector"
+Issues = "https://github.com/inorbit-ai/flowcore-connector/issues"
+
+[project.optional-dependencies]
+dev = [
+    "coverage~=7.11",
+    "pytest~=8.4",
+    "pytest-asyncio~=1.2",
+    "tox~=4.32",
+    "tox-uv~=1.29",
+    "colorlog~=6.10.1",
+    "ruff>=0.14.7",
+    "bump-my-version~=1.2.4",
+]
+
+[project.scripts]
+inorbit-omron-connector = "inorbit_omron_connector.main:start"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.bumpversion]
+current_version = "0.2.1"
+commit = true
+tag = true
+message = "Bump inorbit-omron-connector version: {current_version} → {new_version}"
+tag_name = "inorbit-omron-connector-v{new_version}"
+tag_message = "Bump inorbit-omron-connector version: {current_version} → {new_version}"
+
+[tool.hatch.build.targets.wheel]
+packages = ["inorbit_omron_connector"]
+
+[tool.coverage.run]
+source = ["inorbit_omron_connector/"]
+
+[tool.coverage.report]
+fail_under = 0
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.tox]
+env_list = ["py313"]
+
+[tool.tox.gh]
+python = { "3.13" = "py313" }
+
+[tool.tox.env_run_base]
+extras = ["dev"]
+commands = [
+    [
+        "ruff",
+        "check",
+    ],
+    [
+        "coverage",
+        "run",
+        "-m",
+        "pytest",
+    ],
+    [
+        "coverage",
+        "html",
+        "-d",
+        "{envlogdir}/coverage",
+    ],
+]

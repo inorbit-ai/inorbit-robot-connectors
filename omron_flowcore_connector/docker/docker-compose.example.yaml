@@ -1,0 +1,83 @@
+# SPDX-FileCopyrightText: 2026 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
+# Example Docker Compose for FLOWCore Connector
+#
+# This setup manages one or more connector instances from an existing configuration file.
+# Each connector instance runs in its own container for better isolation and monitoring.
+#
+# Quick start:
+# 1. cp docker-compose.example.yaml docker-compose.yaml
+# 2. Edit docker-compose.yaml adjusting to your prefences
+# 3. cp config/example.env config/.env (fill in your credentials)
+# 4. docker compose up -d  # Starts all connector instances
+# 5. docker compose logs -f  # View logs from all connector instances
+
+# Common configuration for all connector instances
+# Can be shared across compose services using the <<: *flowcore-connector syntax
+# Every property can then be overriden for each service instance.
+x-flowcore-connector:
+  &flowcore-connector # Image to use for the connector instances
+  image: us-central1-docker.pkg.dev/inorbit-integrations/connectors/flowcore_connector:0.1.0
+
+  # Build from local source
+  # Not required if using the provided image
+  build:
+    context: ../
+    dockerfile: docker/Dockerfile
+
+  # Load environment variables from config/.env
+  # This file should contain sensitive information such as FLOWCore API credentials.
+  env_file:
+    - ../config/.env
+
+  # Connector-specific environment variables not present in config/.env
+  environment:
+    - LOG_LEVEL=${LOG_LEVEL:-INFO}
+
+  # Volume mounts. Defaults are usually sufficient.
+  # Adjust as needed the left side filenames to the name and path of your config files.
+  volumes:
+    # Your fleet config
+    - ../config/my_fleet.yaml:/config/fleet.yaml:ro
+    # User scripts
+    - ../config/user_scripts:/app/user_scripts:ro
+    # Optional: Custom logging configuration
+    #- ./logging.example.conf:/app/logging.example.conf:ro
+    # Optional: Persistent data storage (databases, logs, etc.)
+    #- data:/app/data
+
+  # Use host networking to access the FLOWCore API easily by IP address.
+  # Customize as needed.
+  network_mode: host
+
+  # Auto-restart policy
+  restart: unless-stopped
+
+  # Logging configuration for the docker container
+  logging:
+    driver: json-file
+    options:
+      max-size: 100m
+      max-file: "5"
+
+  # Resource limits for the docker container
+  deploy:
+    resources:
+      limits:
+        memory: 512M
+        cpus: "1.0"
+      reservations:
+        memory: 256M
+        cpus: "0.5"
+
+# Services - one per connector instance
+# Generally one per FLOWCore instance. This format allows for further segregation if required
+services:
+  flowcore-connector-1:
+    <<: *flowcore-connector
+# Volumes for persistent data, such as mission execution databases and logs
+#volumes:
+#  data:
+#    driver: local

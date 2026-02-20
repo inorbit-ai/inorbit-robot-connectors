@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: 2026 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
+# docker/Dockerfile copies select folders already, so there isn't a lot we have to ignore
+**__pycache__/
+*.env*

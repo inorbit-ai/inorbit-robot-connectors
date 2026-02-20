@@ -1,0 +1,56 @@
+# SPDX-FileCopyrightText: 2025 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
+.pytest_cache
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+.coverage
+.tox/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Environment files
+.env
+config/.env
+config/my_fleet.yaml
+config/*local*.yaml
+docker/docker-compose.yaml
+
+# Certificates
+*.pem
+*.crt
+*.key
+*.csr
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# InOrbit specific
+*.db
+*.sqlite
+

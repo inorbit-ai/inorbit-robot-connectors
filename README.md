@@ -44,6 +44,14 @@ A single instance of the Connector is capable of controlling an entire Instock A
 
 Take a look at its [README](instock_connector/README.md) for more details.
 
+### Omron FLOWCore
+
+The [InOrbit](https://inorbit.ai/) Fleet Connector for [Omron](https://automation.omron.com/) AMRs connected to FLOWCore.
+
+A single instance of the Connector is capable of managing multiple robots.
+
+Take a look at its [README](omron_flowcore_connector/README.md) for more details.
+
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for information related to developing the code.

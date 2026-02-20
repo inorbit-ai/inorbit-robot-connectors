@@ -12,7 +12,7 @@ InOrbit Edge connector for FLOWCore
 
 ## Overview
 
-This repository contains the [InOrbit](https://inorbit.ai/) Edge Connector for [FLOWCore](https://example.com).
+This repository contains the [InOrbit](https://inorbit.ai/) Edge Connector for [Omron](https://automation.omron.com/) AMRs connected to FLOWCore.
 
 This integration requires the Connector to be configured following the instructions below.
 

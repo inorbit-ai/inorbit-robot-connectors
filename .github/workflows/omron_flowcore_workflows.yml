@@ -71,7 +71,7 @@ jobs:
         id: version
         uses: cssnr/toml-action@v1
         with:
-          file: pyproject.toml
+          file: omron_flowcore_connector/pyproject.toml
           path: $.project.version
       - name: Export version to env
         run: |

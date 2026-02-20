@@ -4,7 +4,7 @@
 
 [project]
 name = "inorbit-omron-connector"
-version = "0.2.4"
+version = "0.2.5"
 description = "InOrbit Connector for Omron FlowCore"
 readme = "README.md"
 requires-python = ">=3.13"

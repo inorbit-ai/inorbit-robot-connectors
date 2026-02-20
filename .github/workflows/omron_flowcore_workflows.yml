@@ -71,7 +71,7 @@ jobs:
         id: version
         uses: cssnr/toml-action@v1
         with:
-          file: pyproject.toml
+          file: omron_flowcore_connector/pyproject.toml
           path: $.project.version
       - name: Export version to env
         run: |
@@ -97,6 +97,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
+          context: "{{defaultContext}}:omron_flowcore_connector"
           file: ./docker/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}

@@ -1,0 +1,44 @@
+# SPDX-FileCopyrightText: 2026 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
+# Replace [account_id] and [tag_id] with your inorbit account id and the tag id of a tag covering all
+# robots managed by an instance of the Omron connector.
+
+apiVersion: v0.1
+kind: RobotFootprint
+metadata:
+  id: all
+  scope: tag/[account_id]/[tag_id]
+spec:
+  bufferFootprint:
+  - x: -1
+    y: -0.6
+  - x: 1
+    y: -0.6
+  - x: 1
+    y: 0.6
+  - x: -1
+    y: 0.6
+  footprint:
+  - x: -0.40877419354838707
+    y: 0.2392258064516129
+  - x: -0.3321290322580645
+    y: 0.34838709677419355
+  - x: -0.29496774193548386
+    y: 0.36
+  - x: 0.2670967741935484
+    y: 0.36
+  - x: 0.36
+    y: 0.22993548387096774
+  - x: 0.36
+    y: -0.22993548387096774
+  - x: 0.2670967741935484
+    y: -0.36
+  - x: -0.29496774193548386
+    y: -0.36
+  - x: -0.3321290322580645
+    y: -0.34838709677419355
+  - x: -0.40877419354838707
+    y: -0.2392258064516129
+  radius: 0.25

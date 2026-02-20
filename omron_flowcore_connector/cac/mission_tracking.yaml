@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: 2026 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
+# Replace [account_id] and [tag_id] with your inorbit account id and the tag id of a tag covering all
+# robots managed by an instance of the Omron connector.
+
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: mission_updates
+  scope: tag/[account_id]/[tag_id]
+spec:
+  label: Mission Updates
+  type: json
+  source:
+    keyValue:
+      key: mission_tracking
+---
+kind: MissionTracking
+apiVersion: v0.1
+metadata:
+  id: all
+  scope: tag/[account_id]/[tag_id]
+spec:
+  processingType: ["api"]
+  autoClosePreviousMission: true
+  execution:
+    executor:
+      options: {}
+      type: edge
+  attributes:
+    mission_updates:
+      - type: missionApi

@@ -1,0 +1,82 @@
+# SPDX-FileCopyrightText: 2026 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
+apiVersion: v0.1
+kind: MissionDefinition
+metadata:
+  id: omron_basic_nav
+  scope: account
+spec:
+  label: "Omron: Navigate to Goal1"
+  steps:
+    - label: "Navigate to Goal1"
+      timeoutSecs: 60
+      runAction:
+        actionId: gotoGoals
+        arguments:
+          goals: "Goal1"
+---
+apiVersion: v0.1
+kind: MissionDefinition
+metadata:
+  id: omron_high_priority
+  scope: account
+spec:
+  label: "Omron: High Priority Move"
+  steps:
+    - label: "Set Priority High"
+      data:
+        omron_priority: 1
+    - label: "Navigate with high priority to Goal2"
+      timeoutSecs: 60
+      runAction:
+        actionId: gotoGoals
+        arguments:
+          goals: "Goal2"
+---
+apiVersion: v0.1
+kind: MissionDefinition
+metadata:
+  id: omron_multi_step
+  scope: account
+spec:
+  label: "Omron: Multi-Step"
+  steps:
+    - label: "Go to Goal1"
+      timeoutSecs: 60
+      runAction:
+        actionId: gotoGoals
+        arguments:
+          goals: "Goal1"
+    - label: "Wait 5 seconds"
+      timeoutSecs: 5
+    - label: "Go to Goal2"
+      timeoutSecs: 60
+      runAction:
+        actionId: gotoGoals
+        arguments:
+          goals: "Goal2"
+    - label: "Wait 5 seconds"
+      timeoutSecs: 5
+    - label: "Go to Goal1"
+      timeoutSecs: 60
+      runAction:
+        actionId: gotoGoals
+        arguments:
+          goals: "Goal1"
+---
+apiVersion: v0.1
+kind: MissionDefinition
+metadata:
+  id: omron_multi_step_2
+  scope: account
+spec:
+  label: "Omron: Multi-Step (no waiting)"
+  steps:
+    - label: "Go to Goal1, Goal2, Goal1"
+      timeoutSecs: 60
+      runAction:
+        actionId: gotoGoals
+        arguments:
+          goals: "Goal1,Goal2,Goal1"

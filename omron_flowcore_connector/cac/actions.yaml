@@ -1,0 +1,206 @@
+# SPDX-FileCopyrightText: 2026 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
+# Replace [account_id] and [tag_id] with your inorbit account id and the tag id of a tag covering all
+# robots managed by an instance of the Omron connector.
+
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+  id: stop-robot
+  scope: tag/[account_id]/[tag_id]
+spec:
+  type: RunScript
+  arguments:
+    - name: filename
+      type: string
+      value: stop
+  confirmation:
+    required: true
+  description: Stop Robot
+  label: Stop Robot
+---
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+  id: pauseRobot
+  scope: tag/[account_id]/[tag_id]
+spec:
+  type: RunScript
+  arguments:
+    - name: filename
+      type: string
+      value: pauseRobot
+  confirmation:
+    required: false
+  description: Pause Robot
+  label: Pause Robot
+---
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+  id: dockRobot
+  scope: tag/[account_id]/[tag_id]
+spec:
+  type: RunScript
+  arguments:
+    - name: filename
+      type: string
+      value: dock
+  confirmation:
+    required: false
+  description: Dock
+  label: Dock
+---
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+  id: undockRobot
+  scope: tag/[account_id]/[tag_id]
+spec:
+  type: RunScript
+  arguments:
+    - name: filename
+      type: string
+      value: undock
+  confirmation:
+    required: false
+  description: Undock
+  label: Undock
+---
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+  id: shutdownRobot
+  scope: tag/[account_id]/[tag_id]
+spec:
+  type: RunScript
+  arguments:
+    - name: filename
+      type: string
+      value: shutdown
+  confirmation:
+    required: false
+  description: Shutdown
+  label: Shutdown
+---
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+  id: resumeRobot
+  scope: tag/[account_id]/[tag_id]
+spec:
+  type: RunScript
+  arguments:
+    - name: filename
+      type: string
+      value: resumeRobot
+  confirmation:
+    required: false
+  description: Resume Robot
+  label: Resume Robot
+---
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+  id: gotoGoals
+  scope: tag/[account_id]/[tag_id]
+spec:
+  type: RunScript
+  arguments:
+    - name: filename
+      type: string
+      value: gotoGoals
+    - name: goals
+      type: string
+  confirmation:
+    required: false
+  description: Go to Goals
+  label: Go to Goals
+---
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+  id: executeMission
+  scope: account/[account_id]
+spec:
+  type: RunScript
+  description: Send mission to Edge vehicle
+  group: Reserved
+  label: Execute edge mission
+  lock: false
+  confirmation:
+    required: false
+  arguments:
+    - name: filename
+      type: string
+      value: executeMissionAction
+    - input:
+        control: text
+      name: robotId
+      type: string
+    - input:
+        control: text
+      name: missionId
+      type: string
+    - input:
+        control: text
+      name: missionArgs
+      type: string
+    - input:
+        control: text
+      name: options
+      type: string
+    - input:
+        control: text
+      name: missionDefinition
+      type: string
+---
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+  id: cancelMission
+  scope: account/[account_id]
+spec:
+  type: RunScript
+  confirmation:
+    required: false
+  description: Cancel mission on Edge vehicle
+  group: Reserved
+  label: Cancel edge mission
+  lock: false
+  arguments:
+    - name: filename
+      type: string
+      value: cancelMissionAction
+    - input:
+        control: text
+      name: missionId
+      type: string
+---
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+  id: updateMission
+  scope: account/[account_id]
+spec:
+  type: RunScript
+  confirmation:
+    required: false
+  description: Update mission on Edge vehicle
+  group: Reserved
+  label: Update edge mission
+  lock: false
+  arguments:
+    - name: filename
+      type: string
+      value: updateMissionAction
+    - input:
+        control: text
+      name: missionId
+      type: string
+    - input:
+        control: text
+      name: action
+      type: string

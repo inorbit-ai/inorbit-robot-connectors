@@ -488,7 +488,6 @@ export MIR_USERNAME="admin"
 export MIR_PASSWORD="your-password"
 
 # Optional resilience settings (defaults shown)
-export INORBIT_STATUS_HEARTBEAT_ENABLED=true          # Status heartbeat every 30s
 export INORBIT_RESTART_ON_EDGESDK_TIMEOUT=true        # Auto-restart on timeout
 export INORBIT_EDGESDK_RESTART_TIMEOUT_SECONDS=60     # Restart after 60s timeout
 ```
@@ -556,7 +555,6 @@ nssm start MiRConnector-robot-1
 The connector automatically handles:
 - **Health Monitoring**: Tracks successful communication with InOrbit
 - **Auto-restart**: Exits when unhealthy for supervisor to restart
-- **Status Heartbeat**: Maintains robot online status every 30 seconds
 
 ## ⚙️ Advanced Configuration
 

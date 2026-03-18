@@ -1,0 +1,35 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Environment / secrets
+config/.env
+*.env
+!config/example.env
+
+# Config files
+config/robot.yaml
+
+# Map files
+maps/*
+!maps/.gitkeep
+
+# Data files
+*.db
+*.sqlite
+
+# Docker artifacts
+artifacts/

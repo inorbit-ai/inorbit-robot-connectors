@@ -1,0 +1,3 @@
+# Ignore actual config (only keep examples in git)
+robot.yaml
+mav_config.json

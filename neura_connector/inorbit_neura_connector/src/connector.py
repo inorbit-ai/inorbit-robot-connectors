@@ -223,6 +223,9 @@ class NeuraConnector(Connector):
         kv.update({
             "api_connected": True,
             "sw_version": self._sw_version,
+            "pose_x": x,
+            "pose_y": y,
+            "pose_theta": theta,
             "state_id": state_id,
             "state_text": state.get("description", MAV_STATES.get(state_id, "UNKNOWN")),
             "battery percent": batt_pct / 100.0,

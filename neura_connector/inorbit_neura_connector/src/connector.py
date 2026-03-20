@@ -181,6 +181,12 @@ class NeuraConnector(Connector):
             self.publish_key_values(api_connected=False)
             return
 
+        if not self._mission_executor:
+            self._mission_executor = MissionExecutor(
+                api=self.api,
+                publish_fn=self.publish_key_values,
+            )
+
         try:
             pose, state, speed, batt_pct, batt_v = await asyncio.gather(
                 self.api.get_2d_pose(),

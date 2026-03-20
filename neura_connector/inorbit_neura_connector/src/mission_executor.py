@@ -167,7 +167,7 @@ class MissionExecutor:
                 if self._cancel_event.is_set():
                     return False
 
-                if on_failure == "retry" and attempt < max_retries:
+                if on_failure == "retry" and attempt <= max_retries:
                     logger.info(f"  Retrying in {retry_delay}s...")
                     try:
                         await asyncio.wait_for(

@@ -215,20 +215,6 @@ class NeuraConnector(Connector):
         self.publish_pose(x=x, y=y, yaw=theta, frame_id=self._map_frame_id)
         self.publish_odometry(linear_speed=speed, angular_speed=0.0)
 
-        extras = {"pos_confidence": 0, "is_on_route": False, "is_in_error": False,
-                  "is_estop": False, "is_soft_estop": False}
-        try:
-            (extras["pos_confidence"], extras["is_on_route"], extras["is_in_error"],
-             extras["is_estop"], extras["is_soft_estop"]) = await asyncio.gather(
-                self.api.get_position_confidence(),
-                self.api.is_on_route(),
-                self.api.is_in_error(),
-                self.api.is_estop_button(),
-                self.api.is_soft_estop(),
-            )
-        except Exception:
-            pass
-
         state_id = state.get("state_id", 0)
         kv.update({
             "api_connected": True,
@@ -256,6 +242,25 @@ class NeuraConnector(Connector):
     # ------------------------------------------------------------------
     # Commands (InOrbit -> robot)
     # ------------------------------------------------------------------
+
+    async def _run_lifting(self, coro_fn, action: str, result_fn):
+        """Run a blocking lifting command in the background.
+
+        Sends SUCCESS immediately (command accepted), then publishes the
+        final status as key-values once the SDK call completes.
+        """
+        result_fn(CommandResultCode.SUCCESS,
+                  execution_status_details=f"{action} lifting command accepted")
+        try:
+            await coro_fn()
+            self._logger.info(f"Lifting {action} completed")
+            self.publish_key_values(**{f"lifting_{action}_done": True})
+        except Exception as exc:
+            self._logger.error(f"Lifting {action} failed: {exc}")
+            self.publish_key_values(**{
+                f"lifting_{action}_done": False,
+                f"lifting_{action}_error": str(exc),
+            })
 
     async def _inorbit_command_handler(self, command_name, args, options):
         self._logger.info(f"Command '{command_name}' ({len(args)} args)")
@@ -318,9 +323,15 @@ class NeuraConnector(Connector):
             elif cmd == "resume_drive":
                 await self.api.resume_drive()
             elif cmd == "extend_lifting":
-                await self.api.extend_lifting_units()
+                asyncio.create_task(self._run_lifting(
+                    self.api.extend_lifting_units, "extend", result_fn,
+                ))
+                return
             elif cmd == "retract_lifting":
-                await self.api.retract_lifting_units()
+                asyncio.create_task(self._run_lifting(
+                    self.api.retract_lifting_units, "retract", result_fn,
+                ))
+                return
             elif cmd == "lock_amr":
                 await self.api.lock_amr()
             elif cmd == "release_amr":
@@ -330,6 +341,22 @@ class NeuraConnector(Connector):
             elif cmd == "soft_estop":
                 active = params.get("--active", "true").lower() == "true"
                 await self.api.set_navitrol_soft_estop(active)
+            elif cmd == "is_target_reached":
+                pid = int(params.get("--point_id", params.get("point_id", 0)))
+                reached = await self.api.is_target_reached(pid)
+                self.publish_key_values(is_target_reached=reached, target_point_id=pid)
+            elif cmd == "is_lifting_extended":
+                extended = await self.api.is_lifting_unit_extended()
+                self.publish_key_values(is_lifting_extended=extended)
+            elif cmd == "is_lifting_retracted":
+                retracted = await self.api.is_lifting_unit_retracted()
+                self.publish_key_values(is_lifting_retracted=retracted)
+
+            # --- gRPC coupler commands via_nrc_ namespace (coupler_mode: true) ---
+            elif self._coupler and cmd.startswith("via_nrc_"):
+                await self._handle_coupler_command(cmd[8:], params, result_fn)
+                return
+
             else:
                 return result_fn(CommandResultCode.FAILURE,
                                  execution_status_details=f"Unknown command: {cmd}")

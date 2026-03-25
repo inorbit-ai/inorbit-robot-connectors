@@ -98,6 +98,15 @@ class NexusPythonApi:
     async def get_machine_id(self) -> int:
         return await self._run(self._amr.get_machine_id)
 
+    async def is_target_reached(self, symbolic_point_id: int) -> bool:
+        return await self._run(self._amr.is_target_reached, symbolic_point_id)
+
+    async def is_lifting_unit_extended(self) -> bool:
+        return await self._run(self._amr.is_lifting_unit_extended)
+
+    async def is_lifting_unit_retracted(self) -> bool:
+        return await self._run(self._amr.is_lifting_unit_retracted)
+
     # --- Commands ---
 
     async def drive_to(self, symbolic_point_id: int, timeout_sec: float = 180):

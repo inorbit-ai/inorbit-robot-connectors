@@ -23,6 +23,7 @@ class RobotConfig(BaseModel):
     map_frame_id: str = "map"
     log_level: str = "INFO"
     connector_version: str = "0.1.0"
+    poll_interval: float = 2.0  
 
     # --- MAV backends (pick one) ---
     robot_ip: Optional[str] = None          # nexus_python_api
@@ -30,6 +31,10 @@ class RobotConfig(BaseModel):
     rest_api_ip: Optional[str] = None       # REST API
     rest_api_port: int = 9000               # REST API
     mav_config_path: Optional[str] = None   # neurapy_mav
+
+    # --- NRC gRPC coupler (nrc_grpc_client) ---
+    nrc_mode: bool = False
+    nrc_server_address: Optional[str] = None
 
     # --- MAiRA ---
     socket_ip: Optional[str] = None
@@ -54,6 +59,8 @@ class RobotConfig(BaseModel):
         elif self.robot_type == "MAiRA":
             if not self.socket_ip:
                 raise ValueError("socket_ip is required for MAiRA")
+        if self.nrc_mode and not self.nrc_server_address:
+            raise ValueError("nrc_server_address is required when nrc_mode is true")
         return self
 
     @property

@@ -188,12 +188,22 @@ class NeuraConnector(Connector):
             )
 
         try:
-            pose, state, speed, batt_pct, batt_v = await asyncio.gather(
+            (pose, state, speed, batt_pct, batt_v,
+             pos_conf, on_route, in_error, estop, soft_estop,
+             lift_ext, lift_ret,
+             ) = await asyncio.gather(
                 self.api.get_2d_pose(),
                 self.api.get_state(),
                 self.api.get_speed(),
                 self.api.get_battery_percentage(),
                 self.api.get_battery_voltage(),
+                self.api.get_position_confidence(),
+                self.api.is_on_route(),
+                self.api.is_in_error(),
+                self.api.is_estop_button(),
+                self.api.is_soft_estop(),
+                self.api.is_lifting_unit_extended(),
+                self.api.is_lifting_unit_retracted(),
             )
         except Exception as exc:
             self._logger.error(f"Telemetry poll error: {exc}")
@@ -231,9 +241,17 @@ class NeuraConnector(Connector):
             "battery percent": batt_pct / 100.0,
             "battery_voltage": batt_v,
             "speed": speed,
-            **extras,
+            "pos_confidence": pos_conf,
+            "is_on_route": on_route,
+            "is_in_error": in_error,
+            "is_estop": estop,
+            "is_soft_estop": soft_estop,
+            "is_lifting_extended": lift_ext,
+            "is_lifting_retracted": lift_ret,
         })
         self.publish_key_values(**kv)
+
+        await asyncio.sleep(self.robot_config.poll_interval)
 
     # ------------------------------------------------------------------
     # Commands (InOrbit -> robot)

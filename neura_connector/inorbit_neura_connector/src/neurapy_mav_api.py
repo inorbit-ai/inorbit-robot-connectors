@@ -19,7 +19,12 @@ class NeurapyMavApi:
         logger.info(f"neurapy_mav initialized from {config_path}")
 
     async def _run(self, func, *args):
-        return await asyncio.to_thread(func, *args)
+        try:
+            return await asyncio.to_thread(func, *args)
+        except Exception as exc:
+            fn_name = getattr(func, "__name__", str(func))
+            logger.error(f"{fn_name}({args}) failed: {exc}")
+            raise
 
     async def close(self):
         pass

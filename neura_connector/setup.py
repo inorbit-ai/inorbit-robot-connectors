@@ -7,6 +7,7 @@ requirements = [
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.11,<3",
     "inorbit-connector~=2.2.0",
+    "psutil>=5.9",
 ]
 
 setup(

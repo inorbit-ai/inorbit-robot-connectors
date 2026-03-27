@@ -8,8 +8,3 @@ services:
       - ../maps:/app/maps
     network_mode: host
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-          cpus: "0.5"

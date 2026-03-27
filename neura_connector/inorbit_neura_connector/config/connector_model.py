@@ -1,7 +1,7 @@
 import yaml
 import os
 import logging
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 from pydantic import BaseModel, ValidationError, model_validator
 
@@ -23,7 +23,8 @@ class RobotConfig(BaseModel):
     map_frame_id: str = "map"
     log_level: str = "INFO"
     connector_version: str = "0.1.0"
-    poll_interval: float = 2.0  
+    poll_interval: float = 2.0
+    navitec_symbolic_points: List[int] = []
 
     # --- MAV backends (pick one) ---
     robot_ip: Optional[str] = None          # nexus_python_api

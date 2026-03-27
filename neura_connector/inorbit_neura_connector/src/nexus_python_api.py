@@ -2,6 +2,7 @@
 """
 
 import asyncio
+import concurrent.futures
 import logging
 import os
 import threading
@@ -20,6 +21,9 @@ class NexusPythonApi:
         self._pose_lock = threading.Lock()
         self._latest_pose: Optional[Dict[str, float]] = None
         self._streaming = False
+        self._cmd_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=2, thread_name_prefix="dds-cmd",
+        )
         logger.info(f"AMR initialized (robot={robot_ip}, client={client_ip})")
 
     def _on_pose(self, pose_stamped):
@@ -31,7 +35,27 @@ class NexusPythonApi:
             }
 
     async def _run(self, func, *args):
-        return await asyncio.to_thread(func, *args)
+        """Run a DDS call on the default thread pool (telemetry)."""
+        try:
+            return await asyncio.to_thread(func, *args)
+        except Exception as exc:
+            fn_name = getattr(func, "__name__", str(func))
+            logger.error(f"{fn_name}({args}) failed: {exc}")
+            raise
+
+    async def _run_cmd(self, func, *args):
+        """Run a DDS call on a dedicated thread pool (commands).
+
+        Keeps long-running commands (drive_to, extend/retract lifting)
+        off the default pool so telemetry threads are never starved.
+        """
+        loop = asyncio.get_running_loop()
+        try:
+            return await loop.run_in_executor(self._cmd_executor, func, *args)
+        except Exception as exc:
+            fn_name = getattr(func, "__name__", str(func))
+            logger.error(f"{fn_name}({args}) failed: {exc}")
+            raise
 
     async def start_streaming(self):
         if not self._streaming:
@@ -47,6 +71,7 @@ class NexusPythonApi:
 
     async def close(self):
         await self.stop_streaming()
+        self._cmd_executor.shutdown(wait=False)
 
     # --- Telemetry ---
 
@@ -107,34 +132,34 @@ class NexusPythonApi:
     async def is_lifting_unit_retracted(self) -> bool:
         return await self._run(self._amr.is_lifting_unit_retracted)
 
-    # --- Commands ---
+    # --- Commands (use dedicated thread pool to avoid starving telemetry) ---
 
     async def drive_to(self, symbolic_point_id: int, timeout_sec: float = 180):
-        await self._run(self._amr.drive_to, symbolic_point_id, timeout_sec)
+        await self._run_cmd(self._amr.drive_to_blocking, symbolic_point_id, timeout_sec)
 
     async def abort_drive(self):
-        await self._run(self._amr.abort_drive)
+        await self._run_cmd(self._amr.abort_drive)
 
     async def pause_drive(self):
-        await self._run(self._amr.pause_drive)
+        await self._run_cmd(self._amr.pause_drive)
 
     async def resume_drive(self):
-        await self._run(self._amr.resume_drive)
+        await self._run_cmd(self._amr.resume_drive)
 
     async def extend_lifting_units(self, timeout_sec: float = 3600):
-        await self._run(self._amr.extend_lifting_units, timeout_sec)
+        await self._run_cmd(self._amr.extend_lifting_units, timeout_sec)
 
     async def retract_lifting_units(self, timeout_sec: float = 3600):
-        await self._run(self._amr.retract_lifting_units, timeout_sec)
+        await self._run_cmd(self._amr.retract_lifting_units, timeout_sec)
 
     async def lock_amr(self):
-        return await self._run(self._amr.lock_amr)
+        return await self._run_cmd(self._amr.lock_amr)
 
     async def release_amr(self):
-        await self._run(self._amr.release_amr)
+        await self._run_cmd(self._amr.release_amr)
 
     async def reset(self, timeout_sec: float = 30):
-        return await self._run(self._amr.reset, timeout_sec)
+        return await self._run_cmd(self._amr.reset, timeout_sec)
 
     async def set_navitrol_soft_estop(self, active: bool, timeout_sec: float = 10):
-        await self._run(self._amr.set_navitrol_soft_estop, active, timeout_sec)
+        await self._run_cmd(self._amr.set_navitrol_soft_estop, active, timeout_sec)

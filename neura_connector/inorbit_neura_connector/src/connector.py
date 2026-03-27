@@ -32,6 +32,10 @@ MAV_STATES = {
     8: "PAUSE",
 }
 
+ACTION_ONGOING = "ongoing"
+ACTION_SUCCESS = "success"
+ACTION_FAILURE = "failure"
+
 
 class NeuraConnector(Connector):
     """Bridges a NEURA robot with InOrbit."""
@@ -43,11 +47,13 @@ class NeuraConnector(Connector):
             connector_version=get_module_version(),
             api_key=robot_config.inorbit_api_key or "",
             connector_config={"serial_number": robot_config.serial_number},
+            update_freq=1.0 / robot_config.poll_interval,
             fleet=[{"robot_id": robot_config.robot_name}],
         )
         super().__init__(
             robot_id=robot_config.robot_name,
             config=config,
+            publish_connector_system_stats=True,
         )
 
         self.robot_config = robot_config
@@ -243,23 +249,27 @@ class NeuraConnector(Connector):
     # Commands (InOrbit -> robot)
     # ------------------------------------------------------------------
 
-    async def _run_lifting(self, coro_fn, action: str, result_fn):
-        """Run a blocking lifting command in the background.
+    async def _run_mav_action(self, coro, cmd: str, result_fn):
+        """Fire-and-forget wrapper for blocking MAV commands.
 
         Sends SUCCESS immediately (command accepted), then publishes the
         final status as key-values once the SDK call completes.
         """
+        action_key = f"action_{cmd}"
         result_fn(CommandResultCode.SUCCESS,
-                  execution_status_details=f"{action} lifting command accepted")
+                  execution_status_details=f"{cmd} accepted")
+        self.publish_key_values(**{action_key: ACTION_ONGOING})
         try:
-            await coro_fn()
-            self._logger.info(f"Lifting {action} completed")
-            self.publish_key_values(**{f"lifting_{action}_done": True})
+            await coro
+            await asyncio.sleep(0.2)
+            self._logger.info(f"MAV '{cmd}' completed")
+            self.publish_key_values(**{action_key: ACTION_SUCCESS})
         except Exception as exc:
-            self._logger.error(f"Lifting {action} failed: {exc}")
+            await asyncio.sleep(0.2)
+            self._logger.error(f"MAV '{cmd}' failed: {exc}")
             self.publish_key_values(**{
-                f"lifting_{action}_done": False,
-                f"lifting_{action}_error": str(exc),
+                action_key: ACTION_FAILURE,
+                f"{action_key}_error": str(exc),
             })
 
     async def _inorbit_command_handler(self, command_name, args, options):
@@ -315,7 +325,11 @@ class NeuraConnector(Connector):
             # --- Single-step commands ---
             if cmd == "drive_to":
                 pid = int(params.get("--point_id", params.get("point_id", 0)))
-                await self.api.drive_to(pid, float(params.get("--timeout", 180)))
+                timeout = float(params.get("--timeout", 180))
+                asyncio.create_task(self._run_mav_action(
+                    self.api.drive_to(pid, timeout), "drive_to", result_fn,
+                ))
+                return
             elif cmd == "abort_drive":
                 await self.api.abort_drive()
             elif cmd == "pause_drive":
@@ -323,13 +337,13 @@ class NeuraConnector(Connector):
             elif cmd == "resume_drive":
                 await self.api.resume_drive()
             elif cmd == "extend_lifting":
-                asyncio.create_task(self._run_lifting(
-                    self.api.extend_lifting_units, "extend", result_fn,
+                asyncio.create_task(self._run_mav_action(
+                    self.api.extend_lifting_units(), "lifting_extend", result_fn,
                 ))
                 return
             elif cmd == "retract_lifting":
-                asyncio.create_task(self._run_lifting(
-                    self.api.retract_lifting_units, "retract", result_fn,
+                asyncio.create_task(self._run_mav_action(
+                    self.api.retract_lifting_units(), "lifting_retract", result_fn,
                 ))
                 return
             elif cmd == "lock_amr":

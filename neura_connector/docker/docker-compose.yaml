@@ -1,0 +1,10 @@
+services:
+  neura-connector:
+    image: inorbit-neura-connector:latest
+    container_name: inorbit-neura-connector
+    volumes:
+      - ../inorbit_neura_connector:/app/inorbit_neura_connector
+      - ../config:/app/config
+      - ../maps:/app/maps
+    network_mode: host
+    restart: unless-stopped

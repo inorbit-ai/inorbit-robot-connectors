@@ -1,0 +1,26 @@
+# --- Common ---
+robot_name: my-robot
+robot_type: MAV
+serial_number: NR-XXXXX
+inorbit_api_key: "${INORBIT_API_KEY}"
+map_yaml_path: /app/maps/robot_area_0.yaml
+map_frame_id: "map"
+log_level: "INFO"
+connector_version: "0.1.0"
+# Seconds between telemetry polls. Prevents flooding MQTT with back-to-back
+poll_interval: 2.0
+# --- MAV backends (pick one) ---
+
+# Option A: nexus_amr_api
+robot_ip: 192.168.1.100
+client_ip: 192.168.1.50
+
+# Option B: REST API
+# rest_api_ip: 192.168.1.100
+# rest_api_port: 9000
+
+# Option C: neurapy_mav
+# mav_config_path: config/mav_config.json
+
+# --- MAiRA ---
+# socket_ip: 192.168.1.200

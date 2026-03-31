@@ -32,6 +32,9 @@ dependencies = [
     "aiosql~=9.5",
     "aiosqlite~=0.19.0",
     "async-timeout~=4.0.3",
+    "pillow>=12.1.1",
+    "pygments>=2.20.0",
+    "requests>=2.33.0",
 ]
 
 [project.urls]

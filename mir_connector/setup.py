@@ -27,7 +27,7 @@ requirements = [
 test_requirements = [
     "pytest>=3",
     "requests_mock==1.11",
-    "deepdiff==6.7",
+    "deepdiff>=8.6.2",
     "pytest-asyncio>=0.23",
     "pytest-httpx~=0.35",
 ]

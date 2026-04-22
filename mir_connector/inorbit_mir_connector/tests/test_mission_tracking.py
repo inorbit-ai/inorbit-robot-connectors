@@ -47,9 +47,7 @@ async def test_skips_reporting_while_edge_executor_busy(
     mission_tracking.get_current_mission = AsyncMock(return_value=sample_mir_mission_data)
 
     # Executor idle — robot-side tracking should publish.
-    mission_tracking.inorbit_sess.missions_module.executor.wait_until_idle = Mock(
-        return_value=True
-    )
+    mission_tracking.inorbit_sess.missions_module.executor.wait_until_idle = Mock(return_value=True)
     await mission_tracking.report_mission(sample_status_data, sample_metrics_data)
     assert len(mission_tracking.get_current_mission.call_args_list) == 1
     assert len(mission_tracking.inorbit_sess.publish_key_values.call_args_list) == 1

@@ -100,7 +100,6 @@ class MirConnector(Connector):
             mir_api=self.mir_api,
             inorbit_sess=self._get_session(),
             robot_tz_info=self.robot_tz_info,
-            enable_io_mission_tracking=True,
         )
 
         # Set up InOrbit Edge Executor for mission execution
@@ -198,14 +197,8 @@ class MirConnector(Connector):
             # 3. Needs an interface for supporting mission related actions
 
             if script_name == "queue_mission" and script_args[0] == "--mission_id":
-                self.mission_tracking.mir_mission_tracking_enabled = (
-                    self._get_session().missions_module.executor.wait_until_idle(0)
-                )
                 await self.mir_api.queue_mission(script_args[1])
             elif script_name == "run_mission_now" and script_args[0] == "--mission_id":
-                self.mission_tracking.mir_mission_tracking_enabled = (
-                    self._get_session().missions_module.executor.wait_until_idle(0)
-                )
                 await self.mir_api.abort_all_missions()
                 await self.mir_api.queue_mission(script_args[1])
             elif script_name == "abort_missions":

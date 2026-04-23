@@ -18,13 +18,8 @@ class MirInorbitMissionTracking:
         mir_api,
         inorbit_sess,
         robot_tz_info,
-        enable_io_mission_tracking=True,
     ):
         self.logger = logging.getLogger(name=self.__class__.__name__)
-        # Hack to allow MiR defined missions and InOrbit missions to co-exist
-        # When an InOrbit mission is running, we disable tracking for MiR defined
-        # missions.
-        self.mir_mission_tracking_enabled = True
         self.executing_mission_id = None
         self.last_reported_mission_id = None
         self.last_reported_mission_progress = 0.0
@@ -67,10 +62,9 @@ class MirInorbitMissionTracking:
         return mission
 
     async def report_mission(self, status, metrics):
-        # Hack to allow MiR defined missions and InOrbit missions to co-exist
-        # When an InOrbit mission is running, we disable tracking for MiR defined
-        # missions.
-        if not self.mir_mission_tracking_enabled:
+        # When the edge mission executor is running an InOrbit-dispatched mission, it owns
+        # mission tracking. Skip robot-side polling to avoid duplicate reports.
+        if not self.inorbit_sess.missions_module.executor.wait_until_idle(0):
             return
         mission = await self.get_current_mission()
         if mission:

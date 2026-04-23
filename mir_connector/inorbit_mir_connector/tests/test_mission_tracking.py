@@ -18,7 +18,6 @@ def mission_tracking():
         mir_api=MagicMock(autospec=MirApiV2),
         inorbit_sess=MagicMock(autospec=RobotSession),
         robot_tz_info=pytz.timezone("UTC"),
-        enable_io_mission_tracking=True,
     )
     mission_tracking.inorbit_sess.missions_module.executor.wait_until_idle = Mock(return_value=True)
     return mission_tracking
@@ -42,28 +41,32 @@ async def test_get_current_mission(mission_tracking):
 
 
 @pytest.mark.asyncio
-async def test_toggle_mir_tracking(
+async def test_skips_reporting_while_edge_executor_busy(
     mission_tracking, sample_metrics_data, sample_status_data, sample_mir_mission_data
 ):
     mission_tracking.get_current_mission = AsyncMock(return_value=sample_mir_mission_data)
 
-    # MiR tracking should be enabled
-    mission_tracking.mir_mission_tracking_enabled = True
+    # Executor idle — robot-side tracking should publish.
+    mission_tracking.inorbit_sess.missions_module.executor.wait_until_idle = Mock(return_value=True)
     await mission_tracking.report_mission(sample_status_data, sample_metrics_data)
     assert len(mission_tracking.get_current_mission.call_args_list) == 1
+    assert len(mission_tracking.inorbit_sess.publish_key_values.call_args_list) == 1
     mission_tracking.get_current_mission.reset_mock()
+    mission_tracking.inorbit_sess.publish_key_values.reset_mock()
 
-    # Disable mission tracking. This is usually set by the connector
-    mission_tracking.mir_mission_tracking_enabled = False
+    # Executor busy (running an InOrbit-dispatched mission) — tracker must stay silent.
+    mission_tracking.inorbit_sess.missions_module.executor.wait_until_idle = Mock(
+        return_value=False
+    )
     await mission_tracking.report_mission(sample_status_data, sample_metrics_data)
     assert len(mission_tracking.get_current_mission.call_args_list) == 0
+    assert len(mission_tracking.inorbit_sess.publish_key_values.call_args_list) == 0
 
 
 @pytest.mark.asyncio
 async def test_report_mission(
     mission_tracking, sample_metrics_data, sample_status_data, sample_mir_mission_data
 ):
-    mission_tracking.mir_mission_tracking_enabled = True
     mission_tracking.get_current_mission = AsyncMock(return_value=sample_mir_mission_data)
     await mission_tracking.report_mission(sample_status_data, sample_metrics_data)
     reported_mission = mission_tracking.inorbit_sess.publish_key_values.call_args.kwargs[
@@ -96,26 +99,6 @@ async def test_report_mission(
     assert DeepDiff(reported_mission, should_be) == {}
 
 
-@pytest.mark.asyncio
-async def test_toggle_inorbit_tracking(
-    mission_tracking, sample_metrics_data, sample_status_data, sample_mir_mission_data
-):
-    # Enable MiR tracking. This is ussually set by the connector
-    mission_tracking.mir_mission_tracking_enabled = True
-    mission_tracking.get_current_mission = AsyncMock(return_value=sample_mir_mission_data)
-
-    # Should be enabled
-    await mission_tracking.report_mission(sample_status_data, sample_metrics_data)
-    assert len(mission_tracking.get_current_mission.call_args_list) == 1
-    assert len(mission_tracking.inorbit_sess.publish_key_values.call_args_list) == 1
-
-    # Disable InOrbit Mission Tracking
-    mission_tracking.enable_io_mission_tracking = False
-    await mission_tracking.report_mission(sample_status_data, sample_metrics_data)
-    assert len(mission_tracking.get_current_mission.call_args_list) == 2
-    assert len(mission_tracking.inorbit_sess.publish_key_values.call_args_list) == 1
-
-
 class TestSafeLocalizeTimestamp:
     """Test suite for the _safe_localize_timestamp function."""
 
@@ -126,7 +109,6 @@ class TestSafeLocalizeTimestamp:
             mir_api=MagicMock(autospec=MirApiV2),
             inorbit_sess=MagicMock(autospec=RobotSession),
             robot_tz_info=pytz.timezone("America/Los_Angeles"),
-            enable_io_mission_tracking=True,
         )
 
     def test_timestamp_without_timezone_info(self, pst_mission_tracking):
@@ -173,7 +155,6 @@ class TestSafeLocalizeTimestamp:
             mir_api=MagicMock(autospec=MirApiV2),
             inorbit_sess=MagicMock(autospec=RobotSession),
             robot_tz_info=pytz.timezone("UTC"),
-            enable_io_mission_tracking=True,
         )
 
         # Timestamp without timezone should get UTC applied

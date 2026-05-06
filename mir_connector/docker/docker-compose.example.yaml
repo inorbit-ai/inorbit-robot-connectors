@@ -50,7 +50,11 @@ x-mir-connector: &mir-connector
     # SSL certificates for MiR robot verification
     - ../certs:/app/certs:ro
   
-  # Use host networking to access MiR robots
+  # Use host networking to access MiR robots.
+  # When `metrics.enabled: true` is set in your fleet YAML, /metrics is
+  # reachable directly on the host (default port 9090). With multiple
+  # robots on one host, give each robot a unique `metrics.bind_port` to
+  # avoid collisions.
   network_mode: host
   
   # Auto-restart policy - works with built-in health monitoring

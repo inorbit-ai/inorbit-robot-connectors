@@ -8,7 +8,7 @@ from setuptools import setup
 requirements = [
     "requests>=2.31,<3.0",
     "httpx>=0.28.1,<0.29.0",
-    "prometheus-client>=0.14.1",
+    "prometheus-client>=0.25,<1.0",
     "pytz>=2022.7",
     # NOTE: both pyyaml and ruamel.yaml packages are included here. Otherwise, the
     # edge-sdk dependency won't run. Consider migrating edge-sdk yaml dependency
@@ -19,8 +19,8 @@ requirements = [
     "pydantic-settings>=2.11,<3",
     "tenacity>=9.1.2",
     # InOrbit
-    "inorbit-edge[video]>=1.25",
-    "inorbit-connector~=2.2.0",
+    "inorbit-edge[video]>=2.0,<3",
+    "inorbit-connector~=2.3.0",
     "inorbit-edge-executor~=3.2.5",
 ]
 

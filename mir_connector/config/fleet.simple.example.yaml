@@ -11,7 +11,16 @@ common:
   mir_use_ssl: false
   
   enable_temporary_mission_group: true
-  
+
+  # Optional: expose Prometheus metrics on the host. Off by default.
+  # When enabled, the connector serves /metrics on bind_host:bind_port.
+  # If running multiple connectors on one host, give each a unique bind_port.
+  # metrics:
+  #   enabled: true
+  #   bind_host: 0.0.0.0
+  #   bind_port: 9090
+  #   discovery_dir: null   # set a writable dir to use Prometheus file_sd
+
   env_vars:
     INORBIT_API_KEY: "${INORBIT_API_KEY}"
 

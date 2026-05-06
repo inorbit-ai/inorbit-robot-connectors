@@ -55,9 +55,7 @@ def _record_retry(retry_state):
         endpoint = retry_state.args[1]
     elif "endpoint" in (retry_state.kwargs or {}):
         endpoint = retry_state.kwargs["endpoint"]
-    mir_api_retries_total.add(
-        1, {"method": method, "endpoint": endpoint_label(endpoint or "")}
-    )
+    mir_api_retries_total.add(1, {"method": method, "endpoint": endpoint_label(endpoint or "")})
 
 
 class MirApiBaseClass(ABC):
@@ -151,9 +149,7 @@ class MirApiBaseClass(ABC):
         else:
             return True, None  # Use default CA bundle
 
-    async def _record_request(
-        self, method: str, endpoint: str, **kwargs
-    ) -> httpx.Response:
+    async def _record_request(self, method: str, endpoint: str, **kwargs) -> httpx.Response:
         """Issue an HTTP request and record metrics for the attempt.
 
         Lives outside the retry decorator so each individual attempt — not

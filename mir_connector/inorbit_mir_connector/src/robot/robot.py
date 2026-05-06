@@ -113,13 +113,9 @@ class Robot:
             self._status = status
             self._handle_success()
             self._last_success_ts[loop_name] = time.monotonic()
-            mir_polling_ticks_total.add(
-                1, {"loop": loop_name, "outcome": "success"}
-            )
+            mir_polling_ticks_total.add(1, {"loop": loop_name, "outcome": "success"})
         except Exception as e:
-            mir_polling_ticks_total.add(
-                1, {"loop": loop_name, "outcome": classify_outcome(e)}
-            )
+            mir_polling_ticks_total.add(1, {"loop": loop_name, "outcome": classify_outcome(e)})
             self._handle_error(e, "robot status fetch")
             # Keep the last known status on error
 
@@ -131,13 +127,9 @@ class Robot:
             self._metrics = metrics
             self._handle_success()
             self._last_success_ts[loop_name] = time.monotonic()
-            mir_polling_ticks_total.add(
-                1, {"loop": loop_name, "outcome": "success"}
-            )
+            mir_polling_ticks_total.add(1, {"loop": loop_name, "outcome": "success"})
         except Exception as e:
-            mir_polling_ticks_total.add(
-                1, {"loop": loop_name, "outcome": classify_outcome(e)}
-            )
+            mir_polling_ticks_total.add(1, {"loop": loop_name, "outcome": classify_outcome(e)})
             self._handle_error(e, "robot metrics fetch")
             # Keep the last known metrics on error
 
@@ -149,13 +141,9 @@ class Robot:
             self._diagnostics = diagnostics
             self._handle_success()
             self._last_success_ts[loop_name] = time.monotonic()
-            mir_polling_ticks_total.add(
-                1, {"loop": loop_name, "outcome": "success"}
-            )
+            mir_polling_ticks_total.add(1, {"loop": loop_name, "outcome": "success"})
         except Exception as e:
-            mir_polling_ticks_total.add(
-                1, {"loop": loop_name, "outcome": classify_outcome(e)}
-            )
+            mir_polling_ticks_total.add(1, {"loop": loop_name, "outcome": classify_outcome(e)})
             self._handle_error(e, "robot diagnostics fetch")
             # Keep the last known diagnostics on error
 

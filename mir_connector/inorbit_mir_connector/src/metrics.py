@@ -134,9 +134,7 @@ def endpoint_label(path: str) -> str:
     normalized = path.lstrip("/")
     for prefix, label in _ENDPOINT_PREFIXES:
         prefix_normalized = prefix.lstrip("/")
-        if normalized == prefix_normalized or normalized.startswith(
-            prefix_normalized + "/"
-        ):
+        if normalized == prefix_normalized or normalized.startswith(prefix_normalized + "/"):
             return label
     return "other"
 

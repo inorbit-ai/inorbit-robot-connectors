@@ -282,9 +282,7 @@ class MirApiV2(MirApiBaseClass):
         start = time.monotonic()
         exc: Optional[BaseException] = None
         try:
-            async with httpx.AsyncClient(
-                base_url=self.mir_base_url, timeout=30
-            ) as client:
+            async with httpx.AsyncClient(base_url=self.mir_base_url, timeout=30) as client:
                 res = await client.get("/", params=parameters)
                 res.raise_for_status()
                 self.logger.debug(f"Waypoint response: {res.text}")
@@ -297,9 +295,7 @@ class MirApiV2(MirApiBaseClass):
                 "endpoint": "send_waypoint",
                 "outcome": classify_outcome(exc),
             }
-            mir_api_request_duration_seconds.record(
-                time.monotonic() - start, attrs
-            )
+            mir_api_request_duration_seconds.record(time.monotonic() - start, attrs)
             mir_api_requests_total.add(1, attrs)
 
     async def get_status(self):

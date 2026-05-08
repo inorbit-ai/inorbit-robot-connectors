@@ -48,10 +48,11 @@ class Robot:
         self._max_backoff_time = 30.0  # Max 30 seconds backoff
         self._last_error_time = 0
 
-        # Per-loop monotonic timestamps of the last successful poll, read by
-        # the ``mir_polling_last_success_age_seconds`` ObservableGauge.
+        # Per-loop monotonic timestamps of the last successful REST poll
+        # (status / metrics / diagnostics), read by the
+        # ``mir_polling_last_success_age_seconds`` ObservableGauge.
         # Loops with no entry yet report 0.0.
-        self._last_success_ts: dict[str, float] = {}
+        self._last_polling_success_ts: dict[str, float] = {}
 
     def start(self) -> None:
         """Start the tasks that fetch data from the robot."""
@@ -112,7 +113,7 @@ class Robot:
             status = await self._mir_api.get_status()
             self._status = status
             self._handle_success()
-            self._last_success_ts[loop_name] = time.monotonic()
+            self._last_polling_success_ts[loop_name] = time.monotonic()
             mir_polling_ticks_total.add(1, {"loop": loop_name, "outcome": "success"})
         except Exception as e:
             mir_polling_ticks_total.add(1, {"loop": loop_name, "outcome": classify_outcome(e)})
@@ -126,7 +127,7 @@ class Robot:
             metrics = await self._mir_api.get_metrics()
             self._metrics = metrics
             self._handle_success()
-            self._last_success_ts[loop_name] = time.monotonic()
+            self._last_polling_success_ts[loop_name] = time.monotonic()
             mir_polling_ticks_total.add(1, {"loop": loop_name, "outcome": "success"})
         except Exception as e:
             mir_polling_ticks_total.add(1, {"loop": loop_name, "outcome": classify_outcome(e)})
@@ -140,7 +141,7 @@ class Robot:
             diagnostics = await self._mir_api.get_diagnostics()
             self._diagnostics = diagnostics
             self._handle_success()
-            self._last_success_ts[loop_name] = time.monotonic()
+            self._last_polling_success_ts[loop_name] = time.monotonic()
             mir_polling_ticks_total.add(1, {"loop": loop_name, "outcome": "success"})
         except Exception as e:
             mir_polling_ticks_total.add(1, {"loop": loop_name, "outcome": classify_outcome(e)})

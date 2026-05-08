@@ -279,6 +279,10 @@ class MirApiV2(MirApiBaseClass):
         # send_waypoint bypasses MirApiBase._get because it hits the legacy
         # robot UI endpoint at the bare base URL rather than /api/v2.0.0/...
         # We instrument it inline here so the metrics still cover this call.
+        # TODO: drop this legacy endpoint and the inline metric instrumentation
+        # once the MiR-side replacement on the v2 REST API is in place. The
+        # call should then go through ``MirApiBase._get`` and be covered by
+        # the shared retry + metrics decorators automatically. CC @b-Tomas.
         start = time.monotonic()
         exc: Optional[BaseException] = None
         try:

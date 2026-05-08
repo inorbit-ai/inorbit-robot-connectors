@@ -19,8 +19,8 @@ Domain instrument groups:
   via :func:`endpoint_label` to keep Prometheus cardinality finite.
 * Polling layer (``mir_polling_*``) — per-loop tick counter plus an
   ObservableGauge reporting seconds elapsed since the last successful poll.
-  A growing ``last_success_age`` is the deadlock signal called out in
-  PLATFORM-3056.
+  A growing ``last_success_age`` is the signal we use to flag a stalled
+  polling loop (potential MiR API deadlock).
 * Circuit breaker (``mir_circuit_breaker_opens``) — counts trips of the
   circuit breaker pattern in :class:`Robot` (>= max_consecutive_errors).
 """
@@ -145,10 +145,10 @@ def endpoint_label(path: str) -> str:
 def register_polling_liveness_gauge(robot) -> None:
     """Register the ``mir_polling_last_success_age_seconds`` ObservableGauge.
 
-    Reads ``robot._last_success_ts`` (a ``dict[str, float]`` of monotonic
-    timestamps keyed by loop name) on every Prometheus scrape and reports
-    ``time.monotonic() - ts`` per loop. Loops that have never succeeded
-    report 0.0.
+    Reads ``robot._last_polling_success_ts`` (a ``dict[str, float]`` of
+    monotonic timestamps keyed by loop name) on every Prometheus scrape and
+    reports ``time.monotonic() - ts`` per loop. Loops that have never
+    succeeded report 0.0.
 
     Should be called once from :meth:`Robot.start` after the polling tasks
     are launched. Safe to call when the global MeterProvider is the OTEL
@@ -158,7 +158,7 @@ def register_polling_liveness_gauge(robot) -> None:
     def _callback(_options):
         now = time.monotonic()
         observations = []
-        for loop_name, ts in robot._last_success_ts.items():
+        for loop_name, ts in robot._last_polling_success_ts.items():
             age = now - ts if ts else 0.0
             observations.append(Observation(age, {"loop": loop_name}))
         return observations

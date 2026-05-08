@@ -39,22 +39,46 @@ def should_retry_http_error(exception):
     return False
 
 
-# Wraps tenacity's stock before_sleep logger and additionally records a retry
-# in our metrics. retry_state.fn is the wrapped method (e.g. ``_get``); for
-# instance methods the bound endpoint is the second positional arg
-# (``args[0]`` is ``self``).
+# Tenacity's stock before_sleep logger. Reused inside ``_record_retry`` so we
+# keep the existing WARNING-level log line on every retry attempt.
 _before_sleep_log = before_sleep_log(logging.getLogger(__name__), logging.WARNING)
 
 
 def _record_retry(retry_state):
+    """Tenacity ``before_sleep`` hook that logs the retry and bumps
+    ``mir_api_retries_total``.
+
+    Tenacity calls this between attempts (after a failure, before the next
+    sleep) with a ``RetryCallState`` describing the wrapped call. We use it
+    to derive ``method`` / ``endpoint`` labels for the retry counter so the
+    metric matches the labels emitted by ``_record_request``.
+
+    Label extraction:
+    - ``retry_state.fn`` is the wrapped function (e.g. ``_get``); we strip
+      the leading underscore and uppercase it to get the HTTP method
+      (``GET`` / ``POST`` / ``DELETE`` / …).
+    - For bound instance methods, tenacity passes ``self`` as
+      ``args[0]`` and the endpoint string as ``args[1]``. If the caller
+      passed it as a keyword instead we fall back to ``kwargs["endpoint"]``.
+    - The endpoint is funneled through ``endpoint_label`` to keep
+      cardinality bounded (mission IDs etc. are collapsed to their parent).
+    """
+    # 1. Preserve the stock tenacity warning log line.
     _before_sleep_log(retry_state)
+
+    # 2. Recover the HTTP verb from the wrapped function name.
     fn_name = getattr(retry_state.fn, "__name__", "") or ""
     method = fn_name.lstrip("_").upper() or "UNKNOWN"
+
+    # 3. Recover the endpoint from positional or keyword args.
     endpoint = ""
     if retry_state.args and len(retry_state.args) > 1:
+        # args[0] is ``self`` for bound instance methods, args[1] is endpoint.
         endpoint = retry_state.args[1]
     elif "endpoint" in (retry_state.kwargs or {}):
         endpoint = retry_state.kwargs["endpoint"]
+
+    # 4. Bump the retry counter with bounded-cardinality labels.
     mir_api_retries_total.add(1, {"method": method, "endpoint": endpoint_label(endpoint or "")})
 
 
@@ -155,7 +179,7 @@ class MirApiBaseClass(ABC):
         Lives outside the retry decorator so each individual attempt — not
         just the final one — increments ``mir_api_requests_total`` and
         records duration. That gives us per-attempt latency visibility,
-        which is the deadlock-detection signal called out in PLATFORM-3056.
+        which is the signal we use to detect MiR API stalls / deadlocks.
         """
         start = time.monotonic()
         exc: Optional[BaseException] = None

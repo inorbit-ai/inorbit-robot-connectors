@@ -6,8 +6,11 @@
 from setuptools import setup
 
 requirements = [
-    "requests>=2.31,<3.0",
     "httpx>=0.28.1,<0.29.0",
+    # ``prometheus_client.parser`` is used directly to consume MiR's
+    # Prometheus-formatted /metrics endpoint. It is also pulled transitively
+    # via ``opentelemetry-exporter-prometheus`` (a dep of inorbit-connector
+    # 2.3), but we declare it explicitly because the import is direct.
     "prometheus-client>=0.25,<1.0",
     "pytz>=2022.7",
     # NOTE: both pyyaml and ruamel.yaml packages are included here. Otherwise, the
@@ -18,9 +21,10 @@ requirements = [
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.11,<3",
     "tenacity>=9.1.2",
-    # InOrbit
-    "inorbit-edge[video]>=2.0,<3",
-    "inorbit-connector~=2.3.0",
+    # InOrbit. The ``[video]`` extra on inorbit-connector pulls
+    # ``inorbit-edge[video]>=2.1,<3`` transitively, so we don't declare
+    # inorbit-edge separately.
+    "inorbit-connector[video]~=2.3.0",
     "inorbit-edge-executor~=3.2.5",
 ]
 

@@ -45,8 +45,8 @@ _before_sleep_log = before_sleep_log(logging.getLogger(__name__), logging.WARNIN
 
 
 def _record_retry(retry_state):
-    """Tenacity ``before_sleep`` hook that logs the retry and bumps
-    ``mir_api_retries_total``.
+    """Logs and counts retries. It leverages Tenacity ``before_sleep`` hook
+    that logs the retry and bumps ``mir_api_retries_total``.
 
     Tenacity calls this between attempts (after a failure, before the next
     sleep) with a ``RetryCallState`` describing the wrapped call. We use it

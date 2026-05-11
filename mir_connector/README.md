@@ -617,6 +617,50 @@ certs/robot-2/ca.crt, client.crt, client.key
 - Never commit `.key` files to version control
 - Keep certificates updated when robot certificates change
 
+### 📈 Metrics (optional)
+
+The connector can expose Prometheus-format metrics so fleet operators can monitor connector health and detect MiR API stalls (e.g. potential deadlocks). Metrics are **off by default** and add no overhead until enabled.
+
+**Enable in your fleet YAML** (under `common:` or per-robot):
+
+```yaml
+metrics:
+  enabled: true
+  bind_host: 0.0.0.0
+  bind_port: 9090
+  discovery_dir: null   # set to a writable dir to use Prometheus file_sd
+```
+
+Then scrape with:
+
+```bash
+curl http://localhost:9090/metrics
+```
+
+**What's exported**
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `inorbit_connector_up` | gauge | — | 1 while the connector main thread is alive |
+| `inorbit_connector_session_connected` | gauge | `robot_id` | 1 when the InOrbit MQTT session is connected |
+| `inorbit_connector_execution_loop_ticks_total` | counter | — | Successful run-loop iterations |
+| `inorbit_connector_execution_loop_errors_total` | counter | — | Exceptions caught in the run-loop |
+| `mir_api_requests_total` | counter | `method`, `endpoint`, `outcome` | HTTP calls to the MiR robot API |
+| `mir_api_request_duration_seconds` | histogram | `method`, `endpoint`, `outcome` | Latency of MiR API calls — rising p99 is an early deadlock signal |
+| `mir_api_retries_total` | counter | `method`, `endpoint` | Tenacity retry attempts |
+| `mir_polling_ticks_total` | counter | `loop`, `outcome` | Robot data polling iterations by loop (`status`, `metrics`, `diagnostics`) |
+| `mir_polling_last_success_age_seconds` | gauge | `loop` | Seconds since last successful poll. **Rising values flag a stalled loop / potential deadlock.** |
+| `mir_circuit_breaker_opens_total` | counter | — | Number of times the circuit breaker tripped (≥5 consecutive errors) |
+
+The Prometheus exporter prefixes every metric with the `service.name` resource attribute (`inorbit_connector` by default), so a metric like `mir_api_requests_total` is exposed as `inorbit_connector_mir_api_requests_total` on the wire.
+
+**Multiple robots on one host**
+
+The Docker compose example uses `network_mode: host`, so each connector instance must listen on a unique port. Override `metrics.bind_port` per robot in your fleet YAML, or set `metrics.bind_host: 127.0.0.1` and put a reverse proxy in front.
+
+**Prometheus discovery**
+
+When `metrics.discovery_dir` is set to a writable directory (e.g. mounted from the host), the connector writes `<connector_id>.json` in [Prometheus file_sd format](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#file_sd_config) on startup and removes it on shutdown. A host-side OTEL collector or Prometheus instance configured with `file_sd_configs` will pick the connector up automatically.
 
 ## Next steps
 

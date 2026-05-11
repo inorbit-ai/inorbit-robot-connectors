@@ -52,6 +52,16 @@ common:
     defaults:
       log_file: /app/inorbit-connector.log
 
+  # Optional: Prometheus metrics endpoint (off by default)
+  # When enabled, the connector serves /metrics for fleet operators to monitor
+  # connector health and detect MiR API stalls. Each robot needs a unique
+  # bind_port if multiple connectors share a host (uncomment per-robot below).
+  # metrics:
+  #   enabled: true
+  #   bind_host: 0.0.0.0
+  #   bind_port: 9090
+  #   discovery_dir: null   # set a writable dir to enable Prometheus file_sd
+
   # Common environment variables
   env_vars:
     INORBIT_API_KEY: "${INORBIT_API_KEY}"

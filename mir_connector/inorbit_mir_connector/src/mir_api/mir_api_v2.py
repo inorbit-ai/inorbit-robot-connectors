@@ -5,12 +5,18 @@
 import hashlib
 import math
 import logging
+import time
 import httpx
 from enum import Enum
 from typing import Optional
 from prometheus_client import parser
 
 from inorbit_edge.missions import MISSION_STATE_EXECUTING
+from inorbit_mir_connector.src.metrics import (
+    classify_outcome,
+    mir_api_request_duration_seconds,
+    mir_api_requests_total,
+)
 from .mir_api_base import MirApiBaseClass
 
 API_V2_CONTEXT_URL = "/api/v2.0.0"
@@ -270,10 +276,31 @@ class MirApiV2(MirApiBaseClass):
         self.logger.info(
             f"Sending waypoint to ({pose['x']:.2f}, {pose['y']:.2f}, {orientation_degs:.1f}°)"
         )
-        async with httpx.AsyncClient(base_url=self.mir_base_url, timeout=30) as client:
-            res = await client.get("/", params=parameters)
-            res.raise_for_status()
-            self.logger.debug(f"Waypoint response: {res.text}")
+        # send_waypoint bypasses MirApiBase._get because it hits the legacy
+        # robot UI endpoint at the bare base URL rather than /api/v2.0.0/...
+        # We instrument it inline here so the metrics still cover this call.
+        # TODO: drop this legacy endpoint and the inline metric instrumentation
+        # once the MiR-side replacement on the v2 REST API is in place. The
+        # call should then go through ``MirApiBase._get`` and be covered by
+        # the shared retry + metrics decorators automatically. CC @b-Tomas.
+        start = time.monotonic()
+        exc: Optional[BaseException] = None
+        try:
+            async with httpx.AsyncClient(base_url=self.mir_base_url, timeout=30) as client:
+                res = await client.get("/", params=parameters)
+                res.raise_for_status()
+                self.logger.debug(f"Waypoint response: {res.text}")
+        except BaseException as e:
+            exc = e
+            raise
+        finally:
+            attrs = {
+                "method": "GET",
+                "endpoint": "send_waypoint",
+                "outcome": classify_outcome(exc),
+            }
+            mir_api_request_duration_seconds.record(time.monotonic() - start, attrs)
+            mir_api_requests_total.add(1, attrs)
 
     async def get_status(self):
         status_api_url = f"/{STATUS_ENDPOINT_V2}"

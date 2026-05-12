@@ -42,6 +42,7 @@ CPU_TEMP_PATH = "/Computer/PC/CPU Temperature"
 MEMORY_PATH = "/Computer/PC/Memory"
 HARDDRIVE_PATH = "/Computer/PC/Harddrive"
 WIFI_PATH = "/Computer/Network/Wifi"
+SAFETY_ESTOP_PATH = "/Safety System/Emergency Stop"
 
 
 class MirConnector(Connector):
@@ -456,6 +457,11 @@ class MirConnector(Connector):
             ssid = wifi_vals.get("SSID")
             freq = wifi_vals.get("Frequency")
             signal = wifi_vals.get("Signal level")
+            ap_mac = wifi_vals.get("Access point MAC")
+            wifi_mac = wifi_vals.get("MAC address")
+            wifi_ip = wifi_vals.get("IP address")
+            link_up_count = wifi_vals.get("Link up count")
+            link_down_count = wifi_vals.get("Link down count")
             if ssid is not None:
                 key_values["wifi_ssid"] = ssid
             if freq is not None:
@@ -471,6 +477,39 @@ class MirConnector(Connector):
                 except (ValueError, TypeError):
                     # Expected parsing errors for malformed signal values
                     pass
+            if ap_mac is not None:
+                key_values["wifi_access_point_mac"] = ap_mac
+            if wifi_mac is not None:
+                key_values["wifi_mac_address"] = wifi_mac
+            if wifi_ip is not None:
+                key_values["wifi_ip_address"] = wifi_ip
+            if link_up_count is not None:
+                try:
+                    key_values["wifi_link_up_count"] = int(float(link_up_count))
+                except (ValueError, TypeError):
+                    pass
+            if link_down_count is not None:
+                try:
+                    key_values["wifi_link_down_count"] = int(float(link_down_count))
+                except (ValueError, TypeError):
+                    pass
+
+            # Safety system emergency-stop decomposition
+            safety_vals = (diagnostics.get(SAFETY_ESTOP_PATH, {}) or {}).get("values", {})
+            if (v := safety_vals.get("Emergency button")) is not None:
+                key_values["emergency_button_pressed"] = v != "Released"
+            if (v := safety_vals.get("Laser (Front)")) is not None:
+                key_values["laser_front_blocked"] = v != "Free"
+            if (v := safety_vals.get("Laser (Back)")) is not None:
+                key_values["laser_back_blocked"] = v != "Free"
+            if (v := safety_vals.get("Front scanner cover")) is not None:
+                key_values["front_scanner_cover_clean"] = v == "Clean"
+            if (v := safety_vals.get("Back scanner cover")) is not None:
+                key_values["back_scanner_cover_clean"] = v == "Clean"
+            if (v := safety_vals.get("Charger cable or switch")) is not None:
+                key_values["charger_cable_connected"] = v != "Disconnected"
+            if (v := safety_vals.get("Speed violation")) is not None:
+                key_values["speed_violation_ok"] = v == "OK"
         except Exception:
             # Never fail the loop due to parsing issues; values just won't be present
             self._logger.debug("Failed to parse diagnostics vitals", exc_info=True)

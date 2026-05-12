@@ -3,14 +3,17 @@
 # SPDX-License-Identifier: MIT
 
 import math
-import pytest
 import uuid
-from unittest.mock import MagicMock, Mock, call, AsyncMock
-from inorbit_edge.robot import RobotSession
-from inorbit_mir_connector.src.connector import MirConnector
-from inorbit_mir_connector.config.connector_model import ConnectorConfig
-from .. import get_module_version
+from unittest.mock import AsyncMock, MagicMock, Mock, call
+
+import pytest
 from inorbit_connector.connector import CommandResultCode
+from inorbit_edge.robot import RobotSession
+
+from inorbit_mir_connector.config.connector_model import ConnectorConfig
+from inorbit_mir_connector.src.connector import MirConnector
+
+from .. import get_module_version
 
 
 @pytest.fixture
@@ -132,7 +135,9 @@ async def test_command_callback_unknown_command(connector, callback_kwargs):
 
 
 @pytest.mark.asyncio
-async def test_command_callback_missions(connector_with_mission_tracking, callback_kwargs):
+async def test_command_callback_missions(
+    connector_with_mission_tracking, callback_kwargs
+):
     connector = connector_with_mission_tracking
 
     def reset_mock():
@@ -145,7 +150,9 @@ async def test_command_callback_missions(connector_with_mission_tracking, callba
     callback_kwargs["args"] = ["queue_mission", ["--mission_id", "2"]]
     await connector._inorbit_command_handler(**callback_kwargs)
     assert connector.mir_api.queue_mission.call_args == call("2")
-    callback_kwargs["options"]["result_function"].assert_called_with(CommandResultCode.SUCCESS)
+    callback_kwargs["options"]["result_function"].assert_called_with(
+        CommandResultCode.SUCCESS
+    )
     reset_mock()
 
     # Run mission now
@@ -154,16 +161,23 @@ async def test_command_callback_missions(connector_with_mission_tracking, callba
     await connector._inorbit_command_handler(**callback_kwargs)
     assert connector.mir_api.abort_all_missions.call_args == call()
     assert connector.mir_api.queue_mission.call_args == call("3")
-    callback_kwargs["options"]["result_function"].assert_called_with(CommandResultCode.SUCCESS)
+    callback_kwargs["options"]["result_function"].assert_called_with(
+        CommandResultCode.SUCCESS
+    )
     reset_mock()
 
     # Abort all
     callback_kwargs["command_name"] = "customCommand"
     callback_kwargs["args"] = ["abort_missions", []]
     await connector._inorbit_command_handler(**callback_kwargs)
-    assert connector._get_session().missions_module.executor.cancel_mission.call_args == call("*")
+    assert (
+        connector._get_session().missions_module.executor.cancel_mission.call_args
+        == call("*")
+    )
     assert connector.mir_api.abort_all_missions.call_args == call()
-    callback_kwargs["options"]["result_function"].assert_called_with(CommandResultCode.SUCCESS)
+    callback_kwargs["options"]["result_function"].assert_called_with(
+        CommandResultCode.SUCCESS
+    )
     reset_mock()
 
 
@@ -175,7 +189,9 @@ async def test_command_callback_state(connector, callback_kwargs):
     for id, state in MIR_STATE.items():
         callback_kwargs["args"] = ["set_state", ["--state_id", str(id)]]
         await connector._inorbit_command_handler(**callback_kwargs)
-        callback_kwargs["options"]["result_function"].assert_called_with(CommandResultCode.SUCCESS)
+        callback_kwargs["options"]["result_function"].assert_called_with(
+            CommandResultCode.SUCCESS
+        )
         connector.mir_api.set_state.assert_called_with(id)
         connector.mir_api.set_state.reset_mock()
         callback_kwargs["options"]["result_function"].reset_mock()
@@ -201,7 +217,9 @@ async def test_command_callback_nav_goal(connector, callback_kwargs):
     callback_kwargs["args"] = [{"x": "1", "y": "2", "theta": "3.14"}]
     connector.send_waypoint_over_missions = AsyncMock()
     await connector._inorbit_command_handler(**callback_kwargs)
-    connector.send_waypoint_over_missions.assert_called_with({"x": "1", "y": "2", "theta": "3.14"})
+    connector.send_waypoint_over_missions.assert_called_with(
+        {"x": "1", "y": "2", "theta": "3.14"}
+    )
 
 
 @pytest.mark.asyncio
@@ -380,14 +398,37 @@ async def test_connector_loop(connector_with_mission_tracking, monkeypatch):
     connector.robot._metrics = metrics_data
     connector.mir_api.get_metrics.return_value = metrics_data
 
-    # Mock diagnostics to include battery information
+    # Mock diagnostics to include battery, wifi and safety information
     connector.robot._diagnostics = {
         "/Power System/Battery": {
             "values": {
                 "Remaining battery capacity [%]": 93.5,
                 "Remaining battery time [sec]": 89725,
             }
-        }
+        },
+        "/Computer/Network/Wifi": {
+            "values": {
+                "SSID": "InOrbit",
+                "Frequency": "5240",
+                "Signal level": "-47",
+                "Access point MAC": "aa:aa:aa:aa:aa:aa",
+                "MAC address": "bb:bb:bb:bb:bb:bb",
+                "IP address": "192.168.1.256",
+                "Link up count": "9",
+                "Link down count": "9",
+            }
+        },
+        "/Safety System/Emergency Stop": {
+            "values": {
+                "Emergency button": "Released",
+                "Laser (Front)": "Free",
+                "Laser (Back)": "Free",
+                "Front scanner cover": "Clean",
+                "Back scanner cover": "Clean",
+                "Charger cable or switch": "Disconnected",
+                "Speed violation": "OK",
+            }
+        },
     }
 
     # Get the mock session before the execution loop to ensure it's used consistently
@@ -407,7 +448,9 @@ async def test_connector_loop(connector_with_mission_tracking, monkeypatch):
         1.8204675458317707,
         "20f762ff-5e0a-11ee-abc8-0001299981c4",
     )
-    assert mock_session.publish_odometry.call_args == call(linear_speed=1.1, angular_speed=math.pi)
+    assert mock_session.publish_odometry.call_args == call(
+        linear_speed=1.1, angular_speed=math.pi
+    )
     assert mock_session.publish_key_values.call_args == call(
         {
             "connector_version": get_module_version(),
@@ -429,6 +472,21 @@ async def test_connector_loop(connector_with_mission_tracking, monkeypatch):
             "uptime": 3552693,
             "battery percent": 0.935,  # Converted by to_inorbit_percent (93.5 / 100)
             "battery_time_remaining": 89725,
+            "wifi_ssid": "InOrbit",
+            "wifi_frequency_mhz": 5240.0,
+            "wifi_signal_dbm": -47.0,
+            "wifi_access_point_mac": "aa:aa:aa:aa:aa:aa",
+            "wifi_mac_address": "bb:bb:bb:bb:bb:bb",
+            "wifi_ip_address": "192.168.1.256",
+            "wifi_link_up_count": 9,
+            "wifi_link_down_count": 9,
+            "emergency_button_pressed": False,
+            "laser_front_blocked": False,
+            "laser_back_blocked": False,
+            "front_scanner_cover_clean": True,
+            "back_scanner_cover_clean": True,
+            "charger_cable_connected": False,
+            "speed_violation_ok": True,
         }
     )
 
@@ -445,7 +503,62 @@ async def test_connector_loop(connector_with_mission_tracking, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_connector_loop_publishes_system_stats(connector_with_mission_tracking, monkeypatch):
+async def test_safety_decomposition_publishes_active_states(
+    connector_with_mission_tracking, monkeypatch
+):
+    """Safety strings normalize to booleans; missing diagnostics omit keys entirely."""
+    connector = connector_with_mission_tracking
+    connector.mission_tracking.report_mission = AsyncMock()
+
+    status_data = {
+        "robot_name": "Miriam",
+        "map_id": "m",
+        "position": {"x": 0.0, "y": 0.0, "orientation": 0.0},
+        "velocity": {"linear": 0.0, "angular": 0.0},
+    }
+    connector.robot._status = status_data
+    connector.mir_api.get_status.return_value = status_data
+    connector.publish_map = MagicMock()
+
+    # Active e-stop state: button pressed, front laser blocked, charger plugged
+    connector.robot._diagnostics = {
+        "/Safety System/Emergency Stop": {
+            "values": {
+                "Emergency button": "Pressed",
+                "Laser (Front)": "Blocked",
+                "Charger cable or switch": "Connected",
+                # Intentionally omit the others to assert absence-on-missing
+            }
+        }
+    }
+    connector.robot._metrics = {}
+    connector.mir_api.get_metrics.return_value = {}
+
+    mock_session = connector._get_session()
+    connector._get_session = MagicMock(return_value=mock_session)
+    connector._get_robot_session = MagicMock(return_value=mock_session)
+
+    await connector._execution_loop()
+    connector._FleetConnector__publish_pending_system_stats()
+
+    key_values_call = mock_session.publish_key_values.call_args[0][0]
+    assert key_values_call["emergency_button_pressed"] is True
+    assert key_values_call["laser_front_blocked"] is True
+    assert key_values_call["charger_cable_connected"] is True
+    # Missing diagnostic keys must not appear (no spurious False values)
+    assert "laser_back_blocked" not in key_values_call
+    assert "front_scanner_cover_clean" not in key_values_call
+    assert "back_scanner_cover_clean" not in key_values_call
+    assert "speed_violation_ok" not in key_values_call
+    # No wifi diagnostics → no new wifi keys
+    assert "wifi_access_point_mac" not in key_values_call
+    assert "wifi_link_up_count" not in key_values_call
+
+
+@pytest.mark.asyncio
+async def test_connector_loop_publishes_system_stats(
+    connector_with_mission_tracking, monkeypatch
+):
     """Test that system stats (CPU, RAM, disk) are published separately from key values."""
     connector = connector_with_mission_tracking
     connector.mission_tracking.report_mission = AsyncMock()
@@ -588,7 +701,9 @@ async def test_missions_garbage_collector(connector):
     connector.mir_api.delete_mission_definition.assert_any_call(
         "72003359-6445-419c-85fb-df5576a9ce2e"
     )
-    connector.mir_api.delete_mission_definition.assert_any_call("not_in_queue_so_safe_to_delete")
+    connector.mir_api.delete_mission_definition.assert_any_call(
+        "not_in_queue_so_safe_to_delete"
+    )
     assert connector.mir_api.delete_mission_definition.call_count == 2
 
 

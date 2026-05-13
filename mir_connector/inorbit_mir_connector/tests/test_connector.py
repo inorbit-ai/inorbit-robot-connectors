@@ -3,14 +3,17 @@
 # SPDX-License-Identifier: MIT
 
 import math
-import pytest
 import uuid
-from unittest.mock import MagicMock, Mock, call, AsyncMock
-from inorbit_edge.robot import RobotSession
-from inorbit_mir_connector.src.connector import MirConnector
-from inorbit_mir_connector.config.connector_model import ConnectorConfig
-from .. import get_module_version
+from unittest.mock import AsyncMock, MagicMock, Mock, call
+
+import pytest
 from inorbit_connector.connector import CommandResultCode
+from inorbit_edge.robot import RobotSession
+
+from inorbit_mir_connector.config.connector_model import ConnectorConfig
+from inorbit_mir_connector.src.connector import MirConnector
+
+from .. import get_module_version
 
 
 @pytest.fixture
@@ -380,14 +383,37 @@ async def test_connector_loop(connector_with_mission_tracking, monkeypatch):
     connector.robot._metrics = metrics_data
     connector.mir_api.get_metrics.return_value = metrics_data
 
-    # Mock diagnostics to include battery information
+    # Mock diagnostics to include battery, wifi and safety information
     connector.robot._diagnostics = {
         "/Power System/Battery": {
             "values": {
                 "Remaining battery capacity [%]": 93.5,
                 "Remaining battery time [sec]": 89725,
             }
-        }
+        },
+        "/Computer/Network/Wifi": {
+            "values": {
+                "SSID": "InOrbit",
+                "Frequency": "5240",
+                "Signal level": "-47",
+                "Access point MAC": "aa:aa:aa:aa:aa:aa",
+                "MAC address": "bb:bb:bb:bb:bb:bb",
+                "IP address": "192.168.1.256",
+                "Link up count": "9",
+                "Link down count": "9",
+            }
+        },
+        "/Safety System/Emergency Stop": {
+            "values": {
+                "Emergency button": "Released",
+                "Laser (Front)": "Free",
+                "Laser (Back)": "Free",
+                "Front scanner cover": "Clean",
+                "Back scanner cover": "Clean",
+                "Charger cable or switch": "Disconnected",
+                "Speed violation": "OK",
+            }
+        },
     }
 
     # Get the mock session before the execution loop to ensure it's used consistently
@@ -429,6 +455,21 @@ async def test_connector_loop(connector_with_mission_tracking, monkeypatch):
             "uptime": 3552693,
             "battery percent": 0.935,  # Converted by to_inorbit_percent (93.5 / 100)
             "battery_time_remaining": 89725,
+            "wifi_ssid": "InOrbit",
+            "wifi_frequency_mhz": 5240.0,
+            "wifi_signal_dbm": -47.0,
+            "wifi_access_point_mac": "aa:aa:aa:aa:aa:aa",
+            "wifi_mac_address": "bb:bb:bb:bb:bb:bb",
+            "wifi_ip_address": "192.168.1.256",
+            "wifi_link_up_count": 9,
+            "wifi_link_down_count": 9,
+            "emergency_button_pressed": False,
+            "laser_front_blocked": False,
+            "laser_back_blocked": False,
+            "front_scanner_cover_clean": True,
+            "back_scanner_cover_clean": True,
+            "charger_cable_connected": False,
+            "speed_violation_ok": True,
         }
     )
 
@@ -442,6 +483,59 @@ async def test_connector_loop(connector_with_mission_tracking, monkeypatch):
     assert not mock_session.publish_pose.called
     assert not mock_session.publish_odometry.called
     assert not mock_session.publish_key_values.called
+
+
+@pytest.mark.asyncio
+async def test_safety_decomposition_publishes_active_states(
+    connector_with_mission_tracking, monkeypatch
+):
+    """Safety strings normalize to booleans; missing diagnostics omit keys entirely."""
+    connector = connector_with_mission_tracking
+    connector.mission_tracking.report_mission = AsyncMock()
+
+    status_data = {
+        "robot_name": "Miriam",
+        "map_id": "m",
+        "position": {"x": 0.0, "y": 0.0, "orientation": 0.0},
+        "velocity": {"linear": 0.0, "angular": 0.0},
+    }
+    connector.robot._status = status_data
+    connector.mir_api.get_status.return_value = status_data
+    connector.publish_map = MagicMock()
+
+    # Active e-stop state: button pressed, front laser blocked, charger plugged
+    connector.robot._diagnostics = {
+        "/Safety System/Emergency Stop": {
+            "values": {
+                "Emergency button": "Pressed",
+                "Laser (Front)": "Blocked",
+                "Charger cable or switch": "Connected",
+                # Intentionally omit the others to assert absence-on-missing
+            }
+        }
+    }
+    connector.robot._metrics = {}
+    connector.mir_api.get_metrics.return_value = {}
+
+    mock_session = connector._get_session()
+    connector._get_session = MagicMock(return_value=mock_session)
+    connector._get_robot_session = MagicMock(return_value=mock_session)
+
+    await connector._execution_loop()
+    connector._FleetConnector__publish_pending_system_stats()
+
+    key_values_call = mock_session.publish_key_values.call_args[0][0]
+    assert key_values_call["emergency_button_pressed"] is True
+    assert key_values_call["laser_front_blocked"] is True
+    assert key_values_call["charger_cable_connected"] is True
+    # Missing diagnostic keys must not appear (no spurious False values)
+    assert "laser_back_blocked" not in key_values_call
+    assert "front_scanner_cover_clean" not in key_values_call
+    assert "back_scanner_cover_clean" not in key_values_call
+    assert "speed_violation_ok" not in key_values_call
+    # No wifi diagnostics → no new wifi keys
+    assert "wifi_access_point_mac" not in key_values_call
+    assert "wifi_link_up_count" not in key_values_call
 
 
 @pytest.mark.asyncio

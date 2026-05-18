@@ -6,10 +6,10 @@
 
 Builds a real :class:`MirConnector` with ``metrics.enabled=True``, starts the
 metrics HTTP server, exercises both a framework counter and a domain counter,
-then scrapes ``/metrics`` and asserts both metric families appear. This
-validates that the inorbit-connector 2.3 upgrade correctly hooks into our
-domain instruments (declared in ``inorbit_mir_connector.src.metrics``) via
-the shared global MeterProvider.
+then scrapes ``/metrics`` and asserts both metric families appear. Validates
+that this connector correctly hooks into the framework's shared global
+MeterProvider for its domain instruments (declared in
+``inorbit_mir_connector.src.metrics``).
 
 OTEL's MeterProvider is a process-global singleton, so this test deliberately
 runs as a single non-parametrized case.
@@ -107,14 +107,14 @@ def test_metrics_endpoint_serves_framework_and_domain_metrics(metrics_connector)
 
     # Framework gauges are registered eagerly in Connector.__init__ via
     # register_framework_gauges, so they appear on every scrape regardless
-    # of whether the run loop has started. Note: the Prometheus exporter
-    # prefixes every metric with the exporter namespace ("inorbit_connector"),
-    # which means the framework instrument "inorbit.connector.up" becomes
-    # "inorbit_connector_inorbit_connector_up" in the output.
-    assert "inorbit_connector_up" in body
-    assert "inorbit_connector_session_connected" in body
+    # of whether the run loop has started. With inorbit-connector >= 2.5
+    # the exporter namespace is derived per connector_type as
+    # `inorbit_<connector_type>_connector`, so the framework instruments
+    # surface as `inorbit_MiR100_connector_*` for this fixture.
+    assert "inorbit_MiR100_connector_up" in body
+    assert "inorbit_MiR100_connector_session_connected" in body
 
-    # Domain instruments are exported via the same global MeterProvider, so
-    # they pick up the same namespace prefix.
-    assert "mir_api_requests_total" in body
-    assert "mir_api_request_duration_seconds" in body
+    # Domain instruments share the same global MeterProvider, so they pick
+    # up the same per-connector_type namespace prefix.
+    assert "inorbit_MiR100_connector_mir_api_requests_total" in body
+    assert "inorbit_MiR100_connector_mir_api_request_duration_seconds" in body

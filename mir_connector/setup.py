@@ -24,7 +24,7 @@ requirements = [
     # InOrbit. The ``[video]`` extra on inorbit-connector pulls
     # ``inorbit-edge[video]>=2.1,<3`` transitively, so we don't declare
     # inorbit-edge separately.
-    "inorbit-connector[video]~=2.3.0",
+    "inorbit-connector[video]~=2.5.0",
     "inorbit-edge-executor~=3.2.5",
 ]
 

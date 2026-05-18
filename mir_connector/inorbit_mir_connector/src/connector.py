@@ -103,11 +103,14 @@ class MirConnector(Connector):
             robot_tz_info=self.robot_tz_info,
         )
 
-        # Set up InOrbit Edge Executor for mission execution
+        # Set up InOrbit Edge Executor for mission execution.
+        # `inorbit_rest_api_endpoint` is a typed `HttpUrl`; cast to str
+        # because `MissionInOrbitAPI` concatenates the URL with str paths
+        # and assumes a plain string.
         self.mission_executor: MirMissionExecutor = MirMissionExecutor(
             robot_id=robot_id,
             inorbit_api=MissionInOrbitAPI(
-                base_url=self._get_session().inorbit_rest_api_endpoint,
+                base_url=str(self._get_session().inorbit_rest_api_endpoint),
                 api_key=self.config.api_key,
             ),
             mir_api=self.mir_api,

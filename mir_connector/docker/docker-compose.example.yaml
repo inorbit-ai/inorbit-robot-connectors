@@ -11,8 +11,28 @@
 # 4. docker compose up -d  # Starts ALL robots
 # 5. docker compose logs -f  # View logs from ALL robots
 #
+# CREDENTIALS:
+# Secrets are passed as environment variables (the config loader no longer
+# expands ${VARS} in the YAML):
+#   INORBIT_API_KEY            -> InOrbit account key
+#   INORBIT_MIR_MIR_USERNAME   -> connector_config.mir_username
+#   INORBIT_MIR_MIR_PASSWORD   -> connector_config.mir_password
+# The shared env_file below applies the same values to every robot. Because
+# these are read from each container's own environment, you can give a robot
+# its own MiR credentials or InOrbit Connect key by overriding them in that
+# service's `environment:` block (e.g. INORBIT_MIR_MIR_PASSWORD,
+# INORBIT_INORBIT_ROBOT_KEY) — no separate config file needed.
+#
+# NETWORKING / METRICS:
+# Containers use the default bridge network (NOT host networking), so each has
+# its own network namespace. The connector reaches MiR robots and InOrbit over
+# outbound bridge NAT. If you enable the Prometheus endpoint
+# (metrics.enabled: true, bind_host: 0.0.0.0 in the fleet YAML), publish it per
+# robot with a distinct HOST port via the `ports:` mapping on each service
+# below — the container-side port stays the configured bind_port for all.
+#
 # ADDING ROBOTS:
-# 1. Add robot section to config/my_fleet.yaml 
+# 1. Add a new entry under `fleet:` in config/my_fleet.yaml
 # 2. Add corresponding service section below
 # 3. docker compose up -d
 
@@ -50,13 +70,11 @@ x-mir-connector: &mir-connector
     # SSL certificates for MiR robot verification
     - ../certs:/app/certs:ro
   
-  # Use host networking to access MiR robots.
-  # When `metrics.enabled: true` is set in your fleet YAML, /metrics is
-  # reachable directly on the host (default port 9090). With multiple
-  # robots on one host, give each robot a unique `metrics.bind_port` to
-  # avoid collisions.
-  network_mode: host
-  
+  # Default bridge networking (no host networking). Outbound traffic to MiR
+  # robots and InOrbit works via bridge NAT. To expose the Prometheus endpoint,
+  # add a per-service `ports:` mapping (see the services below) — it must be
+  # per service so each robot gets a distinct host port.
+  #
   # Auto-restart policy - works with built-in health monitoring
   restart: unless-stopped
   
@@ -89,8 +107,13 @@ services:
       - ROBOT_ID=robot-1
       - CONFIG_FILE=/config/fleet.yaml
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    # Publish the Prometheus endpoint (only if metrics.enabled in the YAML).
+    # host:container — give each robot a distinct host port. 9090 is the
+    # connector's configured bind_port inside the container.
+    # ports:
+    #   - "9091:9090"
 
-  # Example Robot 2 - Replace 'robot-2' with your actual robot ID  
+  # Example Robot 2 - Replace 'robot-2' with your actual robot ID
   robot-2:
     <<: *mir-connector
     container_name: mir_connector_robot_2
@@ -98,13 +121,15 @@ services:
       - ROBOT_ID=robot-2
       - CONFIG_FILE=/config/fleet.yaml
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    # ports:
+    #   - "9092:9090"
 
   # ==============================================================================
   # TEMPLATE FOR ADDING MORE ROBOTS
   # ==============================================================================
   # 
   # To add additional robots:
-  # 1. Add robot section to config/my_fleet.yaml
+  # 1. Add a new entry under `fleet:` in config/my_fleet.yaml
   # 2. Copy and customize the template below
   # 3. Run: docker compose up -d
   #
@@ -115,6 +140,9 @@ services:
   #     - ROBOT_ID=your-robot-id
   #     - CONFIG_FILE=/config/fleet.yaml
   #     - LOG_LEVEL=${LOG_LEVEL:-INFO}
+  #   # Distinct host port if the Prometheus endpoint is enabled:
+  #   # ports:
+  #   #   - "9093:9090"
   #   # Note: Each robot uses its own database file:
   #   # /app/data/missions_your-robot-id.db (specified in fleet config)
 

@@ -11,7 +11,7 @@ import os
 from pydantic import ValidationError
 from inorbit_mir_connector.src.connector import MirConnector
 from inorbit_mir_connector.config.connector_model import (
-    load_and_validate,
+    load_config,
     format_validation_error,
 )
 
@@ -85,19 +85,23 @@ def start():
         logging.getLogger().setLevel(getattr(logging, args.log_level.upper()))
 
     try:
-        mir_config = load_and_validate(config_filename, robot_id)
+        mir_config = load_config(config_filename)
     except FileNotFoundError:
         LOGGER.error("Missing configuration file")
-        exit(1)
-    except IndexError:
-        LOGGER.error(
-            f"Missing configuration section for robot_id '{robot_id}' within {config_filename}."
-        )
         exit(1)
     except ValidationError as e:
         LOGGER.error(format_validation_error(e))
         exit(1)
 
+    fleet_robot_ids = [robot.robot_id for robot in mir_config.fleet]
+    if robot_id not in fleet_robot_ids:
+        LOGGER.error(
+            f"Robot id '{robot_id}' not found in {config_filename}. "
+            f"Configured robots: {', '.join(fleet_robot_ids) or '(none)'}."
+        )
+        exit(1)
+
+    # MirConnector narrows the fleet to ``robot_id`` via to_singular_config().
     connector = MirConnector(robot_id, mir_config)
 
     LOGGER.info("Starting connector...")

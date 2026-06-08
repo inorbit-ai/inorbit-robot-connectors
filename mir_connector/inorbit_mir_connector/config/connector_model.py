@@ -2,60 +2,51 @@
 #
 # SPDX-License-Identifier: MIT
 
+from typing import Literal, Optional
+
 from pydantic import field_validator, model_validator, ValidationError
-
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from inorbit_connector.models import InorbitConnectorConfig
+from inorbit_connector.models import (
+    ConnectorRootConfig,
+    ConnectorSpecificConfig,
+    RobotConfig,
+)
 from inorbit_connector.utils import read_yaml
-from .fleet_config_loader import get_robot_config
-from typing import Optional
 
-# Default environment file, relative to the directory the connector is executed from. If using a
-# different .env file, make sure to source it before running the connector.
-DEFAULT_ENV_FILE = "config/.env"
+# Connector identity. The framework derives the env-var prefix
+# (``INORBIT_MIR_``) from this value and enforces that the YAML's
+# ``connector_type`` matches it.
+CONNECTOR_TYPE = "mir"
 
 # Expected values
-CONNECTOR_TYPES = ["MiR100", "MiR200", "MiR250", "MiR500"]
 FIRMWARE_VERSIONS = ["v2", "v3"]
 MIR_API_VERSION = "v2.0"
 
 
-class MirConnectorConfig(BaseSettings):
+class MirConnectorConfig(ConnectorSpecificConfig):
+    """Connector-wide (fleet-shared) MiR configuration.
+
+    Lives under the YAML's ``connector_config`` block. These values are
+    shared by every robot the connector instance serves. Credentials are
+    intentionally kept here (rather than per-robot in :class:`MirRobotConfig`)
+    because :class:`ConnectorSpecificConfig` is a ``pydantic_settings``
+    BaseSettings: any field can be supplied via ``INORBIT_MIR_<FIELD>`` env
+    vars (prefix derived from ``CONNECTOR_TYPE`` by the framework), which is
+    how secrets are injected in production — e.g.
+    ``INORBIT_MIR_MIR_PASSWORD``. ``RobotConfig`` subclasses do not get
+    env-var loading, so per-robot fleet entries cannot carry secrets.
     """
-    Specific configuration for MiR connector.
-    If any field is missing, the initializer will attempt to replace it by reading from the
-    environment. Every field can be ignored if set in the env with the prefix INORBIT_MIR_
-    (e.g. mir_host_address -> INORBIT_MIR_MIR_HOST_ADDRESS)
-    """
 
-    model_config = SettingsConfigDict(
-        env_prefix="INORBIT_MIR_",
-        env_ignore_empty=True,
-        case_sensitive=False,
-        env_file=DEFAULT_ENV_FILE,
-        extra="allow",
-    )
+    CONNECTOR_TYPE = CONNECTOR_TYPE
 
-    mir_host_address: str
-    mir_host_port: int
+    # MiR REST API version. Uniform across the fleet (the connector targets a
+    # single MiR API generation).
+    mir_api_version: str
 
+    # MiR REST API credentials. Shared across the fleet; inject via
+    # INORBIT_MIR_MIR_USERNAME / INORBIT_MIR_MIR_PASSWORD rather than
+    # committing them to the YAML.
     mir_username: str
     mir_password: str
-    mir_api_version: str
-    mir_firmware_version: str
-    enable_temporary_mission_group: Optional[bool] = True
-    default_waypoint_mission_id: Optional[str] = None
-
-    # SSL Configuration
-    mir_use_ssl: bool
-    verify_ssl: bool = True  # Verify SSL certificates (set to False for self-signed)
-    ssl_ca_bundle: Optional[str] = None  # Path to CA bundle file for custom CAs
-    ssl_verify_hostname: bool = (
-        True  # Verify hostname matches certificate (set to False for FRP/proxy)
-    )
-
-    # Database Configuration
-    mission_database_file: Optional[str] = None  # Path to SQLite database file for mission storage
 
     @field_validator("mir_api_version")
     def api_version_validation(cls, mir_api_version):
@@ -64,6 +55,41 @@ class MirConnectorConfig(BaseSettings):
                 f"Unexpected MiR API version '{mir_api_version}'. Expected '{MIR_API_VERSION}'"
             )
         return mir_api_version
+
+
+class MirRobotConfig(RobotConfig):
+    """Per-robot MiR configuration (one entry per robot in ``fleet``).
+
+    Extends the framework's ``RobotConfig`` (which provides ``robot_id`` and
+    ``cameras``) with the connection and behavior settings that differ from
+    robot to robot. Each MiR robot exposes its own REST API at its own
+    address, so these cannot be shared in ``connector_config`` the way a
+    single fleet-manager's settings could.
+    """
+
+    # Robot model. Drives model-specific behavior (e.g. waypoint navigation
+    # parameters). May vary across a mixed fleet.
+    mir_model: Literal["MiR100", "MiR200", "MiR250", "MiR500"]
+
+    # MiR REST API connection.
+    mir_host_address: str
+    mir_host_port: int
+    mir_firmware_version: str
+
+    # SSL configuration.
+    mir_use_ssl: bool
+    verify_ssl: bool = True  # Verify SSL certificates (set to False for self-signed)
+    ssl_ca_bundle: Optional[str] = None  # Path to CA bundle file for custom CAs
+    ssl_verify_hostname: bool = (
+        True  # Verify hostname matches certificate (set to False for FRP/proxy)
+    )
+
+    # Waypoint navigation.
+    enable_temporary_mission_group: Optional[bool] = True
+    default_waypoint_mission_id: Optional[str] = None
+
+    # Mission persistence. Path to the per-robot SQLite mission database.
+    mission_database_file: Optional[str] = None
 
     @field_validator("mir_firmware_version")
     def firmware_version_validation(cls, mir_firmware_version):
@@ -75,11 +101,10 @@ class MirConnectorConfig(BaseSettings):
         return mir_firmware_version
 
     @model_validator(mode="after")
-    def check_ssl_and_ca_bundle_compatibility(self):
-        """
-        Validator to ensure that if enable_temporary_mission_group is False,
-        default_waypoint_mission_id is set.
-        """
+    def check_waypoint_mission_configuration(self):
+        """Require ``default_waypoint_mission_id`` when temporary mission
+        groups are disabled (the connector has no group to create the move
+        mission in otherwise)."""
         if not self.enable_temporary_mission_group and not self.default_waypoint_mission_id:
             raise ValueError(
                 "default_waypoint_mission_id should be set when enable_temporary_mission_group "
@@ -88,50 +113,51 @@ class MirConnectorConfig(BaseSettings):
         return self
 
 
-class ConnectorConfig(InorbitConnectorConfig):
+class ConnectorConfig(ConnectorRootConfig[MirConnectorConfig]):
+    """Top-level MiR connector configuration (the whole YAML file).
+
+    ``connector_type`` identity ("mir") is enforced by the framework — it
+    must match ``MirConnectorConfig.CONNECTOR_TYPE``; no local validator
+    needed. ``fleet`` is narrowed to :class:`MirRobotConfig` so per-robot
+    MiR fields validate.
     """
-    MiR connector configuration schema.
-    """
 
-    connector_config: MirConnectorConfig
+    fleet: list[MirRobotConfig]
 
-    @field_validator("connector_type")
-    def connector_type_validation(cls, connector_type):
-        if connector_type not in CONNECTOR_TYPES:
-            raise ValueError(
-                f"Unexpected connector type '{connector_type}'. Expected one of '{CONNECTOR_TYPES}'"
-            )
-        return connector_type
+    @field_validator("fleet")
+    def fleet_not_empty(cls, fleet):
+        if not fleet:
+            raise ValueError("fleet must contain at least one robot")
+        robot_ids = [robot.robot_id for robot in fleet]
+        if len(robot_ids) != len(set(robot_ids)):
+            raise ValueError("robot_id values must be unique across the fleet")
+        return fleet
 
 
-def load_and_validate(config_filename: str, robot_id: str) -> ConnectorConfig:
-    """Loads and validates the configuration file with inheritance support.
+def load_config(config_filename: str) -> ConnectorConfig:
+    """Load and validate the connector configuration file.
 
-    This function supports both legacy and new configuration formats:
-    - Legacy: Direct robot configurations
-    - New: Fleet-wide defaults with robot-specific overrides
+    The YAML follows the inorbit-connector framework's flat schema: top-level
+    framework fields, a ``connector_config`` block, and a ``fleet`` list. A
+    single config file may describe multiple robots; the connector selects
+    one at construction time via the ``robot_id`` passed to
+    :class:`~inorbit_mir_connector.src.connector.MirConnector`.
 
     Args:
         config_filename (str): The YAML file to load the configuration from.
-        robot_id (str): The InOrbit robot ID for robot to load the configuration for.
 
     Returns:
-        ConnectorConfig: The configuration object with the loaded values.
+        ConnectorConfig: The validated configuration object.
 
     Raises:
         FileNotFoundError: If the configuration file does not exist.
-        IndexError: If the configuration file does not contain the robot_id.
         yaml.YAMLError: If the configuration file is not valid YAML.
         ValidationError: If the configuration file is not valid.
     """
-    try:
-        # Try new format with inheritance first
-        config = get_robot_config(config_filename, robot_id)
-    except (KeyError, AttributeError):
-        # Fallback to legacy format for backward compatibility
-        config = read_yaml(config_filename, robot_id)
-
-    return ConnectorConfig(**config)
+    # Constructor (not model_validate): ConnectorRootConfig is a
+    # pydantic-settings BaseSettings, and INORBIT_* env vars are only
+    # resolved through __init__. YAML values take precedence over env.
+    return ConnectorConfig(**read_yaml(config_filename))
 
 
 def format_validation_error(error: ValidationError) -> str:

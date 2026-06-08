@@ -13,9 +13,25 @@
 
 # Set the common variables for all services
 # If preferred, a .env file can be used instead. See https://docs.docker.com/compose/how-tos/environment-variables/set-environment-variables/#use-the-env_file-attribute
+#
+# Secrets are passed as environment variables (the config loader no longer
+# expands ${VARS} in the YAML): INORBIT_API_KEY is the InOrbit account key, and
+# the MiR robot credentials go into INORBIT_MIR_MIR_USERNAME /
+# INORBIT_MIR_MIR_PASSWORD (which map to connector_config.mir_username /
+# mir_password). These are read from each container's own environment: the
+# shared anchor below applies the same values to every robot, but a robot can
+# override its own credentials (or InOrbit Connect key via
+# INORBIT_INORBIT_ROBOT_KEY) in its service's `environment:` block.
+#
+# Containers use the default bridge network. To expose the Prometheus endpoint
+# (metrics.enabled: true, bind_host: 0.0.0.0 in the YAML), add a per-service
+# `ports:` mapping with a distinct host port per robot (see below).
 x-common-variables: &common-variables
   # InOrbit API key obtained during the setup process detailed in the README.md file
   INORBIT_API_KEY: <key>
+  # MiR robot credentials (fleet-shared)
+  INORBIT_MIR_MIR_USERNAME: <mir-username>
+  INORBIT_MIR_MIR_PASSWORD: <mir-password>
   # Other variables can be set here
   # INORBIT_API_URL:
   # INORBIT_USE_SSL:
@@ -29,6 +45,10 @@ services:
       <<: *common-variables
       ROBOT_ID: MiR100-1
     restart: unless-stopped
+    # Publish the Prometheus endpoint only if metrics.enabled in the YAML.
+    # host:container — distinct host port per robot; 9090 is the bind_port.
+    # ports:
+    #   - "9091:9090"
 
   MiR100-2:
     image: us-central1-docker.pkg.dev/inorbit-integrations/connectors/mir_connector:${CONNECTOR_VERSION}
@@ -38,3 +58,5 @@ services:
       <<: *common-variables
       ROBOT_ID: MiR100-2
     restart: unless-stopped
+    # ports:
+    #   - "9092:9090"

@@ -9,8 +9,8 @@ requirements = [
     "httpx>=0.28.1,<0.29.0",
     # ``prometheus_client.parser`` is used directly to consume MiR's
     # Prometheus-formatted /metrics endpoint. It is also pulled transitively
-    # via ``opentelemetry-exporter-prometheus`` (a dep of inorbit-connector
-    # 2.3), but we declare it explicitly because the import is direct.
+    # via ``opentelemetry-exporter-prometheus`` (a dep of inorbit-connector),
+    # but we declare it explicitly because the import is direct.
     "prometheus-client>=0.25,<1.0",
     "pytz>=2022.7",
     # NOTE: both pyyaml and ruamel.yaml packages are included here. Otherwise, the
@@ -22,9 +22,10 @@ requirements = [
     "pydantic-settings>=2.11,<3",
     "tenacity>=9.1.2",
     # InOrbit. The ``[video]`` extra on inorbit-connector pulls
-    # ``inorbit-edge[video]>=2.1,<3`` transitively, so we don't declare
-    # inorbit-edge separately.
-    "inorbit-connector[video]~=2.5.0",
+    # ``inorbit-edge[video]>=3.0,<4`` transitively, so we don't declare
+    # inorbit-edge separately. >=3.1 is required for the
+    # ``inorbit_connector.metrics`` module.
+    "inorbit-connector[video]>=3.1,<4.0",
     "inorbit-edge-executor~=3.2.5",
 ]
 

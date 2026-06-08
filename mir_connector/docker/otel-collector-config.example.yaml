@@ -1,0 +1,74 @@
+# SPDX-FileCopyrightText: 2026 InOrbit, Inc.
+# SPDX-License-Identifier: MIT
+#
+# Example OTel collector config for scraping MiR connector metrics.
+#
+# Each connector writes a Prometheus file_sd target file to its
+# `metrics.discovery_dir` (a shared volume). This collector reads that
+# directory and scrapes every connector over the docker network — no host
+# ports. The `debug` exporter below just logs the scraped metrics so you can
+# verify the pipeline locally; swap in `googlemanagedprometheus` (or your own
+# backend) for production.
+#
+# For the production GCP setup and the design rules this config follows
+# (Rule 1: never rewrite `__name__`; Rule 2: serial sends to preserve
+# per-series write ordering), see the annotated reference in
+# inorbit-connector-python/examples/metrics/.
+
+receivers:
+  prometheus:
+    config:
+      global:
+        scrape_interval: 30s
+        scrape_timeout: 10s
+      scrape_configs:
+        - job_name: mir_connectors
+          # Preserve target_info labels so connector-side resource attributes
+          # (inorbit_connector_id / inorbit_connector_type) surface as OTel
+          # resource attributes for the `resource` processor below.
+          honor_labels: true
+          metrics_path: /metrics
+          file_sd_configs:
+            - files: ['/var/run/inorbit-metrics/*.json']
+              refresh_interval: 30s
+          # Drop-only relabels are safe. Do NOT add a rule that writes
+          # `__name__` (Rule 1) — it strips the metric type.
+          metric_relabel_configs:
+            - source_labels: [__name__]
+              regex: 'python_.*|process_.*'
+              action: drop
+
+processors:
+  # Bound RSS so backpressure from the metric backend can't balloon it.
+  memory_limiter:
+    check_interval: 2s
+    limit_percentage: 80
+    spike_limit_percentage: 20
+  resource:
+    attributes:
+      # Promote the connector type (a metric label the framework attaches)
+      # so dashboards can group/filter by it.
+      - {key: connector_type, from_attribute: inorbit_connector_type, action: upsert}
+  batch:
+    send_batch_size: 200
+    send_batch_max_size: 500
+    timeout: 10s
+
+exporters:
+  # Local verification: prints scraped metrics to the collector log.
+  debug:
+    verbosity: detailed
+
+  # Production: forward to GCP Cloud Monitoring. Uncomment, set GCP_PROJECT,
+  # mount a service-account key, and add it to the pipeline below. See the
+  # full annotated version (resource_filters, serial sending queue, timeouts)
+  # in inorbit-connector-python/examples/metrics/otel-collector-config.yaml.
+  # googlemanagedprometheus:
+  #   project: ${env:GCP_PROJECT}
+
+service:
+  pipelines:
+    metrics:
+      receivers: [prometheus]
+      processors: [memory_limiter, resource, batch]
+      exporters: [debug]

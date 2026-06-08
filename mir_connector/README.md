@@ -704,6 +704,14 @@ The Docker compose examples use the default bridge network (not host networking)
 
 When `metrics.discovery_dir` is set to a writable directory (a shared docker volume, or a host directory), the connector writes `<connector_id>.json` in [Prometheus file_sd format](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#file_sd_config) on startup and removes it on shutdown. The target advertises `metrics.advertise_host:bind_port` (defaulting to the container hostname), so on a shared docker network set `advertise_host` to the service name. An OTel collector or Prometheus instance configured with `file_sd_configs` against the same directory picks every connector up automatically.
 
+A ready-to-run collector example lives in `docker/`: `otel-collector-config.example.yaml` (scrapes the file_sd targets and logs metrics via the `debug` exporter; a `googlemanagedprometheus` block is included commented-out for production) and `docker-compose.metrics.example.yaml`, an overlay that runs it alongside the connectors:
+
+```bash
+docker compose -f docker-compose.example.yaml -f docker-compose.metrics.example.yaml up
+```
+
+For the full GCP Cloud Monitoring setup and the design rules the config follows, see `inorbit-connector-python/examples/metrics/`.
+
 ## Next steps
 
 Now that all of your MiR robots are InOrbit connected, visit the [config as code examples](cac_examples/README.md)

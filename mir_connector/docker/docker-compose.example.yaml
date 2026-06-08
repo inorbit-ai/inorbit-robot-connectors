@@ -32,7 +32,8 @@
 # `metrics.discovery_dir` volume, and a collector on this docker network reads
 # it and scrapes each connector directly. Set `metrics.advertise_host` to the
 # service name (e.g. robot-1) so the target resolves on the network; bind_port
-# can be the same for all containers.
+# can be the same for all containers. A ready-to-run collector is provided in
+# docker-compose.metrics.example.yaml + otel-collector-config.example.yaml.
 #
 # ADDING ROBOTS:
 # 1. Add a new entry under `fleet:` in config/my_fleet.yaml
@@ -73,9 +74,10 @@ x-mir-connector: &mir-connector
     # SSL certificates for MiR robot verification
     - ../certs:/app/certs:ro
 
-    # Shared metrics discovery dir. Point metrics.discovery_dir in the fleet
-    # YAML at this path; mount the same `metrics_discovery` volume in your
-    # Prometheus/OTel collector so it reads every connector's file_sd target.
+    # Shared metrics discovery dir. Uncomment (and set metrics.discovery_dir
+    # to /var/run/inorbit-metrics in the fleet YAML) to scrape with the
+    # collector in docker-compose.metrics.example.yaml, which reads the same
+    # `metrics_discovery` volume.
     # - metrics_discovery:/var/run/inorbit-metrics
 
   # Default bridge networking (no host networking). Outbound traffic to MiR
@@ -164,6 +166,7 @@ volumes:
   connector_data:
     driver: local
   # Shared metrics discovery dir for file_sd-based scraping. Uncomment the
-  # matching mount in the connector template and in your collector service.
+  # matching mount in the connector template above; the collector overlay
+  # (docker-compose.metrics.example.yaml) declares and mounts it too.
   # metrics_discovery:
   #   driver: local

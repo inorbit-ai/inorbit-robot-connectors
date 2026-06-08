@@ -1,0 +1,3 @@
+[submodule "template-connector"]
+	path = template-connector
+	url = https://github.com/inorbit-ai/template-connector.git

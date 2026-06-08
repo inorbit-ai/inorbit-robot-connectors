@@ -698,11 +698,11 @@ The connector declares no instruments of its own. API retry attempts (previously
 
 **Multiple robots on one host**
 
-The Docker compose examples use the default bridge network (not host networking), so each connector container has its own network namespace and can bind the same internal `metrics.bind_port` (e.g. 9090) without colliding. Publish each robot's endpoint on a distinct host port with a per-service `ports:` mapping (`"9091:9090"`, `"9092:9090"`, …) and set `metrics.bind_host: 0.0.0.0` in the YAML. Per-robot MiR credentials and InOrbit Connect keys likewise come from each container's environment (`INORBIT_MIR_MIR_USERNAME` / `INORBIT_MIR_MIR_PASSWORD` / `INORBIT_INORBIT_ROBOT_KEY`), so one shared fleet file serves robots with different IPs, credentials, and keys.
+The Docker compose examples use the default bridge network (not host networking), so each connector container has its own network namespace and can bind the same internal `metrics.bind_port` (e.g. 9090) without colliding. You don't need to publish host ports: point `metrics.discovery_dir` at a shared volume and each connector writes a Prometheus file_sd target file there, which a collector on the same docker network reads and scrapes (see Prometheus discovery below). Set `metrics.advertise_host` to the connector's docker service name so the target resolves on the network. Per-robot MiR credentials and InOrbit Connect keys come from each container's environment (`INORBIT_MIR_MIR_USERNAME` / `INORBIT_MIR_MIR_PASSWORD` / `INORBIT_INORBIT_ROBOT_KEY`), so one shared fleet file serves robots with different IPs, credentials, and keys.
 
 **Prometheus discovery**
 
-When `metrics.discovery_dir` is set to a writable directory (e.g. mounted from the host), the connector writes `<connector_id>.json` in [Prometheus file_sd format](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#file_sd_config) on startup and removes it on shutdown. A host-side OTel collector or Prometheus instance configured with `file_sd_configs` will pick the connector up automatically.
+When `metrics.discovery_dir` is set to a writable directory (a shared docker volume, or a host directory), the connector writes `<connector_id>.json` in [Prometheus file_sd format](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#file_sd_config) on startup and removes it on shutdown. The target advertises `metrics.advertise_host:bind_port` (defaulting to the container hostname), so on a shared docker network set `advertise_host` to the service name. An OTel collector or Prometheus instance configured with `file_sd_configs` against the same directory picks every connector up automatically.
 
 ## Next steps
 

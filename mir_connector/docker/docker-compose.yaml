@@ -23,13 +23,16 @@
 # override its own credentials (or InOrbit Connect key via
 # INORBIT_INORBIT_ROBOT_KEY) in its service's `environment:` block.
 #
-# Containers use the default bridge network. To expose the Prometheus endpoint
-# (metrics.enabled: true, bind_host: 0.0.0.0 in the YAML), add a per-service
-# `ports:` mapping with a distinct host port per robot (see below).
+# Containers use the default bridge network. When the Prometheus endpoint is
+# enabled (metrics.enabled: true in the YAML), don't publish host ports: each
+# connector writes a file_sd discovery file to the shared metrics.discovery_dir
+# volume, and a collector on this network scrapes them. Set
+# metrics.advertise_host to the service name (e.g. MiR100-1) so targets resolve.
 x-common-variables: &common-variables
   # InOrbit API key obtained during the setup process detailed in the README.md file
   INORBIT_API_KEY: <key>
-  # MiR robot credentials (fleet-shared)
+  # MiR robot credentials. Shared defaults — a robot with its own login can
+  # override these in its service's environment: block (see MiR100-1 below).
   INORBIT_MIR_MIR_USERNAME: <mir-username>
   INORBIT_MIR_MIR_PASSWORD: <mir-password>
   # Other variables can be set here
@@ -44,11 +47,10 @@ services:
     environment:
       <<: *common-variables
       ROBOT_ID: MiR100-1
+      # Per-robot MiR credentials (override the shared defaults above):
+      # INORBIT_MIR_MIR_USERNAME: <mir100-1-username>
+      # INORBIT_MIR_MIR_PASSWORD: <mir100-1-password>
     restart: unless-stopped
-    # Publish the Prometheus endpoint only if metrics.enabled in the YAML.
-    # host:container — distinct host port per robot; 9090 is the bind_port.
-    # ports:
-    #   - "9091:9090"
 
   MiR100-2:
     image: us-central1-docker.pkg.dev/inorbit-integrations/connectors/mir_connector:${CONNECTOR_VERSION}
@@ -57,6 +59,6 @@ services:
     environment:
       <<: *common-variables
       ROBOT_ID: MiR100-2
+      # INORBIT_MIR_MIR_USERNAME: <mir100-2-username>
+      # INORBIT_MIR_MIR_PASSWORD: <mir100-2-password>
     restart: unless-stopped
-    # ports:
-    #   - "9092:9090"

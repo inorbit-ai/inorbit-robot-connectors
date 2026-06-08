@@ -43,17 +43,23 @@ logging:
 
 # Optional: Prometheus metrics endpoint (off by default). When enabled, the
 # connector serves /metrics for fleet operators to monitor connector health
-# and detect MiR API stalls. Every connector binds this same port inside its
-# own container; publish each on a distinct HOST port via a per-service
-# `ports:` mapping in docker compose (e.g. "9091:9090").
+# and detect MiR API stalls. Set discovery_dir to a shared volume: each
+# connector writes a file_sd target file there, and a collector on the same
+# docker network scrapes it — no host port publishing needed. advertise_host
+# is the address the collector uses (the docker service name on a shared
+# network); every connector can keep the same bind_port.
 # metrics:
 #   enabled: true
 #   bind_host: 0.0.0.0
 #   bind_port: 9090
-#   discovery_dir: null   # set a writable dir to enable Prometheus file_sd
+#   advertise_host: my-robot         # docker service name, resolvable by the collector
+#   discovery_dir: /var/run/inorbit-metrics   # shared volume read by the collector
 
 # Fleet-shared MiR settings. Credentials are injected via
-# INORBIT_MIR_MIR_USERNAME / INORBIT_MIR_MIR_PASSWORD (omit them here).
+# INORBIT_MIR_MIR_USERNAME / INORBIT_MIR_MIR_PASSWORD (omit them here). When
+# robots have DIFFERENT logins, set those env vars per connector process /
+# container instead of here (each process reads its own environment) — see
+# docker/docker-compose.example.yaml.
 connector_config:
   mir_api_version: v2.0
 

@@ -349,18 +349,26 @@ class MirConnector(Connector):
         await self.mission_group.start()
 
     async def _disconnect(self):
-        """Disconnect from any external services"""
-        await self.mission_group.cleanup_connector_missions()
-        await self.mission_group.stop()
-        await self.robot.stop()
-        await self.mir_api.close()
+        """Disconnect from external services.
 
-        # Shutdown mission executor
-        try:
-            await self.mission_executor.shutdown()
-            self._logger.info("Mission executor shut down successfully")
-        except Exception as e:
-            self._logger.error(f"Error shutting down mission executor: {e}")
+        Teardown is best-effort: during shutdown the robot or MiR server may
+        already be unreachable (e.g. the connection drops and a request raises
+        ``httpx.RemoteProtocolError``). Each step is isolated so one failure is
+        logged and the remaining steps still run — a teardown error must never
+        crash the connector thread or leave clients open.
+        """
+        teardown_steps = (
+            ("clean up connector missions", self.mission_group.cleanup_connector_missions),
+            ("stop the mission group", self.mission_group.stop),
+            ("stop robot polling", self.robot.stop),
+            ("close the MiR API client", self.mir_api.close),
+            ("shut down the mission executor", self.mission_executor.shutdown),
+        )
+        for description, step in teardown_steps:
+            try:
+                await step()
+            except Exception as e:
+                self._logger.error(f"Error while trying to {description} during shutdown: {e}")
 
     async def _execution_loop(self):
         """The main execution loop for the connector"""

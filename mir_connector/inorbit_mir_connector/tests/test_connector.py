@@ -6,6 +6,7 @@ import math
 import uuid
 from unittest.mock import AsyncMock, MagicMock, Mock, call
 
+import httpx
 import pytest
 from inorbit_connector.commands import CommandResultCode
 from inorbit_edge.robot import RobotSession
@@ -743,3 +744,49 @@ def test_is_robot_online_api_disconnected(connector):
 
     # Verify _is_robot_online returns False (via api_connected property)
     assert connector._is_robot_online() is False
+
+
+@pytest.mark.asyncio
+async def test_disconnect_is_best_effort(connector):
+    """Teardown must tolerate a robot/server that is already gone.
+
+    If the first step (mission cleanup) raises because the MiR connection
+    dropped mid-shutdown, _disconnect must NOT propagate (which would crash
+    the connector thread) and must still run the remaining teardown steps.
+    """
+    connector.mission_group = MagicMock()
+    connector.mission_group.cleanup_connector_missions = AsyncMock(
+        side_effect=httpx.RemoteProtocolError("Server disconnected without sending a response")
+    )
+    connector.mission_group.stop = AsyncMock()
+    connector.robot.stop = AsyncMock()
+    connector.mir_api.close = AsyncMock()
+    connector.mission_executor = MagicMock()
+    connector.mission_executor.shutdown = AsyncMock()
+
+    # Must not raise despite the failing first step.
+    await connector._disconnect()
+
+    # Every remaining teardown step still ran.
+    connector.mission_group.stop.assert_awaited_once()
+    connector.robot.stop.assert_awaited_once()
+    connector.mir_api.close.assert_awaited_once()
+    connector.mission_executor.shutdown.assert_awaited_once()
+
+
+def test_shutdown_handler_is_reentrant_safe_and_swallows_errors():
+    """The SIGINT handler stops the connector once and never propagates
+    stop()'s 'thread did not stop in time' exception into the main thread."""
+    from inorbit_mir_connector.inorbit_mir_connector import _make_shutdown_handler
+
+    connector = MagicMock()
+    connector.stop = MagicMock(side_effect=Exception("Thread did not stop in time"))
+    handler = _make_shutdown_handler(connector)
+
+    # First interrupt: stops the connector, swallowing the error (no raise).
+    handler()
+    connector.stop.assert_called_once()
+
+    # Repeated interrupt while shutting down: ignored, stop() not called again.
+    handler()
+    connector.stop.assert_called_once()

@@ -51,6 +51,31 @@ class CustomParser(argparse.ArgumentParser):
         sys.exit(2)
 
 
+def _make_shutdown_handler(connector):
+    """Build a SIGINT handler that stops the connector gracefully.
+
+    Re-entrant-safe: repeated Ctrl+C while shutdown is already in progress is
+    ignored instead of stacking stop() calls. It also never lets an exception
+    escape the handler — ``connector.stop()`` raises if teardown exceeds its
+    join timeout (e.g. a slow camera stream thread), which is logged rather
+    than propagated into the main thread.
+    """
+    state = {"stopping": False}
+
+    def handle_sigint(_sig=None, _frame=None):
+        if state["stopping"]:
+            LOGGER.warning("Shutdown already in progress; ignoring repeated interrupt")
+            return
+        state["stopping"] = True
+        LOGGER.info("Shutting down connector...")
+        try:
+            connector.stop()
+        except Exception as e:
+            LOGGER.error(f"Connector did not shut down cleanly: {e}")
+
+    return handle_sigint
+
+
 def start():
     """This command takes as input file the MiR connector configuration and starts the connector."""
 
@@ -107,9 +132,10 @@ def start():
     LOGGER.info("Starting connector...")
     connector.start()
 
-    # Register a signal handler for graceful shutdown
-    # When a keyboard interrupt is received (Ctrl+C), the connector will be stopped
-    signal.signal(signal.SIGINT, lambda sig, frame: connector.stop())
+    # Register a signal handler for graceful shutdown. When a keyboard
+    # interrupt is received (Ctrl+C), the connector is stopped; repeated
+    # interrupts during shutdown are ignored.
+    signal.signal(signal.SIGINT, _make_shutdown_handler(connector))
 
     # Wait for the connector to finish
     connector.join()

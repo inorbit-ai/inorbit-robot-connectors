@@ -8,7 +8,26 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from inorbit_mir_connector.config.connector_model import ConnectorConfig, load_config
+from inorbit_mir_connector.config.connector_model import (
+    ConnectorConfig,
+    MirConnectorConfig,
+    load_config,
+)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_config_env(monkeypatch):
+    """Keep config-validation hermetic.
+
+    The framework's default ``env_file`` is ``config/.env``; a developer's
+    local .env (or stray INORBIT_MIR_* env vars) would otherwise supply
+    credentials these tests assert are missing. Disable the dotenv source and
+    clear the credential vars so validation reflects only the test input.
+    """
+    monkeypatch.setitem(MirConnectorConfig.model_config, "env_file", None)
+    monkeypatch.setitem(ConnectorConfig.model_config, "env_file", None)
+    monkeypatch.delenv("INORBIT_MIR_MIR_USERNAME", raising=False)
+    monkeypatch.delenv("INORBIT_MIR_MIR_PASSWORD", raising=False)
 
 
 @pytest.fixture

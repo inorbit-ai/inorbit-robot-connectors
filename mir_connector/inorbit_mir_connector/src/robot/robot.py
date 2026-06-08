@@ -9,12 +9,6 @@ from typing import Coroutine
 import time
 
 from inorbit_mir_connector.src.mir_api.mir_api_base import MirApiBaseClass
-from inorbit_mir_connector.src.metrics import (
-    classify_outcome,
-    mir_circuit_breaker_opens_total,
-    mir_polling_ticks_total,
-    register_polling_liveness_gauge,
-)
 
 
 class Robot:
@@ -49,9 +43,8 @@ class Robot:
         self._last_error_time = 0
 
         # Per-loop monotonic timestamps of the last successful REST poll
-        # (status / metrics / diagnostics), read by the
-        # ``mir_polling_last_success_age_seconds`` ObservableGauge.
-        # Loops with no entry yet report 0.0.
+        # (status / metrics / diagnostics). Kept as cheap liveness state; a
+        # canonical polling-staleness metric could read it in the future.
         self._last_polling_success_ts: dict[str, float] = {}
 
     def start(self) -> None:
@@ -66,11 +59,6 @@ class Robot:
         # Note: diagnostics endpoint does not exist on v2 firmware
         if self._enable_diagnostics:
             self._run_in_loop(self._update_diagnostics, frequency=0.5)
-
-        # Register the polling liveness ObservableGauge so /metrics scrapes
-        # report seconds since last successful poll per loop. No-op when
-        # the global MeterProvider is the OTEL no-op provider.
-        register_polling_liveness_gauge(self)
 
         self.logger.debug(f"Started {len(self._running_tasks)} polling tasks")
 
@@ -114,9 +102,7 @@ class Robot:
             self._status = status
             self._handle_success()
             self._last_polling_success_ts[loop_name] = time.monotonic()
-            mir_polling_ticks_total.add(1, {"loop": loop_name, "outcome": "success"})
         except Exception as e:
-            mir_polling_ticks_total.add(1, {"loop": loop_name, "outcome": classify_outcome(e)})
             self._handle_error(e, "robot status fetch")
             # Keep the last known status on error
 
@@ -128,9 +114,7 @@ class Robot:
             self._metrics = metrics
             self._handle_success()
             self._last_polling_success_ts[loop_name] = time.monotonic()
-            mir_polling_ticks_total.add(1, {"loop": loop_name, "outcome": "success"})
         except Exception as e:
-            mir_polling_ticks_total.add(1, {"loop": loop_name, "outcome": classify_outcome(e)})
             self._handle_error(e, "robot metrics fetch")
             # Keep the last known metrics on error
 
@@ -142,9 +126,7 @@ class Robot:
             self._diagnostics = diagnostics
             self._handle_success()
             self._last_polling_success_ts[loop_name] = time.monotonic()
-            mir_polling_ticks_total.add(1, {"loop": loop_name, "outcome": "success"})
         except Exception as e:
-            mir_polling_ticks_total.add(1, {"loop": loop_name, "outcome": classify_outcome(e)})
             self._handle_error(e, "robot diagnostics fetch")
             # Keep the last known diagnostics on error
 
@@ -254,7 +236,6 @@ class Robot:
                 f"Circuit breaker activated after {self._consecutive_errors} consecutive "
                 f"errors in {operation}. Backing off for {self._backoff_time}s"
             )
-            mir_circuit_breaker_opens_total.add(1)
         elif self._consecutive_errors % 10 == 0:  # Log every 10th error to reduce noise
             self.logger.error(
                 f"Still failing {operation} ({self._consecutive_errors} consecutive "

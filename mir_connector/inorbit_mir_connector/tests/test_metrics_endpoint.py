@@ -2,16 +2,14 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Integration test for the OTEL Prometheus exporter wiring.
+"""Integration test for the OTel Prometheus exporter wiring.
 
 Builds a real :class:`MirConnector` with ``metrics.enabled=True``, starts the
-metrics HTTP server, exercises both a framework counter and a domain counter,
-then scrapes ``/metrics`` and asserts both metric families appear. Validates
-that this connector correctly hooks into the framework's shared global
-MeterProvider for its domain instruments (declared in
-``inorbit_mir_connector.src.metrics``).
+metrics HTTP server, exercises a framework gauge and the canonical
+upstream-HTTP family, then scrapes ``/metrics`` and asserts the metric
+families appear under the single ``inorbit_connector`` wire namespace.
 
-OTEL's MeterProvider is a process-global singleton, so this test deliberately
+OTel's MeterProvider is a process-global singleton, so this test deliberately
 runs as a single non-parametrized case.
 """
 
@@ -20,14 +18,11 @@ import urllib.request
 from unittest.mock import MagicMock
 
 import pytest
+from inorbit_connector.metrics.http import record_upstream_http_request
 from inorbit_edge.robot import RobotSession
 
 from inorbit_mir_connector.config.connector_model import ConnectorConfig
 from inorbit_mir_connector.src.connector import MirConnector
-from inorbit_mir_connector.src.metrics import (
-    mir_api_request_duration_seconds,
-    mir_api_requests_total,
-)
 
 
 def _free_port() -> int:
@@ -56,19 +51,24 @@ def metrics_connector(monkeypatch, tmp_path):
             inorbit_robot_key="robot_key",
             location_tz="UTC",
             logging={"log_level": "INFO"},
-            connector_type="MiR100",
-            connector_version="0.1.0",
+            connector_type="mir",
             connector_config={
-                "mir_host_address": "example.com",
-                "mir_host_port": 80,
-                "mir_use_ssl": False,
                 "mir_username": "user",
                 "mir_password": "pass",
                 "mir_api_version": "v2.0",
-                "mir_firmware_version": "v2",
-                "enable_temporary_mission_group": True,
             },
             user_scripts_dir=tmp_path,
+            fleet=[
+                {
+                    "robot_id": "mir100-1",
+                    "mir_model": "MiR100",
+                    "mir_host_address": "example.com",
+                    "mir_host_port": 80,
+                    "mir_use_ssl": False,
+                    "mir_firmware_version": "v2",
+                    "enable_temporary_mission_group": True,
+                }
+            ],
             metrics={
                 "enabled": True,
                 "bind_host": "127.0.0.1",
@@ -92,29 +92,24 @@ def metrics_connector(monkeypatch, tmp_path):
         connector._metrics_server.stop()
 
 
-def test_metrics_endpoint_serves_framework_and_domain_metrics(metrics_connector):
-    # Emit a domain counter and histogram sample. OpenTelemetry's Prometheus
-    # exporter only writes families that have at least one observation, so
-    # we need to actually call the instruments to verify the wiring.
-    attrs = {"method": "GET", "endpoint": "status", "outcome": "success"}
-    mir_api_requests_total.add(1, attrs)
-    mir_api_request_duration_seconds.record(0.123, attrs)
+def test_metrics_endpoint_serves_all_metric_families(metrics_connector):
+    # OpenTelemetry's Prometheus exporter only writes families that have at
+    # least one observation, so actually exercise the instruments.
+    record_upstream_http_request(
+        vendor="mir", method="GET", endpoint="status", duration_seconds=0.123
+    )
 
     url = f"http://127.0.0.1:{metrics_connector._port}/metrics"
     with urllib.request.urlopen(url, timeout=5) as resp:
         assert resp.status == 200
         body = resp.read().decode("utf-8")
 
-    # Framework gauges are registered eagerly in Connector.__init__ via
-    # register_framework_gauges, so they appear on every scrape regardless
-    # of whether the run loop has started. With inorbit-connector >= 2.5
-    # the exporter namespace is derived per connector_type as
-    # `inorbit_<connector_type>_connector`, so the framework instruments
-    # surface as `inorbit_MiR100_connector_*` for this fixture.
-    assert "inorbit_MiR100_connector_up" in body
-    assert "inorbit_MiR100_connector_session_connected" in body
+    # Framework gauges (registered eagerly in FleetConnector.__init__).
+    # The wire-level namespace is the constant ``inorbit_connector``; the
+    # connector type rides as a Resource attribute, not in the name.
+    assert "inorbit_connector_up" in body
+    assert "inorbit_connector_session_connected" in body
 
-    # Domain instruments share the same global MeterProvider, so they pick
-    # up the same per-connector_type namespace prefix.
-    assert "inorbit_MiR100_connector_mir_api_requests_total" in body
-    assert "inorbit_MiR100_connector_mir_api_request_duration_seconds" in body
+    # Canonical upstream-HTTP family.
+    assert "inorbit_connector_upstream_http_requests_total" in body
+    assert "inorbit_connector_upstream_http_duration" in body

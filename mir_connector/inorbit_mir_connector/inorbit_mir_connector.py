@@ -11,7 +11,7 @@ import os
 from pydantic import ValidationError
 from inorbit_mir_connector.src.connector import MirConnector
 from inorbit_mir_connector.config.connector_model import (
-    load_and_validate,
+    load_config,
     format_validation_error,
 )
 
@@ -51,6 +51,31 @@ class CustomParser(argparse.ArgumentParser):
         sys.exit(2)
 
 
+def _make_shutdown_handler(connector):
+    """Build a SIGINT handler that stops the connector gracefully.
+
+    Re-entrant-safe: repeated Ctrl+C while shutdown is already in progress is
+    ignored instead of stacking stop() calls. It also never lets an exception
+    escape the handler — ``connector.stop()`` raises if teardown exceeds its
+    join timeout (e.g. a slow camera stream thread), which is logged rather
+    than propagated into the main thread.
+    """
+    state = {"stopping": False}
+
+    def handle_sigint(_sig=None, _frame=None):
+        if state["stopping"]:
+            LOGGER.warning("Shutdown already in progress; ignoring repeated interrupt")
+            return
+        state["stopping"] = True
+        LOGGER.info("Shutting down connector...")
+        try:
+            connector.stop()
+        except Exception as e:
+            LOGGER.error(f"Connector did not shut down cleanly: {e}")
+
+    return handle_sigint
+
+
 def start():
     """This command takes as input file the MiR connector configuration and starts the connector."""
 
@@ -85,27 +110,32 @@ def start():
         logging.getLogger().setLevel(getattr(logging, args.log_level.upper()))
 
     try:
-        mir_config = load_and_validate(config_filename, robot_id)
+        mir_config = load_config(config_filename)
     except FileNotFoundError:
         LOGGER.error("Missing configuration file")
-        exit(1)
-    except IndexError:
-        LOGGER.error(
-            f"Missing configuration section for robot_id '{robot_id}' within {config_filename}."
-        )
         exit(1)
     except ValidationError as e:
         LOGGER.error(format_validation_error(e))
         exit(1)
 
+    fleet_robot_ids = [robot.robot_id for robot in mir_config.fleet]
+    if robot_id not in fleet_robot_ids:
+        LOGGER.error(
+            f"Robot id '{robot_id}' not found in {config_filename}. "
+            f"Configured robots: {', '.join(fleet_robot_ids) or '(none)'}."
+        )
+        exit(1)
+
+    # MirConnector narrows the fleet to ``robot_id`` via to_singular_config().
     connector = MirConnector(robot_id, mir_config)
 
     LOGGER.info("Starting connector...")
     connector.start()
 
-    # Register a signal handler for graceful shutdown
-    # When a keyboard interrupt is received (Ctrl+C), the connector will be stopped
-    signal.signal(signal.SIGINT, lambda sig, frame: connector.stop())
+    # Register a signal handler for graceful shutdown. When a keyboard
+    # interrupt is received (Ctrl+C), the connector is stopped; repeated
+    # interrupts during shutdown are ignored.
+    signal.signal(signal.SIGINT, _make_shutdown_handler(connector))
 
     # Wait for the connector to finish
     connector.join()

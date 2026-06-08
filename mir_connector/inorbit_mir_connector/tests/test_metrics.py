@@ -2,121 +2,72 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Unit tests for the connector's domain metrics module."""
+"""Tests for the MiR metrics helpers.
+
+The endpoint normalizer feeds the canonical upstream-HTTP metrics — every
+raw MiR API path must collapse into the bounded label set; a regression
+here silently pollutes the metric descriptor.
+"""
 
 import httpx
 import pytest
 
-from inorbit_mir_connector.src.metrics import (
-    classify_outcome,
-    endpoint_label,
-    mir_api_request_duration_seconds,
-    mir_api_requests_total,
-    mir_api_retries_total,
-    mir_circuit_breaker_opens_total,
-    mir_polling_ticks_total,
+from inorbit_mir_connector.src.metrics import api_endpoint, error_kind
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("/api/v2.0.0/status", "status"),
+        ("/api/v2.0.0/metrics", "metrics"),
+        ("/api/v2.0.0/experimental/diagnostics", "diagnostics"),
+        ("/api/v2.0.0/mission_queue/14026", "mission_queue"),
+        ("/api/v2.0.0/mission_groups/abc-123/missions", "mission_groups"),
+        ("/api/v2.0.0/missions/71e63050-7b7a-11ed", "missions"),
+        ("/api/v2.0.0/maps/20f762ff-5e0a-11ee", "maps"),
+        # Callers may pass relative paths (httpx base_url joins them).
+        ("status", "status"),
+        ("mission_queue/14026", "mission_queue"),
+        # Leading-slash relative paths — the shape mir_api_v2.py actually
+        # passes to the shared httpx client (base_url joins them).
+        ("/status", "status"),
+        ("/metrics", "metrics"),
+        ("/missions", "missions"),
+        ("/mission_queue/14026", "mission_queue"),
+        ("/mission_groups", "mission_groups"),
+        # Unknown paths collapse instead of leaking raw values.
+        ("/api/v2.0.0/registers/42", "other"),
+        ("", "other"),
+    ],
 )
+def test_api_endpoint_normalization(path, expected):
+    assert api_endpoint(path) == expected
 
 
-class TestInstrumentsHaveCallableApi:
-    """Importing the metrics module yields instruments with the OTEL public API.
-
-    These call sites are exercised throughout the codebase regardless of
-    whether metrics are enabled — when disabled they're OTEL no-ops, but they
-    must still expose ``add`` / ``record`` so callers don't need to guard.
-    """
-
-    def test_counters_have_add(self):
-        for counter in (
-            mir_api_requests_total,
-            mir_api_retries_total,
-            mir_polling_ticks_total,
-            mir_circuit_breaker_opens_total,
-        ):
-            assert callable(getattr(counter, "add", None))
-
-    def test_histogram_has_record(self):
-        assert callable(getattr(mir_api_request_duration_seconds, "record", None))
-
-    def test_calling_instruments_does_not_raise(self):
-        # All instruments should accept calls cleanly even with no provider.
-        mir_api_requests_total.add(1, {"method": "GET", "endpoint": "status"})
-        mir_api_retries_total.add(1, {"method": "GET", "endpoint": "status"})
-        mir_polling_ticks_total.add(1, {"loop": "status", "outcome": "success"})
-        mir_circuit_breaker_opens_total.add(1)
-        mir_api_request_duration_seconds.record(
-            0.123, {"method": "GET", "endpoint": "status", "outcome": "success"}
-        )
+def test_label_set_is_bounded_across_ids():
+    """Different mission/queue ids must not fan out into new labels."""
+    labels = {api_endpoint(f"/api/v2.0.0/mission_queue/{i}") for i in range(100)}
+    labels |= {api_endpoint(f"/api/v2.0.0/missions/m-{i}") for i in range(100)}
+    assert labels == {"mission_queue", "missions"}
 
 
-class TestClassifyOutcome:
-    """``classify_outcome`` maps exceptions into a bounded label set."""
+def test_error_kind_is_bounded():
+    """error_kind must only emit values from the framework's bounded enum."""
+    request = httpx.Request("GET", "http://example.com")
 
-    def test_success_when_none(self):
-        assert classify_outcome(None) == "success"
+    def http_error(status):
+        response = httpx.Response(status, request=request)
+        return httpx.HTTPStatusError("err", request=request, response=response)
 
-    def test_timeout(self):
-        assert classify_outcome(httpx.ConnectTimeout("boom")) == "timeout"
-        assert classify_outcome(httpx.ReadTimeout("boom")) == "timeout"
-
-    def test_connect_error(self):
-        assert classify_outcome(httpx.ConnectError("boom")) == "connect_error"
-
-    @pytest.mark.parametrize("status_code", [400, 404, 422, 499])
-    def test_http_4xx(self, status_code):
-        request = httpx.Request("GET", "http://example/x")
-        response = httpx.Response(status_code, request=request)
-        exc = httpx.HTTPStatusError("boom", request=request, response=response)
-        assert classify_outcome(exc) == "http_4xx"
-
-    @pytest.mark.parametrize("status_code", [500, 502, 503, 504, 599])
-    def test_http_5xx(self, status_code):
-        request = httpx.Request("GET", "http://example/x")
-        response = httpx.Response(status_code, request=request)
-        exc = httpx.HTTPStatusError("boom", request=request, response=response)
-        assert classify_outcome(exc) == "http_5xx"
-
-    def test_http_other_code(self):
-        # Codes outside 4xx/5xx are bucketed separately
-        request = httpx.Request("GET", "http://example/x")
-        response = httpx.Response(302, request=request)
-        exc = httpx.HTTPStatusError("boom", request=request, response=response)
-        assert classify_outcome(exc) == "http_other"
-
-    def test_generic_exception(self):
-        assert classify_outcome(RuntimeError("boom")) == "error"
-        assert classify_outcome(ValueError("boom")) == "error"
-
-
-class TestEndpointLabel:
-    """``endpoint_label`` reduces paths to a bounded label set."""
-
-    @pytest.mark.parametrize(
-        "path,expected",
-        [
-            # Absolute paths as MirApiBase uses them
-            ("/api/v2.0.0/status", "status"),
-            ("/api/v2.0.0/metrics", "metrics"),
-            ("/api/v2.0.0/experimental/diagnostics", "diagnostics"),
-            ("/api/v2.0.0/mission_queue", "mission_queue"),
-            ("/api/v2.0.0/mission_queue/14026", "mission_queue"),
-            ("/api/v2.0.0/mission_queue/14026/actions", "mission_queue"),
-            ("/api/v2.0.0/missions", "missions"),
-            ("/api/v2.0.0/missions/abc-123", "missions"),
-            ("/api/v2.0.0/missions/abc-123/actions", "missions"),
-            ("/api/v2.0.0/mission_groups", "mission_groups"),
-            ("/api/v2.0.0/mission_groups/X/missions", "mission_groups"),
-            ("/api/v2.0.0/maps", "maps"),
-            ("/api/v2.0.0/maps/20f762ff-5e0a-11ee-abc8-0001299981c4", "maps"),
-            # Bare-prefix variants
-            ("status", "status"),
-            ("metrics", "metrics"),
-            ("mission_queue/123", "mission_queue"),
-            # Unknown
-            ("/some/random/path", "other"),
-            ("/api/v2.0.0/users", "other"),
-            ("", "other"),
-        ],
-    )
-    def test_path_mapping(self, path, expected):
-        assert endpoint_label(path) == expected
+    cases = [
+        (httpx.ConnectTimeout("t"), "timeout"),
+        (httpx.ConnectError("c"), "connect_error"),
+        (http_error(404), "http_4xx"),
+        (http_error(503), "http_5xx"),
+        # Non-error HTTP statuses and unknown exceptions collapse to "other"
+        # so the descriptor's label space stays bounded.
+        (http_error(302), "other"),
+        (ValueError("v"), "other"),
+    ]
+    for exc, expected in cases:
+        assert error_kind(exc) == expected

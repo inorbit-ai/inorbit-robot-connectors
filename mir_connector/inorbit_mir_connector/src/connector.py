@@ -9,7 +9,7 @@ import uuid
 
 # from typing import override # TODO(b-Tomas): Uncomment when updating to Python 3.13
 from inorbit_connector.connector import Connector
-from inorbit_connector.connector import CommandResultCode
+from inorbit_connector.commands import CommandResultCode
 from inorbit_connector.models import MapConfigTemp
 from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND
 from inorbit_edge.robot import COMMAND_MESSAGE
@@ -64,23 +64,30 @@ class MirConnector(Connector):
             register_user_scripts=True,
             create_user_scripts_dir=True,
         )
-        self.config = config
+        # The framework narrows ``config`` to this robot via
+        # ``to_singular_config(robot_id)`` and stores it on ``self.config``
+        # (fleet reduced to the single selected robot). Do NOT reassign
+        # ``self.config`` to the full config passed in, or per-robot reads
+        # below would target the wrong robot.
+        self._robot_config = self.config.fleet[0]
+        connector_config = self.config.connector_config
 
-        # Configure the connection to the robot
+        # Configure the connection to the robot. Connection/SSL settings are
+        # per-robot; credentials are fleet-wide (and env-injectable).
         self.mir_api = MirApiV2(
-            mir_host_address=config.connector_config.mir_host_address,
-            mir_username=config.connector_config.mir_username,
-            mir_password=config.connector_config.mir_password,
-            mir_host_port=config.connector_config.mir_host_port,
-            mir_use_ssl=config.connector_config.mir_use_ssl,
-            verify_ssl=config.connector_config.verify_ssl,
-            ssl_ca_bundle=config.connector_config.ssl_ca_bundle,
-            ssl_verify_hostname=config.connector_config.ssl_verify_hostname,
+            mir_host_address=self._robot_config.mir_host_address,
+            mir_username=connector_config.mir_username,
+            mir_password=connector_config.mir_password,
+            mir_host_port=self._robot_config.mir_host_port,
+            mir_use_ssl=self._robot_config.mir_use_ssl,
+            verify_ssl=self._robot_config.verify_ssl,
+            ssl_ca_bundle=self._robot_config.ssl_ca_bundle,
+            ssl_verify_hostname=self._robot_config.ssl_verify_hostname,
         )
 
         # Async robot wrapper managing polling
         # Note: diagnostics endpoint does not exist on v2 firmware
-        enable_diagnostics = config.connector_config.mir_firmware_version != "v2"
+        enable_diagnostics = self._robot_config.mir_firmware_version != "v2"
         self.robot = Robot(
             mir_api=self.mir_api,
             default_update_freq=1.0,  # 1 Hz status by default
@@ -96,35 +103,53 @@ class MirConnector(Connector):
                 f"Unknown timezone: '{config.location_tz}', defaulting to 'UTC'. {ex}"
             )
 
-        # Set up InOrbit Mission Tracking
-        self.mission_tracking: MirInorbitMissionTracking = MirInorbitMissionTracking(
-            mir_api=self.mir_api,
-            inorbit_sess=self._get_session(),
-            robot_tz_info=self.robot_tz_info,
-        )
+        # InOrbit Mission Tracking needs the robot session, which v3 only
+        # creates during start(); built lazily via the mission_tracking
+        # property on first use (all uses happen at runtime).
+        self._mission_tracking: MirInorbitMissionTracking | None = None
 
         # Set up InOrbit Edge Executor for mission execution.
-        # `inorbit_rest_api_endpoint` is a typed `HttpUrl`; cast to str
-        # because `MissionInOrbitAPI` concatenates the URL with str paths
-        # and assumes a plain string.
+        # ``config.api_url`` is the InOrbit REST API base URL (a typed
+        # ``HttpUrl``; cast to str because ``MissionInOrbitAPI``
+        # concatenates it with str paths — strip the trailing slash
+        # HttpUrl normalization adds so joined paths don't double it).
         self.mission_executor: MirMissionExecutor = MirMissionExecutor(
             robot_id=robot_id,
             inorbit_api=MissionInOrbitAPI(
-                base_url=str(self._get_session().inorbit_rest_api_endpoint),
+                base_url=str(self.config.api_url).rstrip("/"),
                 api_key=self.config.api_key,
             ),
             mir_api=self.mir_api,
-            database_file=config.connector_config.mission_database_file,
+            database_file=self._robot_config.mission_database_file,
         )
 
         # Set up temporary mission groups
-        if config.connector_config.enable_temporary_mission_group:
+        if self._robot_config.enable_temporary_mission_group:
             self.mission_group = TmpMissionsGroupHandler(mir_api=self.mir_api)
         else:
             self.mission_group = NullMissionsGroupHandler()
 
         # Initialize status as None to prevent publishing before the robot is connected
         self.status = None
+
+    @property
+    def mission_tracking(self) -> MirInorbitMissionTracking:
+        """Mission tracking, built on first use.
+
+        Deferred because it captures the robot session, which the framework
+        only creates during start() — calling _get_session() in __init__
+        raises KeyError on inorbit-connector v3.
+
+        Only accessed from the connector's event-loop thread (execution
+        loop and command handlers), so no locking is needed here.
+        """
+        if self._mission_tracking is None:
+            self._mission_tracking = MirInorbitMissionTracking(
+                mir_api=self.mir_api,
+                inorbit_sess=self._get_session(),
+                robot_tz_info=self.robot_tz_info,
+            )
+        return self._mission_tracking
 
     def _is_robot_online(self) -> bool:
         """Check if the robot is online based on MiR API connectivity.
@@ -270,9 +295,9 @@ class MirConnector(Connector):
             pose = args[0]
             # If the temporary mission group is enabled, send the waypoint over missions
             # TODO: Make it more generic if/when we support predefined missions groups
-            if self.config.connector_config.enable_temporary_mission_group:
+            if self._robot_config.enable_temporary_mission_group:
                 await self.send_waypoint_over_missions(pose)
-            elif mission_id := self.config.connector_config.default_waypoint_mission_id:
+            elif mission_id := self._robot_config.default_waypoint_mission_id:
                 x, y, orientation = (
                     float(pose["x"]),
                     float(pose["y"]),
@@ -324,18 +349,26 @@ class MirConnector(Connector):
         await self.mission_group.start()
 
     async def _disconnect(self):
-        """Disconnect from any external services"""
-        await self.mission_group.cleanup_connector_missions()
-        await self.mission_group.stop()
-        await self.robot.stop()
-        await self.mir_api.close()
+        """Disconnect from external services.
 
-        # Shutdown mission executor
-        try:
-            await self.mission_executor.shutdown()
-            self._logger.info("Mission executor shut down successfully")
-        except Exception as e:
-            self._logger.error(f"Error shutting down mission executor: {e}")
+        Teardown is best-effort: during shutdown the robot or MiR server may
+        already be unreachable (e.g. the connection drops and a request raises
+        ``httpx.RemoteProtocolError``). Each step is isolated so one failure is
+        logged and the remaining steps still run — a teardown error must never
+        crash the connector thread or leave clients open.
+        """
+        teardown_steps = (
+            ("clean up connector missions", self.mission_group.cleanup_connector_missions),
+            ("stop the mission group", self.mission_group.stop),
+            ("stop robot polling", self.robot.stop),
+            ("close the MiR API client", self.mir_api.close),
+            ("shut down the mission executor", self.mission_executor.shutdown),
+        )
+        for description, step in teardown_steps:
+            try:
+                await step()
+            except Exception as e:
+                self._logger.error(f"Error while trying to {description} during shutdown: {e}")
 
     async def _execution_loop(self):
         """The main execution loop for the connector"""
@@ -544,8 +577,8 @@ class MirConnector(Connector):
     async def send_waypoint_over_missions(self, pose):
         """Use the connector's mission group to create a move mission to a designated pose."""
         mission_id = str(uuid.uuid4())
-        connector_type = self.config.connector_type
-        firmware_version = self.config.connector_config.mir_firmware_version
+        mir_model = self._robot_config.mir_model
+        firmware_version = self._robot_config.mir_firmware_version
 
         if not self.mission_group.missions_group_id:
             # Ensure missions group is created if not yet initialized by background thread
@@ -568,14 +601,14 @@ class MirConnector(Connector):
             "orientation": math.degrees(float(pose["theta"])),
             "distance_threshold": MIR_MOVE_DISTANCE_THRESHOLD,
         }
-        if connector_type == "MiR100" and firmware_version == "v2":
+        if mir_model == "MiR100" and firmware_version == "v2":
             param_values["retries"] = 5
-        elif connector_type == "MiR250" and firmware_version == "v3":
+        elif mir_model == "MiR250" and firmware_version == "v3":
             param_values["blocked_path_timeout"] = 60.0
         else:
             self._logger.warning(
-                f"Not supported connector type and firmware version combination for waypoint "
-                f"navigation: {connector_type} {firmware_version}. Will attempt to send waypoint "
+                f"Not supported robot model and firmware version combination for waypoint "
+                f"navigation: {mir_model} {firmware_version}. Will attempt to send waypoint "
                 "based on firmware version."
             )
             if firmware_version == "v2":
@@ -641,7 +674,7 @@ class MirConnector(Connector):
                 return None
 
             # Field name differs by firmware: v2 uses "map", v3 uses "base_map"
-            firmware_version = self.config.connector_config.mir_firmware_version
+            firmware_version = self._robot_config.mir_firmware_version
             map_field = "map" if firmware_version == "v2" else "base_map"
             image_b64 = map_data.get(map_field)
             map_label = map_data.get("name")

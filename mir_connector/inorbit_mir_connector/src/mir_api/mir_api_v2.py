@@ -11,12 +11,13 @@ from enum import Enum
 from typing import Optional
 from prometheus_client import parser
 
-from inorbit_edge.missions import MISSION_STATE_EXECUTING
-from inorbit_mir_connector.src.metrics import (
-    classify_outcome,
-    mir_api_request_duration_seconds,
-    mir_api_requests_total,
+from inorbit_connector.metrics.http import (
+    record_upstream_http_error,
+    record_upstream_http_request,
 )
+from inorbit_edge.missions import MISSION_STATE_EXECUTING
+from inorbit_mir_connector.config.connector_model import CONNECTOR_TYPE
+from inorbit_mir_connector.src.metrics import error_kind
 from .mir_api_base import MirApiBaseClass
 
 API_V2_CONTEXT_URL = "/api/v2.0.0"
@@ -294,13 +295,22 @@ class MirApiV2(MirApiBaseClass):
             exc = e
             raise
         finally:
-            attrs = {
-                "method": "GET",
-                "endpoint": "send_waypoint",
-                "outcome": classify_outcome(exc),
-            }
-            mir_api_request_duration_seconds.record(time.monotonic() - start, attrs)
-            mir_api_requests_total.add(1, attrs)
+            duration = time.monotonic() - start
+            if exc is None:
+                record_upstream_http_request(
+                    vendor=CONNECTOR_TYPE,
+                    method="GET",
+                    endpoint="send_waypoint",
+                    duration_seconds=duration,
+                )
+            else:
+                record_upstream_http_error(
+                    vendor=CONNECTOR_TYPE,
+                    method="GET",
+                    endpoint="send_waypoint",
+                    error_kind=error_kind(exc),
+                    duration_seconds=duration,
+                )
 
     async def get_status(self):
         status_api_url = f"/{STATUS_ENDPOINT_V2}"

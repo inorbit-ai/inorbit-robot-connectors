@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: 2026 InOrbit, Inc.
+# SPDX-License-Identifier: MIT
+#
+# Metrics overlay: adds an OTel collector that scrapes the MiR connectors via
+# their file_sd discovery files and forwards them to GCP Cloud Monitoring
+# (see otel-collector-config.example.yaml). Use it on top of the base compose:
+#
+#   docker compose -f docker-compose.example.yaml -f docker-compose.metrics.example.yaml up
+#
+# Prerequisites:
+#   1. In each connector's fleet YAML, enable metrics on the shared volume:
+#        metrics:
+#          enabled: true
+#          bind_host: 0.0.0.0
+#          discovery_dir: /var/run/inorbit-metrics
+#          advertise_host: <service name>   # e.g. robot-1 — resolvable on the network
+#   2. Uncomment the `metrics_discovery:/var/run/inorbit-metrics` volume mount
+#      in docker-compose.example.yaml so each connector writes its target file
+#      to the shared volume this collector reads.
+#   3. Set GCP_PROJECT and place a GCP service-account key at ./gcp-sa.json
+#      (the default googlemanagedprometheus exporter needs it). For local-only
+#      verification, switch the exporter to `debug` in the collector config and
+#      drop the gcp-sa.json mount + GOOGLE_APPLICATION_CREDENTIALS below.
+
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.143.1
+    container_name: mir_otel_collector
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector-config.example.yaml:/etc/otelcol/config.yaml:ro
+      - metrics_discovery:/var/run/inorbit-metrics:ro
+      - ./gcp-sa.json:/etc/otelcol/gcp-sa.json:ro
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /etc/otelcol/gcp-sa.json
+      GCP_PROJECT: ${GCP_PROJECT}
+
+volumes:
+  metrics_discovery:

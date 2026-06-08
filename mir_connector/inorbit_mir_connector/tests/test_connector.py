@@ -6,8 +6,9 @@ import math
 import uuid
 from unittest.mock import AsyncMock, MagicMock, Mock, call
 
+import httpx
 import pytest
-from inorbit_connector.connector import CommandResultCode
+from inorbit_connector.commands import CommandResultCode
 from inorbit_edge.robot import RobotSession
 
 from inorbit_mir_connector.config.connector_model import ConnectorConfig
@@ -20,6 +21,9 @@ from .. import get_module_version
 def connector(monkeypatch, tmp_path):
     monkeypatch.setenv("INORBIT_KEY", "abc123")
     monkeypatch.setattr(RobotSession, "connect", MagicMock())
+    # Construction no longer calls _get_session() (mission_tracking is now
+    # built lazily). The instance-level _get_session mock below covers the
+    # runtime mission_tracking accesses.
 
     connector = MirConnector(
         "mir100-1",
@@ -27,17 +31,22 @@ def connector(monkeypatch, tmp_path):
             inorbit_robot_key="robot_key",
             location_tz="UTC",
             logging={"log_level": "INFO"},
-            connector_type="MiR100",
-            connector_version="0.1.0",
+            connector_type="mir",
+            fleet=[
+                {
+                    "robot_id": "mir100-1",
+                    "mir_model": "MiR100",
+                    "mir_host_address": "example.com",
+                    "mir_host_port": 80,
+                    "mir_use_ssl": False,
+                    "mir_firmware_version": "v2",
+                    "enable_temporary_mission_group": True,
+                }
+            ],
             connector_config={
-                "mir_host_address": "example.com",
-                "mir_host_port": 80,
-                "mir_use_ssl": False,
                 "mir_username": "user",
                 "mir_password": "pass",
                 "mir_api_version": "v2.0",
-                "mir_firmware_version": "v2",
-                "enable_temporary_mission_group": True,
             },
             user_scripts_dir=tmp_path,
         ),
@@ -68,6 +77,9 @@ def connector_with_mission_tracking(monkeypatch, tmp_path):
     """Connector fixture with mission tracking enabled for tests that need it."""
     monkeypatch.setenv("INORBIT_KEY", "abc123")
     monkeypatch.setattr(RobotSession, "connect", MagicMock())
+    # Construction no longer calls _get_session() (mission_tracking is now
+    # built lazily). The instance-level _get_session mock below covers the
+    # runtime mission_tracking accesses.
 
     connector = MirConnector(
         "mir100-1",
@@ -75,16 +87,21 @@ def connector_with_mission_tracking(monkeypatch, tmp_path):
             inorbit_robot_key="robot_key",
             location_tz="UTC",
             logging={"log_level": "INFO"},
-            connector_type="MiR100",
-            connector_version="0.1.0",
+            connector_type="mir",
+            fleet=[
+                {
+                    "robot_id": "mir100-1",
+                    "mir_model": "MiR100",
+                    "mir_host_address": "example.com",
+                    "mir_host_port": 80,
+                    "mir_use_ssl": False,
+                    "mir_firmware_version": "v2",
+                }
+            ],
             connector_config={
-                "mir_host_address": "example.com",
-                "mir_host_port": 80,
-                "mir_use_ssl": False,
                 "mir_username": "user",
                 "mir_password": "pass",
                 "mir_api_version": "v2.0",
-                "mir_firmware_version": "v2",
             },
             user_scripts_dir=tmp_path,
         ),
@@ -210,15 +227,20 @@ async def test_command_callback_nav_goal(connector, callback_kwargs):
 @pytest.mark.asyncio
 async def test_send_waypoint_over_missions(connector, monkeypatch):
     monkeypatch.setattr(uuid, "uuid4", Mock(return_value="uuid"))
+    # The matched model+firmware branches and the warning fallback produce
+    # identical params, so assert on the warning to tell them apart (catches
+    # regressions where the model is read from the wrong config field).
+    connector._logger = MagicMock()
     # Test MiR100 firmware v2
-    connector.config.connector_type = "MiR100"
-    connector.config.connector_config.mir_firmware_version = "v2"
+    connector.config.fleet[0].mir_model = "MiR100"
+    connector.config.fleet[0].mir_firmware_version = "v2"
 
     # Mock the mission group to have an ID so the method doesn't fail
     connector.mission_group = MagicMock()
     connector.mission_group.missions_group_id = "test_group_id"
 
     await connector.send_waypoint_over_missions({"x": "1", "y": "2", "theta": "0"})
+    connector._logger.warning.assert_not_called()
     connector.mir_api.create_mission.assert_called_once()
     connector.mir_api.add_action_to_mission.assert_called_once_with(
         action_type="move_to_position",
@@ -239,10 +261,11 @@ async def test_send_waypoint_over_missions(connector, monkeypatch):
     )
     connector.mir_api.queue_mission.assert_called_once_with("uuid")
     connector.mir_api.reset_mock()
-    # Test MiR100 firmware v3
-    connector.config.connector_type = "MiR250"
-    connector.config.connector_config.mir_firmware_version = "v3"
+    # Test MiR250 firmware v3
+    connector.config.fleet[0].mir_model = "MiR250"
+    connector.config.fleet[0].mir_firmware_version = "v3"
     await connector.send_waypoint_over_missions({"x": "1", "y": "2", "theta": "0"})
+    connector._logger.warning.assert_not_called()
     connector.mir_api.create_mission.assert_called_once()
     connector.mir_api.add_action_to_mission.assert_called_once_with(
         action_type="move_to_position",
@@ -267,6 +290,12 @@ async def test_send_waypoint_over_missions(connector, monkeypatch):
         priority=1,
     )
     connector.mir_api.queue_mission.assert_called_once_with("uuid")
+    connector.mir_api.reset_mock()
+    # Unsupported combination falls back to firmware defaults with a warning
+    connector.config.fleet[0].mir_model = "MiR250"
+    connector.config.fleet[0].mir_firmware_version = "v2"
+    await connector.send_waypoint_over_missions({"x": "1", "y": "2", "theta": "0"})
+    connector._logger.warning.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -417,13 +446,17 @@ async def test_connector_loop(connector_with_mission_tracking, monkeypatch):
     }
 
     # Get the mock session before the execution loop to ensure it's used consistently
-    # The deferred system stats publish will call _get_robot_session(robot_id)
+    # The deferred system stats publish iterates the framework's internal
+    # __robot_sessions dict, so register the mock session there too.
     mock_session = connector._get_session()
     connector._get_robot_session = MagicMock(return_value=mock_session)
+    # FRAGILE: name-mangled framework internals; breaks if the framework renames them
+    connector._FleetConnector__robot_sessions = {connector.robot_id: mock_session}
 
     await connector._execution_loop()
 
     # System stats are now deferred, manually trigger the publish
+    # FRAGILE: name-mangled framework internals; breaks if the framework renames them
     connector._FleetConnector__publish_pending_system_stats()
 
     pose_args, pose_kwargs = mock_session.publish_pose.call_args
@@ -436,6 +469,8 @@ async def test_connector_loop(connector_with_mission_tracking, monkeypatch):
     assert mock_session.publish_odometry.call_args == call(linear_speed=1.1, angular_speed=math.pi)
     assert mock_session.publish_key_values.call_args == call(
         {
+            # v3: the framework injects connector_type into every key-values publish.
+            "connector_type": "mir",
             "connector_version": get_module_version(),
             "robot_name": "Miriam",
             "serial_number": "200100005001715",
@@ -479,6 +514,7 @@ async def test_connector_loop(connector_with_mission_tracking, monkeypatch):
     mock_session.reset_mock()
     await connector._execution_loop()
     # System stats are deferred, manually trigger the publish
+    # FRAGILE: name-mangled framework internals; breaks if the framework renames them
     connector._FleetConnector__publish_pending_system_stats()
     assert not mock_session.publish_pose.called
     assert not mock_session.publish_odometry.called
@@ -522,6 +558,7 @@ async def test_safety_decomposition_publishes_active_states(
     connector._get_robot_session = MagicMock(return_value=mock_session)
 
     await connector._execution_loop()
+    # FRAGILE: name-mangled framework internals; breaks if the framework renames them
     connector._FleetConnector__publish_pending_system_stats()
 
     key_values_call = mock_session.publish_key_values.call_args[0][0]
@@ -600,10 +637,15 @@ async def test_connector_loop_publishes_system_stats(connector_with_mission_trac
     connector._get_session = MagicMock(return_value=mock_session)
     # Make _get_robot_session() also return the same mock (it's called with robot_id)
     connector._get_robot_session = MagicMock(return_value=mock_session)
+    # The deferred system stats publish iterates the framework's internal
+    # __robot_sessions dict, so register the mock session there too.
+    # FRAGILE: name-mangled framework internals; breaks if the framework renames them
+    connector._FleetConnector__robot_sessions = {connector.robot_id: mock_session}
 
     await connector._execution_loop()
 
     # Manually trigger the publish since we're calling _execution_loop() directly
+    # FRAGILE: name-mangled framework internals; breaks if the framework renames them
     connector._FleetConnector__publish_pending_system_stats()
 
     # Verify system stats are published with correct values
@@ -702,3 +744,49 @@ def test_is_robot_online_api_disconnected(connector):
 
     # Verify _is_robot_online returns False (via api_connected property)
     assert connector._is_robot_online() is False
+
+
+@pytest.mark.asyncio
+async def test_disconnect_is_best_effort(connector):
+    """Teardown must tolerate a robot/server that is already gone.
+
+    If the first step (mission cleanup) raises because the MiR connection
+    dropped mid-shutdown, _disconnect must NOT propagate (which would crash
+    the connector thread) and must still run the remaining teardown steps.
+    """
+    connector.mission_group = MagicMock()
+    connector.mission_group.cleanup_connector_missions = AsyncMock(
+        side_effect=httpx.RemoteProtocolError("Server disconnected without sending a response")
+    )
+    connector.mission_group.stop = AsyncMock()
+    connector.robot.stop = AsyncMock()
+    connector.mir_api.close = AsyncMock()
+    connector.mission_executor = MagicMock()
+    connector.mission_executor.shutdown = AsyncMock()
+
+    # Must not raise despite the failing first step.
+    await connector._disconnect()
+
+    # Every remaining teardown step still ran.
+    connector.mission_group.stop.assert_awaited_once()
+    connector.robot.stop.assert_awaited_once()
+    connector.mir_api.close.assert_awaited_once()
+    connector.mission_executor.shutdown.assert_awaited_once()
+
+
+def test_shutdown_handler_is_reentrant_safe_and_swallows_errors():
+    """The SIGINT handler stops the connector once and never propagates
+    stop()'s 'thread did not stop in time' exception into the main thread."""
+    from inorbit_mir_connector.inorbit_mir_connector import _make_shutdown_handler
+
+    connector = MagicMock()
+    connector.stop = MagicMock(side_effect=Exception("Thread did not stop in time"))
+    handler = _make_shutdown_handler(connector)
+
+    # First interrupt: stops the connector, swallowing the error (no raise).
+    handler()
+    connector.stop.assert_called_once()
+
+    # Repeated interrupt while shutting down: ignored, stop() not called again.
+    handler()
+    connector.stop.assert_called_once()

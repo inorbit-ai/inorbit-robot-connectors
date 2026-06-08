@@ -2,91 +2,35 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""OpenTelemetry instruments for the MiR connector domain.
+"""Metrics helpers for the MiR connector.
 
-Instruments declared here flow through the global MeterProvider that the
-``inorbit_connector.connector.Connector`` base class installs when
-``config.metrics.enabled`` is True. When metrics are disabled (the default),
-``inorbit_edge.metrics.get_meter`` returns a no-op meter and every call below
-becomes a cheap no-op — call sites can use the instruments unconditionally
-without guarding on configuration.
+This connector does not declare domain instruments of its own: all metrics
+are recorded on the ``inorbit_connector`` framework's canonical families.
+HTTP request/error/duration signals go through
+``record_upstream_http_request`` / ``record_upstream_http_error`` from the
+call sites in ``mir_api_base.py`` / ``mir_api_v2.py``; this module only
+provides the endpoint normalizer (:func:`api_endpoint`) and the
+:func:`error_kind` mapper feeding those calls.
 
-Domain instrument groups:
-
-* HTTP layer (``mir_api_*``) — request count, retry count, and duration
-  histogram for every call against the MiR robot API. Outcomes are bucketed
-  via :func:`classify_outcome`; endpoint paths are reduced to a bounded set
-  via :func:`endpoint_label` to keep Prometheus cardinality finite.
-* Polling layer (``mir_polling_*``) — per-loop tick counter plus an
-  ObservableGauge reporting seconds elapsed since the last successful poll.
-  A growing ``last_success_age`` is the signal we use to flag a stalled
-  polling loop (potential MiR API deadlock).
-* Circuit breaker (``mir_circuit_breaker_opens``) — counts trips of the
-  circuit breaker pattern in :class:`Robot` (>= max_consecutive_errors).
+NOTE: tenacity retry attempts against the MiR API (previously a
+connector-local counter) are intentionally NOT recorded for now — they
+should land as a canonical upstream-HTTP family (e.g.
+``upstream.http.retries`` with vendor/method/endpoint labels) in the
+inorbit-connector framework rather than as a per-connector instrument. See
+``_record_retry`` in ``mir_api_base.py``.
 """
 
-import time
-from typing import Optional
-
 import httpx
-from inorbit_edge.metrics import Observation, get_meter
-
-METER_NAME = "inorbit_mir_connector"
-_meter = get_meter(METER_NAME)
+from inorbit_connector.metrics.http import EndpointMapper
 
 
-# --- HTTP layer (deadlock-detection signal #1) ----------------------------
+def error_kind(exc: BaseException) -> str:
+    """Map an exception to the canonical ``upstream.http`` error_kind enum.
 
-mir_api_requests_total = _meter.create_counter(
-    "mir_api_requests",
-    unit="1",
-    description="Total HTTP requests to the MiR robot API, labeled by method, "
-    "endpoint, and outcome",
-)
-
-mir_api_request_duration_seconds = _meter.create_histogram(
-    "mir_api_request_duration_seconds",
-    unit="s",
-    description="Wall-clock duration of HTTP requests to the MiR robot API. "
-    "Rising p99 is an early deadlock signal.",
-)
-
-mir_api_retries_total = _meter.create_counter(
-    "mir_api_retries",
-    unit="1",
-    description="Number of tenacity retry attempts against the MiR robot API",
-)
-
-
-# --- Polling layer (deadlock-detection signal #2) -------------------------
-
-mir_polling_ticks_total = _meter.create_counter(
-    "mir_polling_ticks",
-    unit="1",
-    description="Robot data polling iterations, labeled by loop and outcome",
-)
-
-
-# --- Circuit breaker ------------------------------------------------------
-
-mir_circuit_breaker_opens_total = _meter.create_counter(
-    "mir_circuit_breaker_opens",
-    unit="1",
-    description="Number of times the polling circuit breaker tripped "
-    "(consecutive errors >= threshold)",
-)
-
-
-# --- Helpers --------------------------------------------------------------
-
-
-def classify_outcome(exc: Optional[BaseException]) -> str:
-    """Map an exception (or None for success) to a bounded label value.
-
-    Used as the ``outcome`` attribute on HTTP and polling metrics.
+    Bounded set: ``timeout``, ``connect_error``, ``http_4xx``, ``http_5xx``,
+    ``other``. The framework coerces unknown kinds to "other" with a
+    WARNING; mapping here keeps the logs clean.
     """
-    if exc is None:
-        return "success"
     if isinstance(exc, httpx.TimeoutException):
         return "timeout"
     if isinstance(exc, httpx.ConnectError):
@@ -97,76 +41,47 @@ def classify_outcome(exc: Optional[BaseException]) -> str:
             return "http_4xx"
         if 500 <= sc < 600:
             return "http_5xx"
-        return "http_other"
-    return "error"
-
-
-# Mapping table for endpoint label reduction. Order matters: more specific
-# prefixes must come before less specific ones. Each entry is
-# ``(prefix, label)``; the first prefix that matches wins.
-_ENDPOINT_PREFIXES: list[tuple[str, str]] = [
-    ("/api/v2.0.0/status", "status"),
-    ("/api/v2.0.0/metrics", "metrics"),
-    ("/api/v2.0.0/experimental/diagnostics", "diagnostics"),
-    ("/api/v2.0.0/mission_queue", "mission_queue"),
-    ("/api/v2.0.0/mission_groups", "mission_groups"),
-    ("/api/v2.0.0/missions", "missions"),
-    ("/api/v2.0.0/maps", "maps"),
-    # Bare-prefix variants (callers may pass relative paths)
-    ("status", "status"),
-    ("metrics", "metrics"),
-    ("experimental/diagnostics", "diagnostics"),
-    ("mission_queue", "mission_queue"),
-    ("mission_groups", "mission_groups"),
-    ("missions", "missions"),
-    ("maps", "maps"),
-]
-
-
-def endpoint_label(path: str) -> str:
-    """Reduce a MiR API path to a bounded label value.
-
-    Any unknown path collapses to ``"other"`` so we never let dynamic IDs
-    blow up Prometheus cardinality.
-    """
-    if not path:
-        return "other"
-    normalized = path.lstrip("/")
-    for prefix, label in _ENDPOINT_PREFIXES:
-        prefix_normalized = prefix.lstrip("/")
-        if normalized == prefix_normalized or normalized.startswith(prefix_normalized + "/"):
-            return label
     return "other"
 
 
-# --- ObservableGauge registration ----------------------------------------
+# Endpoint normalizer for the canonical upstream-HTTP metrics. MiR API
+# routes are static (``/api/v2.0.0/<family>/...``), so an explicit prefix
+# table is preferred over PathTemplater. Longest prefix wins; unknown paths
+# collapse to "other" so dynamic IDs never blow up Prometheus cardinality.
+#
+# Table entries carry NO leading slash: api_endpoint() strips the slash off
+# the incoming path so one table covers every shape callers pass (absolute
+# ``/api/v2.0.0/status``, relative ``/status`` or ``status``).
+#
+# Trade-off: EndpointMapper matches plain prefixes with no segment-boundary
+# guard. That is fine for the frozen v2.0.0 route families (none is a prefix
+# of another), but revisit if new routes share a leading prefix.
+_api_endpoint_mapper = EndpointMapper(
+    [
+        ("api/v2.0.0/status", "status"),
+        ("api/v2.0.0/metrics", "metrics"),
+        ("api/v2.0.0/experimental/diagnostics", "diagnostics"),
+        ("api/v2.0.0/mission_queue", "mission_queue"),
+        ("api/v2.0.0/mission_groups", "mission_groups"),
+        ("api/v2.0.0/missions", "missions"),
+        ("api/v2.0.0/maps", "maps"),
+        # Bare-prefix variants (callers may pass relative paths)
+        ("status", "status"),
+        ("metrics", "metrics"),
+        ("experimental/diagnostics", "diagnostics"),
+        ("mission_queue", "mission_queue"),
+        ("mission_groups", "mission_groups"),
+        ("missions", "missions"),
+        ("maps", "maps"),
+    ]
+)
 
 
-def register_polling_liveness_gauge(robot) -> None:
-    """Register the ``mir_polling_last_success_age_seconds`` ObservableGauge.
+def api_endpoint(path: str) -> str:
+    """Collapse a raw MiR API path into a bounded endpoint label.
 
-    Reads ``robot._last_polling_success_ts`` (a ``dict[str, float]`` of
-    monotonic timestamps keyed by loop name) on every Prometheus scrape and
-    reports ``time.monotonic() - ts`` per loop. Loops that have never
-    succeeded report 0.0.
-
-    Should be called once from :meth:`Robot.start` after the polling tasks
-    are launched. Safe to call when the global MeterProvider is the OTEL
-    no-op provider (``create_observable_gauge`` becomes a no-op).
+    Paths arrive in several shapes (absolute ``/api/v2.0.0/status``,
+    relative ``/status`` or ``status``); the leading slash is stripped so
+    one prefix table covers all of them.
     """
-
-    def _callback(_options):
-        now = time.monotonic()
-        observations = []
-        for loop_name, ts in robot._last_polling_success_ts.items():
-            age = now - ts if ts else 0.0
-            observations.append(Observation(age, {"loop": loop_name}))
-        return observations
-
-    _meter.create_observable_gauge(
-        "mir_polling_last_success_age_seconds",
-        callbacks=[_callback],
-        unit="s",
-        description="Seconds elapsed since the last successful poll, by loop. "
-        "Rising values indicate a stalled polling loop / potential deadlock.",
-    )
+    return _api_endpoint_mapper(path.lstrip("/"))

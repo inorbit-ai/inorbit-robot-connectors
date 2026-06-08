@@ -6,7 +6,7 @@ import logging
 import json
 from enum import Enum
 
-from inorbit_connector.connector import CommandResultCode
+from inorbit_connector.commands import CommandResultCode
 from inorbit_edge_executor.datatypes import MissionRuntimeOptions
 from inorbit_edge_executor.mission import Mission
 from inorbit_edge_executor.worker_pool import WorkerPool

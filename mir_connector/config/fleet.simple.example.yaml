@@ -1,32 +1,55 @@
-# Simple MiR Fleet Configuration
-# Copy to config/my_fleet.yaml and update with your details
+# =============================================================================
+# Simple MiR connector configuration (single robot)
+# =============================================================================
+#
+# Copy to config/my_fleet.yaml, edit the values, then run:
+#   inorbit_mir_connector -c config/my_fleet.yaml -id my-robot
+#
+# SECRETS COME FROM THE ENVIRONMENT
+# ---------------------------------
+# The loader does NOT expand ${VARS} in this file. Three values are injected
+# via environment variables at startup (omit them here):
+#
+#   Env var                    | Reads into
+#   ---------------------------+-------------------------------------------
+#   INORBIT_API_KEY            | api_key (InOrbit account key, framework)
+#   INORBIT_MIR_MIR_USERNAME   | connector_config.mir_username
+#   INORBIT_MIR_MIR_PASSWORD   | connector_config.mir_password
+#
+# Any connector_config field can also be overridden via INORBIT_MIR_<FIELD>.
+# =============================================================================
 
-common:
-  connector_type: MiR100
-  connector_version: "0.2.2"
-  location_tz: America/Los_Angeles
-  
+# Connector identity; must be "mir".
+connector_type: mir
+location_tz: America/Los_Angeles
+update_freq: 1.0
+
+# InOrbit Connect robot key (optional). Omit to authenticate with the account
+# INORBIT_API_KEY instead.
+# inorbit_robot_key: your-robot-key-here
+
+logging:
+  log_level: INFO
+
+# Optional: Prometheus metrics endpoint (off by default). When enabled, the
+# connector serves /metrics on bind_host:bind_port.
+# metrics:
+#   enabled: true
+#   bind_host: 0.0.0.0
+#   bind_port: 9090
+#   discovery_dir: null   # set a writable dir to use Prometheus file_sd
+
+# Fleet-shared MiR settings. Credentials are injected via
+# INORBIT_MIR_MIR_USERNAME / INORBIT_MIR_MIR_PASSWORD (omit them here).
+connector_config:
   mir_api_version: v2.0
-  mir_firmware_version: v3
-  mir_use_ssl: false
-  
-  enable_temporary_mission_group: true
 
-  # Optional: expose Prometheus metrics on the host. Off by default.
-  # When enabled, the connector serves /metrics on bind_host:bind_port.
-  # If running multiple connectors on one host, give each a unique bind_port.
-  # metrics:
-  #   enabled: true
-  #   bind_host: 0.0.0.0
-  #   bind_port: 9090
-  #   discovery_dir: null   # set a writable dir to use Prometheus file_sd
-
-  env_vars:
-    INORBIT_API_KEY: "${INORBIT_API_KEY}"
-
-my-robot:
-  inorbit_robot_key: your-robot-key-here
-  mir_host_address: 192.168.1.100
-  mir_host_port: 80
-  mir_username: "${MIR_USERNAME}"
-  mir_password: "${MIR_PASSWORD}"
+# One entry per robot. Each MiR robot has its own connection details.
+fleet:
+  - robot_id: my-robot
+    mir_model: MiR100              # Options: MiR100, MiR200, MiR250, MiR500
+    mir_host_address: 192.168.1.100
+    mir_host_port: 80
+    mir_use_ssl: false
+    mir_firmware_version: v3       # Options: v2, v3
+    enable_temporary_mission_group: true

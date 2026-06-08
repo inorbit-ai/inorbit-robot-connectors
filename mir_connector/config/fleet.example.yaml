@@ -1,103 +1,101 @@
 # =============================================================================
-# MiR Fleet Configuration (Single File with Inheritance)
+# MiR connector configuration (flat framework schema)
 # =============================================================================
 #
-# USAGE:
-# 1. Copy this file to config/my_fleet.yaml
-# 2. Edit the 'common' section with your fleet defaults
-# 3. Edit the 'restocker-rs-1' section for your robot
-# 4. Run: inorbit_mir_connector -c config/my_fleet.yaml -id restocker-rs-1
+# This file follows the inorbit-connector framework schema: top-level
+# framework fields, a `connector_config` block of fleet-shared settings, and a
+# `fleet` list with one entry per robot. A single file may describe several
+# robots; each connector process serves ONE robot, selected with `-id`:
 #
-# INHERITANCE MODEL:
-# - Each robot inherits ALL settings from 'common'
-# - Robot-specific settings override common settings
-# - Only specify what's different from common defaults
+#   inorbit_mir_connector -c config/my_fleet.yaml -id restocker-rs-1
 #
-# One connector instance per robot.
+# SECRETS COME FROM THE ENVIRONMENT
+# ---------------------------------
+# The loader does NOT expand ${VARS}. Inject these via env vars (omit here):
+#
+#   Env var                    | Reads into
+#   ---------------------------+-------------------------------------------
+#   INORBIT_API_KEY            | api_key (InOrbit account key, framework)
+#   INORBIT_MIR_MIR_USERNAME   | connector_config.mir_username
+#   INORBIT_MIR_MIR_PASSWORD   | connector_config.mir_password
+#
+# PER-ROBOT CREDENTIALS / KEYS
+# ----------------------------
+# `connector_config` (incl. mir_username/mir_password) and the top-level
+# `inorbit_robot_key`/`api_key` are read from each connector PROCESS's own
+# environment. With one container per robot, a shared file can still serve
+# robots with different MiR credentials or InOrbit Connect keys: set
+# INORBIT_MIR_MIR_USERNAME / INORBIT_MIR_MIR_PASSWORD / INORBIT_INORBIT_ROBOT_KEY
+# per container (omit them here so the env wins). Robots that share credentials
+# can use one set plus the account INORBIT_API_KEY.
 # =============================================================================
 
-# =============================================================================
-# COMMON SETTINGS (shared by all robots)
-# =============================================================================
-common:
-  # Basic settings
-  location_tz: America/Los_Angeles
+# Connector identity; must be "mir".
+connector_type: mir
+location_tz: America/Los_Angeles
+update_freq: 1.0
 
-  # Connector settings
-  connector_type: MiR250           # Options: MiR100, MiR250
-  connector_version: "0.2.2"
+logging:
+  log_level: INFO
+  # When the default config file is in use, this sets the output log file.
+  # defaults:
+  #   log_file: /app/inorbit-connector.log
 
-  # MiR API settings
+# Optional: Prometheus metrics endpoint (off by default). When enabled, the
+# connector serves /metrics for fleet operators to monitor connector health
+# and detect MiR API stalls. Set discovery_dir to a shared volume: each
+# connector writes a file_sd target file there, and a collector on the same
+# docker network scrapes it — no host port publishing needed. advertise_host
+# is the address the collector uses (the docker service name on a shared
+# network); every connector can keep the same bind_port.
+# metrics:
+#   enabled: true
+#   bind_host: 0.0.0.0
+#   bind_port: 9090
+#   advertise_host: my-robot         # docker service name, resolvable by the collector
+#   discovery_dir: /var/run/inorbit-metrics   # shared volume read by the collector
+
+# Fleet-shared MiR settings. Credentials are injected via
+# INORBIT_MIR_MIR_USERNAME / INORBIT_MIR_MIR_PASSWORD (omit them here). When
+# robots have DIFFERENT logins, set those env vars per connector process /
+# container instead of here (each process reads its own environment) — see
+# docker/docker-compose.example.yaml.
+connector_config:
   mir_api_version: v2.0
-  mir_firmware_version: v3
 
-  # SSL settings
-  mir_use_ssl: true
-  verify_ssl: true
-  ssl_verify_hostname: true
+# One entry per robot. Each MiR robot has its own connection details, and may
+# differ in model and firmware across a mixed fleet.
+fleet:
+  # ---------------------------------------------------------------------------
+  # Robot using temporary mission groups (recommended) over TLS with a custom
+  # CA bundle.
+  # ---------------------------------------------------------------------------
+  - robot_id: restocker-rs-1
+    mir_model: MiR250              # Options: MiR100, MiR200, MiR250, MiR500
+    mir_host_address: 192.168.1.2
+    mir_host_port: 443
+    mir_firmware_version: v3       # Options: v2, v3
+    mir_use_ssl: true
+    verify_ssl: true
+    ssl_verify_hostname: true
+    # Custom CA bundle if your robot uses a non-public CA (PEM chain).
+    ssl_ca_bundle: /path/to/your/mir-robot-ca-bundle.pem
+    enable_temporary_mission_group: true
+    # Per-robot SQLite mission database.
+    mission_database_file: ./missions_restocker-rs-1.db
 
-  # Mission database (each robot should have its own)
-  # Use "dummy" for testing (no persistence) or set a file path for SQLite
-  # mission_database_file: ./missions_restocker-rs-1.db
-
-  # Waypoint navigation settings
-  enable_temporary_mission_group: true     # Use temporary mission groups (recommended)
-  # default_waypoint_mission_id: ""       # Only needed if enable_temporary_mission_group: false--configure per robot
-
-  user_scripts_base_dir: ./user_scripts
-
-  # Logging settings (uses built-in rotation: 1MB max, 5 backup files)
-  logging:
-    log_level: INFO
-    defaults:
-      log_file: /app/inorbit-connector.log
-
-  # Optional: Prometheus metrics endpoint (off by default)
-  # When enabled, the connector serves /metrics for fleet operators to monitor
-  # connector health and detect MiR API stalls. Each robot needs a unique
-  # bind_port if multiple connectors share a host (uncomment per-robot below).
-  # metrics:
-  #   enabled: true
-  #   bind_host: 0.0.0.0
-  #   bind_port: 9090
-  #   discovery_dir: null   # set a writable dir to enable Prometheus file_sd
-
-  # Common environment variables
-  env_vars:
-    INORBIT_API_KEY: "${INORBIT_API_KEY}"
-
-# =============================================================================
-# ROBOT CONFIGURATIONS
-# =============================================================================
-
-# -----------------------------------------------------------------------------
-# Example robot configuration (aligns with my_fleet.yaml structure)
-# -----------------------------------------------------------------------------
-restocker-rs-1:
-  # REQUIRED: Robot key from InOrbit (unique per robot)
-  # Get this when registering the robot in InOrbit. Delete if not used and fall back to the InOrbit API key.
-  inorbit_robot_key: your-robot-key-here
-
-  # Robot connection details
-  mir_host_address: 192.168.1.2
-  mir_host_port: 443
-  mir_username: "${MIR_USERNAME}"
-  mir_password: "${MIR_PASSWORD}"
-
-  # Custom CA bundle if your robot uses a non-public CA
-  # Provide a path to a PEM bundle containing the issuing CA/cert chain if using a self-signed certificate
-  ssl_ca_bundle: "/path/to/your/mir-robot-ca-bundle.pem"
-
-  # Waypoint navigation using a predefined mission
-  # Set to false to use the robot's mission instead of temporary groups
-  enable_temporary_mission_group: false
-  # IMPORTANT: Use the GUID from MiR GET /missions for "GoToPositionPrototype"
-  # Example payload: {"guid": "mirconst-guid-0000-0003-actionlist00", "name": "GoToPositionPrototype"}
-  default_waypoint_mission_id: "mirconst-guid-0000-0003-actionlist00"
-
-  # Robot-specific user scripts directory for actions using custom scripts
-  user_scripts_dir: ./user_scripts/restocker-rs-1
-
-  # Robot-specific environment variables (for user scripts only)
-  env_vars:
-    MY_VAR: "${MY_VAR}"
+  # ---------------------------------------------------------------------------
+  # Robot using a predefined waypoint mission instead of temporary groups.
+  # When enable_temporary_mission_group is false, default_waypoint_mission_id
+  # is required.
+  # ---------------------------------------------------------------------------
+  - robot_id: restocker-rs-2
+    mir_model: MiR100
+    mir_host_address: 192.168.1.3
+    mir_host_port: 80
+    mir_firmware_version: v2
+    mir_use_ssl: false
+    enable_temporary_mission_group: false
+    # Use the GUID from MiR `GET /missions` for "GoToPositionPrototype".
+    default_waypoint_mission_id: mirconst-guid-0000-0003-actionlist00
+    mission_database_file: ./missions_restocker-rs-2.db

@@ -101,8 +101,8 @@ source config/.env
 
 # Verify variables are set
 echo $INORBIT_API_KEY
-echo $MIR_USERNAME
-echo $MIR_PASSWORD
+echo $INORBIT_MIR_MIR_USERNAME
+echo $INORBIT_MIR_MIR_PASSWORD
 ```
 </details>
 
@@ -118,20 +118,20 @@ notepad config\.env
 
 # Set the environment variables manually (simplest approach)
 set INORBIT_API_KEY=your-actual-api-key
-set MIR_USERNAME=admin
-set MIR_PASSWORD=your-actual-password
+set INORBIT_MIR_MIR_USERNAME=admin
+set INORBIT_MIR_MIR_PASSWORD=your-actual-password
 
 # Verify variables are set
 echo %INORBIT_API_KEY%
-echo %MIR_USERNAME%
-echo %MIR_PASSWORD%
+echo %INORBIT_MIR_MIR_USERNAME%
+echo %INORBIT_MIR_MIR_PASSWORD%
 ```
 </details>
 
 **Required credentials:**
 - **InOrbit API Key**: Get from [InOrbit Developer Console](https://developer.inorbit.ai/docs#configuring-environment-variables)
 - **MiR Username/Password**: Your MiR robot's web interface credentials
-- **InOrbit Robot Key**: Set directly in config file (unique per robot)
+- **InOrbit Robot Key** (optional): Set as the top-level `inorbit_robot_key` in the config file. It is connector-wide, so a robot that needs its own InOrbit Connect key requires its own config file (a `fleet` of one). Omit it to authenticate with the account `INORBIT_API_KEY` instead.
 
 
 
@@ -174,11 +174,49 @@ notepad config\my_fleet.yaml
 ```
 </details>
 
-The configuration file uses a simple inheritance model:
-- **Common section**: Settings shared by all robots  
-- **Robot sections**: Override common settings as needed
+The configuration file follows the flat inorbit-connector framework schema:
+- **Top-level framework fields**: `connector_type: mir`, `location_tz`,
+  `update_freq`, `logging:`, optional `metrics:`, optional `inorbit_robot_key`.
+- **`connector_config:` block**: fleet-shared MiR settings (`mir_api_version`,
+  and `mir_username`/`mir_password`, which are normally omitted and injected
+  via environment variables).
+- **`fleet:` list**: one entry per robot, each with that robot's connection
+  details (`robot_id`, `mir_model`, `mir_host_address`, `mir_host_port`,
+  `mir_firmware_version`, `mir_use_ssl`, SSL options, mission group/database
+  settings, etc.).
 
-Both example files include detailed comments explaining each setting.
+Each connector process serves ONE robot, selected with `-id <robot_id>` (which
+must match a `fleet` entry). Both example files include detailed comments
+explaining each setting.
+
+### Migrating from 1.x
+
+The connector now uses the flat inorbit-connector framework schema and loads
+config with `ConnectorConfig(**read_yaml(path))`. The old custom loader (with a
+`common:` section, per-robot-key inheritance, and `${VAR}` expansion) has been
+removed. Existing config files need the following changes:
+
+- `connector_type` stays `mir` (the connector identity).
+- The `common:`/inheritance structure is gone. Move fleet-shared settings
+  (`mir_api_version`, and `mir_username`/`mir_password` if you keep them in
+  the file) into a `connector_config:` block.
+- Per-robot settings — `mir_model`, `mir_host_address`, `mir_host_port`,
+  `mir_firmware_version`, `mir_use_ssl` and the other SSL options, mission
+  group/database settings — now live as entries under a `fleet:` list, one
+  list item per robot. Robot selection is still `-id <robot_id>`.
+- `${VAR}` expansion in the YAML is no longer supported. Set credentials as
+  real environment variables instead: `INORBIT_API_KEY` (InOrbit account key),
+  `INORBIT_MIR_MIR_USERNAME` and `INORBIT_MIR_MIR_PASSWORD` (MiR robot
+  credentials). Any `connector_config` field can be overridden with
+  `INORBIT_MIR_<FIELD>`.
+- If you set `api_url` (the cloud SDK config endpoint), rename it to
+  `connection_config_url`. Note that `api_url` still exists but means the
+  InOrbit REST API base URL (env var `INORBIT_API_URL`) — check any `.env`
+  files that set `INORBIT_API_URL` to a `cloud_sdk_robot_config` URL and fix
+  them.
+- Remove `connector_version` if present (no longer used).
+
+Prometheus metric names changed; see the [Metrics (optional)](#-metrics-optional) section.
 
 
 
@@ -210,8 +248,8 @@ venv\Scripts\activate
 
 # Set environment variables (same as step 3)
 set INORBIT_API_KEY=your-actual-api-key
-set MIR_USERNAME=admin
-set MIR_PASSWORD=your-actual-password
+set INORBIT_MIR_MIR_USERNAME=admin
+set INORBIT_MIR_MIR_PASSWORD=your-actual-password
 
 # Run connector
 inorbit_mir_connector -c config/my_fleet.yaml -id <your-robot-id>
@@ -268,7 +306,7 @@ Choose the example that best matches your setup:
 
 1. **Credentials First**: Copy and edit `config/example.env` with your credentials
 2. **Start Simple**: Copy `fleet.simple.yaml` for basic setups  
-3. **Use Inheritance**: Define common settings once, override per robot
+3. **Shared vs. Per-Robot**: Put fleet-shared settings in `connector_config:`; give each robot its own entry under `fleet:`
 4. **Load Environment**: Always `source config/.env` before running
 5. **File Paths**: Use `./` relative paths for cross-platform compatibility
 
@@ -301,12 +339,12 @@ nohup inorbit_mir_connector -c config/my_fleet.yaml -id robot-2 &
 ```cmd
 # Command Prompt 1 - Robot 1
 venv\Scripts\activate
-set INORBIT_API_KEY=your-key & set MIR_USERNAME=admin & set MIR_PASSWORD=your-password
+set INORBIT_API_KEY=your-key & set INORBIT_MIR_MIR_USERNAME=admin & set INORBIT_MIR_MIR_PASSWORD=your-password
 inorbit_mir_connector -c config/my_fleet.yaml -id robot-1
 
 # Command Prompt 2 - Robot 2
 venv\Scripts\activate  
-set INORBIT_API_KEY=your-key & set MIR_USERNAME=admin & set MIR_PASSWORD=your-password
+set INORBIT_API_KEY=your-key & set INORBIT_MIR_MIR_USERNAME=admin & set INORBIT_MIR_MIR_PASSWORD=your-password
 inorbit_mir_connector -c config/my_fleet.yaml -id robot-2
 ```
 
@@ -378,12 +416,18 @@ To add additional robots to your Docker deployment:
 1. **Update Fleet Configuration:**
 
 ```yaml
-# In config/my_fleet.yaml, add new robot section
-new-robot-id:
-  inorbit_robot_key: "your-robot-key-here"
-  mir_host_address: "192.168.1.100"
-  mission_database_file: /app/data/missions_new-robot-id.db
-  # ... other robot-specific settings
+# In config/my_fleet.yaml, add a new entry under `fleet:`
+fleet:
+  # ... existing robots ...
+  - robot_id: new-robot-id
+    mir_model: MiR100
+    mir_host_address: "192.168.1.100"
+    mir_host_port: 80
+    mir_firmware_version: v3
+    mir_use_ssl: false
+    enable_temporary_mission_group: true
+    mission_database_file: /app/data/missions_new-robot-id.db
+    # ... other robot-specific settings
 ```
 
 2. **Add Service to Docker Compose:**
@@ -484,8 +528,8 @@ For environments where Docker isn't available, deploy directly on the host syste
 ```bash
 # Required credentials
 export INORBIT_API_KEY="your-api-key"
-export MIR_USERNAME="admin"
-export MIR_PASSWORD="your-password"
+export INORBIT_MIR_MIR_USERNAME="admin"
+export INORBIT_MIR_MIR_PASSWORD="your-password"
 
 # Optional resilience settings (defaults shown)
 export INORBIT_RESTART_ON_EDGESDK_TIMEOUT=true        # Auto-restart on timeout
@@ -513,8 +557,8 @@ Type=simple
 User=mir-connector
 WorkingDirectory=/opt/mir_connector
 Environment=INORBIT_API_KEY=your-api-key-here
-Environment=MIR_USERNAME=admin
-Environment=MIR_PASSWORD=your-password-here
+Environment=INORBIT_MIR_MIR_USERNAME=admin
+Environment=INORBIT_MIR_MIR_PASSWORD=your-password-here
 ExecStart=/opt/mir_connector/venv/bin/inorbit_mir_connector -c config/my_fleet.yaml -id %i
 Restart=always
 RestartSec=10
@@ -567,15 +611,15 @@ The connector uses SQLite databases to persist mission data and maintain state a
 **Per-Robot Databases (Recommended):**
 ```yaml
 # config/my_fleet.yaml
-robots:
-  robot-1:
-    database_path: "data/missions_robot-1.db"
-  robot-2:
-    database_path: "data/missions_robot-2.db"
+fleet:
+  - robot_id: robot-1
+    mission_database_file: "data/missions_robot-1.db"
+  - robot_id: robot-2
+    mission_database_file: "data/missions_robot-2.db"
 ```
 
 **Default Behavior:**
-- If no `database_path` specified: `missions_{robot_id}.db` in working directory
+- If no `mission_database_file` specified: `missions_{robot_id}.db` in working directory
 - Database and tables created automatically
 - Automatic schema migrations
 
@@ -594,14 +638,13 @@ For secure HTTPS connections to MiR robots, configure SSL certificates in your d
 **Fleet Configuration:**
 ```yaml
 # config/my_fleet.yaml
-robots:
-  robot-1:
+fleet:
+  - robot_id: robot-1
     mir_host_address: "xxx.xxx.x.xxx"
     mir_host_port: 443
     mir_use_ssl: true
-    ssl_ca_cert_path: "certs/robot-1/ca.crt"              # Required
-    ssl_client_cert_path: "certs/robot-1/client.crt"      # Optional (mutual TLS)
-    ssl_client_key_path: "certs/robot-1/client.key"       # Optional (mutual TLS)
+    verify_ssl: true                                       # Verify the robot certificate
+    ssl_ca_bundle: "certs/robot-1/ca.crt"                  # Custom CA bundle (PEM chain)
     ssl_verify_hostname: false                             # Usually false for IPs
 ```
 
@@ -621,7 +664,7 @@ certs/robot-2/ca.crt, client.crt, client.key
 
 The connector can expose Prometheus-format metrics so fleet operators can monitor connector health and detect MiR API stalls (e.g. potential deadlocks). Metrics are **off by default** and add no overhead until enabled.
 
-**Enable in your fleet YAML** (under `common:` or per-robot):
+**Enable via the top-level `metrics:` block** in your fleet YAML (this block is connector-wide, not per-robot):
 
 ```yaml
 metrics:
@@ -645,22 +688,29 @@ curl http://localhost:9090/metrics
 | `inorbit_connector_session_connected` | gauge | `robot_id` | 1 when the InOrbit MQTT session is connected |
 | `inorbit_connector_execution_loop_ticks_total` | counter | — | Successful run-loop iterations |
 | `inorbit_connector_execution_loop_errors_total` | counter | — | Exceptions caught in the run-loop |
-| `mir_api_requests_total` | counter | `method`, `endpoint`, `outcome` | HTTP calls to the MiR robot API |
-| `mir_api_request_duration_seconds` | histogram | `method`, `endpoint`, `outcome` | Latency of MiR API calls — rising p99 is an early deadlock signal |
-| `mir_api_retries_total` | counter | `method`, `endpoint` | Tenacity retry attempts |
-| `mir_polling_ticks_total` | counter | `loop`, `outcome` | Robot data polling iterations by loop (`status`, `metrics`, `diagnostics`) |
-| `mir_polling_last_success_age_seconds` | gauge | `loop` | Seconds since last successful poll. **Rising values flag a stalled loop / potential deadlock.** |
-| `mir_circuit_breaker_opens_total` | counter | — | Number of times the circuit breaker tripped (≥5 consecutive errors) |
+| `inorbit_connector_upstream_http_requests_total` | counter | `vendor="mir"`, `method`, `endpoint` | HTTP calls to the MiR robot API |
+| `inorbit_connector_upstream_http_errors_total` | counter | `vendor="mir"`, `method`, `endpoint`, `error_kind` | Failed HTTP calls to the MiR robot API, by error kind |
+| `inorbit_connector_upstream_http_duration_seconds` | histogram | `vendor="mir"`, `method`, `endpoint` | Latency of MiR API calls — rising p99 is an early deadlock signal |
 
-The Prometheus exporter prefixes every metric with the `service.name` resource attribute (`inorbit_connector` by default), so a metric like `mir_api_requests_total` is exposed as `inorbit_connector_mir_api_requests_total` on the wire.
+All metrics share a single `inorbit_connector` wire namespace (the `service.name` resource attribute, `inorbit_connector` by default). The connector type is carried as the `inorbit.connector.type` resource attribute (`mir`) rather than being baked into each metric name; upstream-HTTP instruments use the canonical `inorbit_connector_upstream_http_*` family with `vendor="mir"`.
+
+The connector declares no instruments of its own. API retry attempts (previously a connector-local counter) are planned to land as a canonical upstream-HTTP family in the inorbit-connector framework.
 
 **Multiple robots on one host**
 
-The Docker compose example uses `network_mode: host`, so each connector instance must listen on a unique port. Override `metrics.bind_port` per robot in your fleet YAML, or set `metrics.bind_host: 127.0.0.1` and put a reverse proxy in front.
+The Docker compose examples use the default bridge network (not host networking), so each connector container has its own network namespace and can bind the same internal `metrics.bind_port` (e.g. 9090) without colliding. You don't need to publish host ports: point `metrics.discovery_dir` at a shared volume and each connector writes a Prometheus file_sd target file there, which a collector on the same docker network reads and scrapes (see Prometheus discovery below). Set `metrics.advertise_host` to the connector's docker service name so the target resolves on the network. Per-robot MiR credentials and InOrbit Connect keys come from each container's environment (`INORBIT_MIR_MIR_USERNAME` / `INORBIT_MIR_MIR_PASSWORD` / `INORBIT_INORBIT_ROBOT_KEY`), so one shared fleet file serves robots with different IPs, credentials, and keys.
 
 **Prometheus discovery**
 
-When `metrics.discovery_dir` is set to a writable directory (e.g. mounted from the host), the connector writes `<connector_id>.json` in [Prometheus file_sd format](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#file_sd_config) on startup and removes it on shutdown. A host-side OTEL collector or Prometheus instance configured with `file_sd_configs` will pick the connector up automatically.
+When `metrics.discovery_dir` is set to a writable directory (a shared docker volume, or a host directory), the connector writes `<connector_id>.json` in [Prometheus file_sd format](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#file_sd_config) on startup and removes it on shutdown. The target advertises `metrics.advertise_host:bind_port` (defaulting to the container hostname), so on a shared docker network set `advertise_host` to the service name. An OTel collector or Prometheus instance configured with `file_sd_configs` against the same directory picks every connector up automatically.
+
+A collector example lives in `docker/`: `otel-collector-config.example.yaml` scrapes the file_sd targets and forwards them to GCP Cloud Monitoring via the `googlemanagedprometheus` exporter (the preferred backend — PromQL-queryable; a `debug` exporter is included for local-only verification). `docker-compose.metrics.example.yaml` is an overlay that runs the collector alongside the connectors:
+
+```bash
+docker compose -f docker-compose.example.yaml -f docker-compose.metrics.example.yaml up
+```
+
+Set `GCP_PROJECT` and provide a service-account key (or switch to the `debug` exporter for local verification). For the full GCP setup and the design rules the config follows, see `inorbit-connector-python/examples/metrics/`.
 
 ## Next steps
 

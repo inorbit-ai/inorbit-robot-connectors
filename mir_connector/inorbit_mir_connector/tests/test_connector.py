@@ -418,6 +418,7 @@ async def test_connector_loop(connector_with_mission_tracking, monkeypatch):
             "values": {
                 "Remaining battery capacity [%]": 93.5,
                 "Remaining battery time [sec]": 89725,
+                "Remaining battery capacity [mAh]": 23194,
             }
         },
         "/Computer/Network/Wifi": {

@@ -21,7 +21,7 @@ requirements = [
     # InOrbit
     "inorbit-edge[video]>=1.25",
     "inorbit-connector~=2.2.0",
-    "inorbit-edge-executor~=3.2.5",
+    "inorbit-edge-executor>=3.1.0",
 ]
 
 test_requirements = [

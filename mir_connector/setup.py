@@ -19,9 +19,9 @@ requirements = [
     "pydantic-settings>=2.11,<3",
     "tenacity>=9.1.2",
     # InOrbit
-    "inorbit-edge[video]>=1.25",
+    "inorbit-edge[video]~=3.1",
     "inorbit-connector~=2.2.0",
-    "inorbit-edge-executor>=3.1.0",
+    "inorbit-edge-executor~=3.1",
 ]
 
 test_requirements = [

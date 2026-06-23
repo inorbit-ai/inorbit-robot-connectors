@@ -21,7 +21,7 @@ requirements = [
     # InOrbit
     "inorbit-edge[video]>=1.25",
     "inorbit-connector~=2.2.0",
-    "inorbit-edge-executor~=3.2.5",
+    "inorbit-edge-executor>=3.1.0",
 ]
 
 test_requirements = [
@@ -78,5 +78,5 @@ setup(
     python_requires=">=3.10",
     # Do not edit this string manually, always use bump-my-version. See
     # https://github.com/inorbit-ai/inorbit-robot-connectors/tree/main/mir_connector#version-bump
-    version="1.1.0",
+    version="1.2.0",
 )

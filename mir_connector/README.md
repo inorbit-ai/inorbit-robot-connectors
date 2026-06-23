@@ -599,6 +599,7 @@ nssm start MiRConnector-robot-1
 The connector automatically handles:
 - **Health Monitoring**: Tracks successful communication with InOrbit
 - **Auto-restart**: Exits when unhealthy for supervisor to restart
+- **Keepalive**: Default keepalive interval is 60s (changed from 10s in edge-executor ≥3.2.6)
 
 ## ⚙️ Advanced Configuration
 

@@ -21,10 +21,8 @@ requirements = [
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.11,<3",
     "tenacity>=9.1.2",
-    # InOrbit. The ``[video]`` extra on inorbit-connector pulls
-    # ``inorbit-edge[video]>=3.0,<4`` transitively, so we don't declare
-    # inorbit-edge separately. >=3.1 is required for the
-    # ``inorbit_connector.metrics`` module.
+    # InOrbit
+    "inorbit-edge[video]~=3.1",
     "inorbit-connector[video]>=3.1,<4.0",
     "inorbit-edge-executor~=3.2.5",
 ]

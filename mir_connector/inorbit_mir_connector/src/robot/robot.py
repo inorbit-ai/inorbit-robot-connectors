@@ -42,6 +42,11 @@ class Robot:
         self._max_backoff_time = 30.0  # Max 30 seconds backoff
         self._last_error_time = 0
 
+        # Per-loop monotonic timestamps of the last successful REST poll
+        # (status / metrics / diagnostics). Kept as cheap liveness state; a
+        # canonical polling-staleness metric could read it in the future.
+        self._last_polling_success_ts: dict[str, float] = {}
+
     def start(self) -> None:
         """Start the tasks that fetch data from the robot."""
         self.logger.info("Starting polling loops")
@@ -91,30 +96,36 @@ class Robot:
 
     async def _update_status(self) -> None:
         """Fetch the robot status from the API asynchronously."""
+        loop_name = "status"
         try:
             status = await self._mir_api.get_status()
             self._status = status
             self._handle_success()
+            self._last_polling_success_ts[loop_name] = time.monotonic()
         except Exception as e:
             self._handle_error(e, "robot status fetch")
             # Keep the last known status on error
 
     async def _update_metrics(self) -> None:
         """Fetch robot metrics from the API asynchronously."""
+        loop_name = "metrics"
         try:
             metrics = await self._mir_api.get_metrics()
             self._metrics = metrics
             self._handle_success()
+            self._last_polling_success_ts[loop_name] = time.monotonic()
         except Exception as e:
             self._handle_error(e, "robot metrics fetch")
             # Keep the last known metrics on error
 
     async def _update_diagnostics(self) -> None:
         """Fetch robot diagnostics from the API asynchronously."""
+        loop_name = "diagnostics"
         try:
             diagnostics = await self._mir_api.get_diagnostics()
             self._diagnostics = diagnostics
             self._handle_success()
+            self._last_polling_success_ts[loop_name] = time.monotonic()
         except Exception as e:
             self._handle_error(e, "robot diagnostics fetch")
             # Keep the last known diagnostics on error

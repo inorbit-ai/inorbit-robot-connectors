@@ -1,0 +1,100 @@
+# SPDX-FileCopyrightText: 2026 InOrbit, Inc.
+# SPDX-License-Identifier: MIT
+#
+# Example OTel collector config for scraping MiR connector metrics and
+# forwarding them to GCP Cloud Monitoring via the `googlemanagedprometheus`
+# exporter (the preferred backend — metrics land as the Prometheus descriptor
+# type and are queryable with PromQL).
+#
+# Each connector writes a Prometheus file_sd target file to its
+# `metrics.discovery_dir` (a shared volume). This collector reads that
+# directory and scrapes every connector over the docker network — no host
+# ports.
+#
+# This is an EXAMPLE, not turn-key: set GCP_PROJECT, mount a service-account
+# key, and replace the CHANGEME values. For the full annotated reference and
+# the design rules it follows (Rule 1: never rewrite `__name__`; Rule 2:
+# serial sends to preserve per-series write ordering), see
+# inorbit-connector-python/examples/metrics/.
+
+receivers:
+  prometheus:
+    config:
+      global:
+        scrape_interval: 30s
+        scrape_timeout: 10s
+      scrape_configs:
+        - job_name: mir_connectors
+          # Preserve target_info labels so connector-side resource attributes
+          # (inorbit_connector_id / inorbit_connector_type) surface as OTel
+          # resource attributes for the `resource` processor below.
+          honor_labels: true
+          metrics_path: /metrics
+          file_sd_configs:
+            - files: ['/var/run/inorbit-metrics/*.json']
+              refresh_interval: 30s
+          # Drop-only relabels are safe. Do NOT add a rule that writes
+          # `__name__` (Rule 1) — it strips the metric type.
+          metric_relabel_configs:
+            - source_labels: [__name__]
+              regex: 'python_.*|process_.*'
+              action: drop
+
+processors:
+  # Bound RSS so backpressure from Cloud Monitoring can't balloon it.
+  memory_limiter:
+    check_interval: 2s
+    limit_percentage: 80
+    spike_limit_percentage: 20
+  resource:
+    attributes:
+      - {key: service.name,        value: inorbit_connector,                action: upsert}
+      # GCP maps prometheus_target.location from this — MUST be a real GCP
+      # region/zone or Cloud Monitoring rejects the write.
+      - {key: cloud.region,        value: us-central1,                      action: upsert}
+      - {key: service.instance.id, from_attribute: inorbit_connector_id,    action: upsert}
+      # Promote the connector type label so dashboards group/filter by it.
+      - {key: connector_type,      from_attribute: inorbit_connector_type,  action: upsert}
+      # Per-customer label (also promoted onto every series below).
+      - {key: customer,            value: CHANGEME,                         action: upsert}
+  batch:
+    send_batch_size: 200
+    send_batch_max_size: 500
+    timeout: 10s
+
+exporters:
+  # Preferred: GCP Cloud Monitoring as the Prometheus descriptor type
+  # (prometheus.googleapis.com/inorbit_connector_*), PromQL-queryable.
+  googlemanagedprometheus:
+    project: ${env:GCP_PROJECT}
+    metric:
+      # Lift these resource attributes onto every series as labels so one
+      # query can slice across connector types and drill into one.
+      resource_filters:
+        - regex: ^customer$
+        - regex: ^connector_type$
+    timeout: 30s
+    sending_queue:
+      enabled: true
+      # Serial sends (Rule 2): CUMULATIVE writes must arrive monotonically
+      # per series, so retries must block the next batch rather than race it.
+      num_consumers: 1
+      queue_size: 10000
+
+  # Local verification alternative: print scraped metrics to the log. To use
+  # it, put `debug` in the pipeline exporters below instead of
+  # googlemanagedprometheus (then the GCP project / SA key are not needed).
+  # debug:
+  #   verbosity: detailed
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    metrics:
+      receivers: [prometheus]
+      processors: [memory_limiter, resource, batch]
+      exporters: [googlemanagedprometheus]

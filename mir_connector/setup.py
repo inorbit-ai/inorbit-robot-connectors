@@ -6,9 +6,12 @@
 from setuptools import setup
 
 requirements = [
-    "requests>=2.31,<3.0",
     "httpx>=0.28.1,<0.29.0",
-    "prometheus-client>=0.14.1",
+    # ``prometheus_client.parser`` is used directly to consume MiR's
+    # Prometheus-formatted /metrics endpoint. It is also pulled transitively
+    # via ``opentelemetry-exporter-prometheus`` (a dep of inorbit-connector),
+    # but we declare it explicitly because the import is direct.
+    "prometheus-client>=0.25,<1.0",
     "pytz>=2022.7",
     # NOTE: both pyyaml and ruamel.yaml packages are included here. Otherwise, the
     # edge-sdk dependency won't run. Consider migrating edge-sdk yaml dependency
@@ -20,8 +23,8 @@ requirements = [
     "tenacity>=9.1.2",
     # InOrbit
     "inorbit-edge[video]>=1.25",
-    "inorbit-connector~=2.2.0",
-    "inorbit-edge-executor>=3.1.0",
+    "inorbit-connector[video]>=3.1,<4.0",
+    "inorbit-edge-executor~=3.2.5",
 ]
 
 test_requirements = [
@@ -78,5 +81,5 @@ setup(
     python_requires=">=3.10",
     # Do not edit this string manually, always use bump-my-version. See
     # https://github.com/inorbit-ai/inorbit-robot-connectors/tree/main/mir_connector#version-bump
-    version="1.1.0",
+    version="2.0.0",
 )

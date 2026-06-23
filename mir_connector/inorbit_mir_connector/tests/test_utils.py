@@ -21,10 +21,16 @@ class TestToInorbitPercent:
         assert to_inorbit_percent(100.0) == 1.0
         assert to_inorbit_percent(0.0) == 0.0
 
-    def test_out_of_range_values(self):
-        """Test values outside 0-100 range are clamped."""
-        assert to_inorbit_percent(-10.0) == 0.0
-        assert to_inorbit_percent(150.0) == 1.0
+    def test_out_of_range_values(self, caplog):
+        """Out-of-range values are scaled (not clamped) and logged at WARNING."""
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            assert to_inorbit_percent(-10.0) == -0.1
+            assert to_inorbit_percent(150.0) == 1.5
+            assert to_inorbit_percent(23194.0, "battery percent") == 231.94
+        assert "outside the expected 0-100 range" in caplog.text
+        assert "battery percent" in caplog.text
 
     def test_decimal_values(self):
         """Test decimal percentage values."""

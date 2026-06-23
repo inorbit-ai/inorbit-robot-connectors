@@ -59,14 +59,6 @@ inorbit-omron-connector = "inorbit_omron_connector.main:start"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.bumpversion]
-current_version = "0.2.1"
-commit = true
-tag = true
-message = "Bump inorbit-omron-connector version: {current_version} → {new_version}"
-tag_name = "inorbit-omron-connector-v{new_version}"
-tag_message = "Bump inorbit-omron-connector version: {current_version} → {new_version}"
-
 [tool.hatch.build.targets.wheel]
 packages = ["inorbit_omron_connector"]
 

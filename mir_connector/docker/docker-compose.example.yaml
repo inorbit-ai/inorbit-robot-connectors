@@ -11,8 +11,32 @@
 # 4. docker compose up -d  # Starts ALL robots
 # 5. docker compose logs -f  # View logs from ALL robots
 #
+# CREDENTIALS:
+# Secrets are passed as environment variables (the config loader no longer
+# expands ${VARS} in the YAML):
+#   INORBIT_API_KEY            -> InOrbit account key
+#   INORBIT_MIR_MIR_USERNAME   -> connector_config.mir_username
+#   INORBIT_MIR_MIR_PASSWORD   -> connector_config.mir_password
+# The shared env_file below applies the same values to every robot. Because
+# these are read from each container's own environment, you can give a robot
+# its own MiR credentials or InOrbit Connect key by overriding them in that
+# service's `environment:` block (e.g. INORBIT_MIR_MIR_PASSWORD,
+# INORBIT_INORBIT_ROBOT_KEY) — no separate config file needed.
+#
+# NETWORKING / METRICS:
+# Containers use the default bridge network (NOT host networking), so each has
+# its own network namespace. The connector reaches MiR robots and InOrbit over
+# outbound bridge NAT. When the Prometheus endpoint is enabled
+# (metrics.enabled: true in the fleet YAML), do NOT publish host ports: every
+# connector writes a Prometheus file_sd discovery file to the shared
+# `metrics.discovery_dir` volume, and a collector on this docker network reads
+# it and scrapes each connector directly. Set `metrics.advertise_host` to the
+# service name (e.g. robot-1) so the target resolves on the network; bind_port
+# can be the same for all containers. A ready-to-run collector is provided in
+# docker-compose.metrics.example.yaml + otel-collector-config.example.yaml.
+#
 # ADDING ROBOTS:
-# 1. Add robot section to config/my_fleet.yaml 
+# 1. Add a new entry under `fleet:` in config/my_fleet.yaml
 # 2. Add corresponding service section below
 # 3. docker compose up -d
 
@@ -49,10 +73,19 @@ x-mir-connector: &mir-connector
     
     # SSL certificates for MiR robot verification
     - ../certs:/app/certs:ro
-  
-  # Use host networking to access MiR robots
-  network_mode: host
-  
+
+    # Shared metrics discovery dir. Uncomment (and set metrics.discovery_dir
+    # to /var/run/inorbit-metrics in the fleet YAML) to scrape with the
+    # collector in docker-compose.metrics.example.yaml, which reads the same
+    # `metrics_discovery` volume.
+    # - metrics_discovery:/var/run/inorbit-metrics
+
+  # Default bridge networking (no host networking). Outbound traffic to MiR
+  # robots and InOrbit works via bridge NAT. The Prometheus endpoint is not
+  # published to the host — a collector on this docker network scrapes each
+  # connector via the file_sd discovery files in the shared metrics.discovery_dir
+  # volume (see NETWORKING / METRICS above).
+  #
   # Auto-restart policy - works with built-in health monitoring
   restart: unless-stopped
   
@@ -85,8 +118,14 @@ services:
       - ROBOT_ID=robot-1
       - CONFIG_FILE=/config/fleet.yaml
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Per-robot MiR credentials: uncomment to override the shared env_file
+      # values when this robot has its own login (different password per robot).
+      # - INORBIT_MIR_MIR_USERNAME=user_a
+      # - INORBIT_MIR_MIR_PASSWORD=pass_a
+      # Per-robot InOrbit Connect key (instead of the shared INORBIT_API_KEY):
+      # - INORBIT_INORBIT_ROBOT_KEY=robot_a_key
 
-  # Example Robot 2 - Replace 'robot-2' with your actual robot ID  
+  # Example Robot 2 - Replace 'robot-2' with your actual robot ID
   robot-2:
     <<: *mir-connector
     container_name: mir_connector_robot_2
@@ -94,13 +133,16 @@ services:
       - ROBOT_ID=robot-2
       - CONFIG_FILE=/config/fleet.yaml
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # - INORBIT_MIR_MIR_USERNAME=user_b
+      # - INORBIT_MIR_MIR_PASSWORD=pass_b
+      # - INORBIT_INORBIT_ROBOT_KEY=robot_b_key
 
   # ==============================================================================
   # TEMPLATE FOR ADDING MORE ROBOTS
   # ==============================================================================
   # 
   # To add additional robots:
-  # 1. Add robot section to config/my_fleet.yaml
+  # 1. Add a new entry under `fleet:` in config/my_fleet.yaml
   # 2. Copy and customize the template below
   # 3. Run: docker compose up -d
   #
@@ -111,6 +153,9 @@ services:
   #     - ROBOT_ID=your-robot-id
   #     - CONFIG_FILE=/config/fleet.yaml
   #     - LOG_LEVEL=${LOG_LEVEL:-INFO}
+  #     # Per-robot MiR credentials (override the shared env_file):
+  #     # - INORBIT_MIR_MIR_USERNAME=user_x
+  #     # - INORBIT_MIR_MIR_PASSWORD=pass_x
   #   # Note: Each robot uses its own database file:
   #   # /app/data/missions_your-robot-id.db (specified in fleet config)
 
@@ -120,3 +165,8 @@ services:
 volumes:
   connector_data:
     driver: local
+  # Shared metrics discovery dir for file_sd-based scraping. Uncomment the
+  # matching mount in the connector template above; the collector overlay
+  # (docker-compose.metrics.example.yaml) declares and mounts it too.
+  # metrics_discovery:
+  #   driver: local

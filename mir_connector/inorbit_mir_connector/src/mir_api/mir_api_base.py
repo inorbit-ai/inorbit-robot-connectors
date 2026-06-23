@@ -4,6 +4,7 @@
 
 from abc import ABC, abstractmethod
 import logging
+import time
 import httpx
 from typing import Union, Optional
 from tenacity import (
@@ -12,6 +13,14 @@ from tenacity import (
     before_sleep_log,
     stop_after_attempt,
 )
+
+from inorbit_connector.metrics.http import (
+    record_upstream_http_error,
+    record_upstream_http_request,
+)
+
+from inorbit_mir_connector.config.connector_model import CONNECTOR_TYPE
+from inorbit_mir_connector.src.metrics import api_endpoint, error_kind
 
 
 def should_retry_http_error(exception):
@@ -28,6 +37,17 @@ def should_retry_http_error(exception):
         # Retry server errors (5xx) and specific client errors (408, 429)
         return status_code >= 500 or status_code in [408, 429]
     return False
+
+
+# Tenacity's stock before_sleep logger: a WARNING-level log line on every
+# retry attempt.
+#
+# TODO(metrics): retry attempts used to bump a connector-local counter from
+# this hook. Record them on a canonical upstream-HTTP family (e.g.
+# ``upstream.http.retries`` with vendor/method/endpoint labels) once the
+# inorbit-connector framework grows one — the RetryCallState passed here
+# carries everything needed to derive the labels.
+_record_retry = before_sleep_log(logging.getLogger(__name__), logging.WARNING)
 
 
 class MirApiBaseClass(ABC):
@@ -121,53 +141,82 @@ class MirApiBaseClass(ABC):
         else:
             return True, None  # Use default CA bundle
 
+    async def _record_request(self, method: str, endpoint: str, **kwargs) -> httpx.Response:
+        """Issue an HTTP request and record it on the canonical
+        ``upstream.http.*`` metrics.
+
+        Lives outside the retry decorator so each individual attempt — not
+        just the final one — is recorded. That gives us per-attempt latency
+        visibility, which is the signal we use to detect MiR API stalls /
+        deadlocks.
+        """
+        start = time.monotonic()
+        exc: Optional[BaseException] = None
+        try:
+            res = await self._async_client.request(method, endpoint, **kwargs)
+            res.raise_for_status()
+            return res
+        except BaseException as e:
+            exc = e
+            raise
+        finally:
+            duration = time.monotonic() - start
+            label = api_endpoint(endpoint)
+            if exc is None:
+                record_upstream_http_request(
+                    vendor=CONNECTOR_TYPE,
+                    method=method,
+                    endpoint=label,
+                    duration_seconds=duration,
+                )
+            else:
+                record_upstream_http_error(
+                    vendor=CONNECTOR_TYPE,
+                    method=method,
+                    endpoint=label,
+                    error_kind=error_kind(exc),
+                    duration_seconds=duration,
+                )
+
     @retry(
         wait=wait_exponential_jitter(initial=1, max=10),
         stop=stop_after_attempt(3),
-        before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING),
+        before_sleep=_record_retry,
         retry=should_retry_http_error,
         reraise=True,
     )
     async def _get(self, endpoint: str, **kwargs) -> httpx.Response:
-        res = await self._async_client.get(endpoint, **kwargs)
-        res.raise_for_status()
-        return res
+        return await self._record_request("GET", endpoint, **kwargs)
 
     @retry(
         wait=wait_exponential_jitter(initial=1, max=10),
         stop=stop_after_attempt(3),
-        before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING),
+        before_sleep=_record_retry,
         retry=should_retry_http_error,
         reraise=True,
     )
     async def _post(self, endpoint: str, **kwargs) -> httpx.Response:
-        res = await self._async_client.post(endpoint, **kwargs)
-        res.raise_for_status()
-        return res
+        return await self._record_request("POST", endpoint, **kwargs)
 
     @retry(
         wait=wait_exponential_jitter(initial=1, max=10),
         stop=stop_after_attempt(3),
-        before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING),
+        before_sleep=_record_retry,
         retry=should_retry_http_error,
         reraise=True,
     )
     async def _put(self, endpoint: str, **kwargs) -> httpx.Response:
-        res = await self._async_client.put(endpoint, **kwargs)
-        res.raise_for_status()
-        return res
+        return await self._record_request("PUT", endpoint, **kwargs)
 
     @retry(
         wait=wait_exponential_jitter(initial=1, max=10),
         stop=stop_after_attempt(3),
-        before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING),
+        before_sleep=_record_retry,
         retry=should_retry_http_error,
         reraise=True,
     )
     async def _delete(self, endpoint: str, **kwargs) -> httpx.Response:
-        res = await self._async_client.delete(endpoint, **kwargs)
-        res.raise_for_status()
-        return res
+        return await self._record_request("DELETE", endpoint, **kwargs)
 
     async def close(self):
         await self._async_client.aclose()

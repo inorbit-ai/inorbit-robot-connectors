@@ -9,6 +9,12 @@ User=inorbit
 # By default, the kill signal is SIGTERM so we override it by SIGINT
 # so the connector handles it the same way as a keyboard interrupt
 KillSignal=SIGINT
+# Secrets are read from config/.env (the config loader no longer expands
+# ${VARS} in the YAML). config/.env must export:
+#   INORBIT_API_KEY            - InOrbit account key
+#   INORBIT_MIR_MIR_USERNAME   - connector_config.mir_username
+#   INORBIT_MIR_MIR_PASSWORD   - connector_config.mir_password
+# Any connector_config field can also be overridden via INORBIT_MIR_<FIELD>.
 ExecStart=/bin/bash -c 'cd ~/mir-connector-<robot_id> && export $(grep -v '^#' config/.env | xargs) && source ./venv/bin/activate && inorbit_mir_connector -c config.yaml -id <robot_id>'
 
 [Install]

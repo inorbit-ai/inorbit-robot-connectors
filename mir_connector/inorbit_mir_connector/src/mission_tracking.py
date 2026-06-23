@@ -18,6 +18,7 @@ class MirInorbitMissionTracking:
         mir_api,
         inorbit_sess,
         robot_tz_info,
+        mission_executor,
     ):
         self.logger = logging.getLogger(name=self.__class__.__name__)
         self.executing_mission_id = None
@@ -27,6 +28,7 @@ class MirInorbitMissionTracking:
         self.mir_api = mir_api
         self.inorbit_sess = inorbit_sess
         self.robot_tz_info = robot_tz_info
+        self.mission_executor = mission_executor
 
     def _safe_localize_timestamp(self, timestamp_str: str) -> float:
         """Convert ISO timestamp string to Unix timestamp, handling timezone conversion.
@@ -64,7 +66,7 @@ class MirInorbitMissionTracking:
     async def report_mission(self, status, metrics):
         # When the edge mission executor is running an InOrbit-dispatched mission, it owns
         # mission tracking. Skip robot-side polling to avoid duplicate reports.
-        if not self.inorbit_sess.missions_module.executor.wait_until_idle(0):
+        if await self.mission_executor.has_active_mission():
             return
         mission = await self.get_current_mission()
         if mission:

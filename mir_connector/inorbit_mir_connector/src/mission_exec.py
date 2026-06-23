@@ -126,6 +126,25 @@ class MirMissionExecutor:
         """Check if the mission executor is initialized."""
         return self._initialized
 
+    async def has_active_mission(self) -> bool:
+        """True if an InOrbit-dispatched mission is currently executing for this robot.
+
+        Used by robot-side mission tracking to avoid double-reporting a mission the edge
+        executor already owns. Backed by the executor's persisted busy-check (the same
+        query ``submit_work`` uses to reject new work for a busy robot), so it stays
+        accurate after a mission finishes even though completed workers linger in the
+        in-memory pool. Returns False before initialization (no executor, so no
+        dispatched mission can be running).
+        """
+        if not self._initialized or not self._worker_pool:
+            return False
+        # TODO: this busy-check belongs on WorkerPool itself (it owns the DB). Once
+        # inorbit-edge-executor exposes a public `WorkerPool.has_active_mission(robot_id)`,
+        # replace the private `_db` access below with
+        # `return await self._worker_pool.has_active_mission(self.robot_id)`.
+        active = await self._worker_pool._db.fetch_robot_active_mission(self.robot_id)
+        return active is not None
+
     async def handle_command(self, script_name: str, script_args: dict, options: dict) -> bool:
         """
         Handle mission-related custom commands.

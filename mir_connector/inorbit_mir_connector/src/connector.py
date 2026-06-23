@@ -148,6 +148,7 @@ class MirConnector(Connector):
                 mir_api=self.mir_api,
                 inorbit_sess=self._get_session(),
                 robot_tz_info=self.robot_tz_info,
+                mission_executor=self.mission_executor,
             )
         return self._mission_tracking
 
@@ -398,14 +399,14 @@ class MirConnector(Connector):
         )
 
         # publish key values
-        if self._get_session().missions_module.executor.wait_until_idle(0):
-            mode_text = self.status.get("mode_text")
-            state_text = self.status.get("state_text")
-            mission_text = self.status.get("mission_text")
-        else:
+        if await self.mission_executor.has_active_mission():
             mode_text = "Mission"
             state_text = "Executing"
             mission_text = "Mission"
+        else:
+            mode_text = self.status.get("mode_text")
+            state_text = self.status.get("state_text")
+            mission_text = self.status.get("mission_text")
 
         # TODO(Elvio): Move key values to a "values.py" and represent them with constants
         key_values = {

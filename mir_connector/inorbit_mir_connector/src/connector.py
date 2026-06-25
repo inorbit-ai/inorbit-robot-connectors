@@ -152,6 +152,7 @@ class MirConnector(Connector):
                 mir_api=self.mir_api,
                 inorbit_sess=self._get_session(),
                 robot_tz_info=self.robot_tz_info,
+                mission_executor=self.mission_executor,
             )
         return self._mission_tracking
 
@@ -402,14 +403,14 @@ class MirConnector(Connector):
         )
 
         # publish key values
-        if self._get_session().missions_module.executor.wait_until_idle(0):
-            mode_text = self.status.get("mode_text")
-            state_text = self.status.get("state_text")
-            mission_text = self.status.get("mission_text")
-        else:
+        if await self.mission_executor.has_active_mission():
             mode_text = "Mission"
             state_text = "Executing"
             mission_text = "Mission"
+        else:
+            mode_text = self.status.get("mode_text")
+            state_text = self.status.get("state_text")
+            mission_text = self.status.get("mission_text")
 
         # TODO(Elvio): Move key values to a "values.py" and represent them with constants
         key_values = {
@@ -447,17 +448,19 @@ class MirConnector(Connector):
             remaining_pct = None
             remaining_sec = None
             for k, v in batt_vals.items():
-                if "Remaining battery capacity" in k:
+                if k == "Remaining battery capacity [%]":
                     remaining_pct = float(v)
                 elif "Remaining battery time [sec]" in k:
                     remaining_sec = float(v)
+                if remaining_pct is not None and remaining_sec is not None:
+                    break
             # Fallback to status if diagnostics doesn't have battery data (e.g., v2 firmware)
             if remaining_pct is None and self.status.get("battery_percentage") is not None:
                 remaining_pct = float(self.status.get("battery_percentage"))
             if remaining_sec is None and self.status.get("battery_time_remaining") is not None:
                 remaining_sec = float(self.status.get("battery_time_remaining"))
             if remaining_pct is not None:
-                key_values["battery percent"] = to_inorbit_percent(remaining_pct)
+                key_values["battery percent"] = to_inorbit_percent(remaining_pct, "battery percent")
             if remaining_sec is not None:
                 key_values["battery_time_remaining"] = int(remaining_sec)
 
@@ -469,7 +472,9 @@ class MirConnector(Connector):
                     avg_cpu = float(v)
                     break
             if avg_cpu is not None:
-                system_stats["cpu_load_percentage"] = to_inorbit_percent(avg_cpu)
+                system_stats["cpu_load_percentage"] = to_inorbit_percent(
+                    avg_cpu, "cpu_load_percentage"
+                )
 
             # CPU temperature from diagnostics
             cpu_temp_vals = (diagnostics.get(CPU_TEMP_PATH, {}) or {}).get("values", {})
@@ -485,12 +490,16 @@ class MirConnector(Connector):
             memory_vals = (diagnostics.get(MEMORY_PATH, {}) or {}).get("values", {})
             memory_usage_pct = calculate_usage_percent(memory_vals, "memory_usage_percent")
             if memory_usage_pct is not None:
-                system_stats["ram_usage_percentage"] = to_inorbit_percent(memory_usage_pct)
+                system_stats["ram_usage_percentage"] = to_inorbit_percent(
+                    memory_usage_pct, "ram_usage_percentage"
+                )
 
             disk_vals = (diagnostics.get(HARDDRIVE_PATH, {}) or {}).get("values", {})
             disk_usage_pct = calculate_usage_percent(disk_vals, "disk_usage_percent")
             if disk_usage_pct is not None:
-                system_stats["hdd_usage_percentage"] = to_inorbit_percent(disk_usage_pct)
+                system_stats["hdd_usage_percentage"] = to_inorbit_percent(
+                    disk_usage_pct, "hdd_usage_percentage"
+                )
 
             # WiFi details from diagnostics
             wifi_vals = (diagnostics.get(WIFI_PATH, {}) or {}).get("values", {})

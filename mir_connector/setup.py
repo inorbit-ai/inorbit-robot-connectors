@@ -21,7 +21,8 @@ requirements = [
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.14,<3",
     "tenacity>=9.1.2",
-    # The ``[video]`` extra pulls inorbit-edge transitively, so we don't declare it separately.
+    # InOrbit
+    "inorbit-edge[video]~=3.1",
     # >=3.2 is required for the supervised background-task helpers the missions-group handler uses.
     "inorbit-connector[video]>=3.2,<4.0",
     "inorbit-edge-executor~=4.0.3",
@@ -81,5 +82,5 @@ setup(
     python_requires=">=3.10",
     # Do not edit this string manually, always use bump-my-version. See
     # https://github.com/inorbit-ai/inorbit-robot-connectors/tree/main/mir_connector#version-bump
-    version="2.0.0",
+    version="2.2.0",
 )

@@ -4,20 +4,38 @@
 
 """Utility functions for MiR connector data processing."""
 
+import logging
 import re
 from typing import Optional
 
+logger = logging.getLogger(__name__)
 
-def to_inorbit_percent(value: float) -> float:
-    """Convert percentage (0-100) to InOrbit format (0-1).
+
+def to_inorbit_percent(value: float, label: str = "") -> float:
+    """Scale a 0-100 percentage to InOrbit's 0-1 fraction.
+
+    Does NOT clamp. An out-of-range input is logged at WARNING and passed
+    through (scaled), so a bad value surfaces in the UI instead of being
+    silently masked. A previous silent clamp hid a unit bug where an absolute
+    battery capacity (mAh) was matched as the percentage and pinned to 100%.
 
     Args:
-        value: Percentage value between 0-100
+        value: Percentage value, normally between 0-100
+        label: Optional name of the metric being converted, included in the
+            out-of-range warning so it is traceable to its source.
 
     Returns:
-        Normalized value between 0-1
+        The value scaled by 1/100 (not clamped)
     """
-    return max(0.0, min(100.0, value)) / 100.0
+    if not 0.0 <= value <= 100.0:
+        target = f" for '{label}'" if label else ""
+        logger.warning(
+            "Percentage value %s%s is outside the expected 0-100 range; "
+            "publishing scaled value anyway",
+            value,
+            target,
+        )
+    return value / 100.0
 
 
 def parse_number(value: object) -> Optional[float]:

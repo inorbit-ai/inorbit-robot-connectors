@@ -23,7 +23,6 @@ requirements = [
     "tenacity>=9.1.2",
     # InOrbit
     "inorbit-edge[video]~=3.1",
-    # >=3.2 is required for the supervised background-task helpers the missions-group handler uses.
     "inorbit-connector[video]>=3.2,<4.0",
     "inorbit-edge-executor~=4.0.3",
 ]

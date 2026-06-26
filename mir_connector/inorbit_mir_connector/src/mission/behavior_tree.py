@@ -10,6 +10,7 @@
 #   - 2026-06-26: rebased import prefix mir_connector.src.* -> inorbit_mir_connector.src.*
 #   - 2026-06-26: MirApi -> MirApiV2 (our class is MirApiV2; no alias) in import + type hints
 #   - 2026-06-26: added "# noqa: E501" to one long line (vendored ruff style, not relinted)
+#   - 2026-06-26: StrEnum import fallback for Python 3.10 (enum.StrEnum added in 3.11)
 
 """Custom behavior tree nodes for executing compiled native MiR missions.
 
@@ -26,7 +27,16 @@ import asyncio
 import logging
 import time
 import uuid
-from enum import StrEnum
+
+try:
+    from enum import StrEnum  # Python >= 3.11
+except ImportError:  # Python 3.10
+    from enum import Enum
+
+    class StrEnum(str, Enum):
+        pass
+
+
 from typing import Optional
 
 from inorbit_edge_executor.behavior_tree import (

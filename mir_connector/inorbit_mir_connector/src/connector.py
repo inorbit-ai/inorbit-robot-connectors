@@ -3,30 +3,30 @@
 # SPDX-License-Identifier: MIT
 
 import base64
-import pytz
 import math
 import uuid
 
+import pytz
+from inorbit_connector.commands import CommandResultCode
+
 # from typing import override # TODO(b-Tomas): Uncomment when updating to Python 3.13
 from inorbit_connector.connector import Connector
-from inorbit_connector.commands import CommandResultCode
 from inorbit_connector.models import MapConfigTemp
-from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND
-from inorbit_edge.robot import COMMAND_MESSAGE
-from inorbit_edge.robot import COMMAND_NAV_GOAL
+from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND, COMMAND_MESSAGE, COMMAND_NAV_GOAL
+from inorbit_edge_executor.inorbit import InOrbitAPI as MissionInOrbitAPI
+
 from inorbit_mir_connector import get_module_version
 from inorbit_mir_connector.src.mir_api.missions_group import (
     NullMissionsGroupHandler,
     TmpMissionsGroupHandler,
 )
-from .mir_api import MirApiV2
-from .mir_api import SetStateId
-from .mission_tracking import MirInorbitMissionTracking
-from .mission_exec import MirMissionExecutor
-from inorbit_edge_executor.inorbit import InOrbitAPI as MissionInOrbitAPI
+
 from ..config.connector_model import ConnectorConfig
+from .mir_api import MirApiV2, SetStateId
+from .mission_exec import MirMissionExecutor
+from .mission_tracking import MirInorbitMissionTracking
 from .robot.robot import Robot
-from .utils import to_inorbit_percent, calculate_usage_percent
+from .utils import calculate_usage_percent, to_inorbit_percent
 
 # Available MiR states to select via actions
 MIR_STATE = {3: "READY", 4: "PAUSE", 11: "MANUALCONTROL"}
@@ -125,7 +125,11 @@ class MirConnector(Connector):
 
         # Set up temporary mission groups
         if self._robot_config.enable_temporary_mission_group:
-            self.mission_group = TmpMissionsGroupHandler(mir_api=self.mir_api)
+            self.mission_group = TmpMissionsGroupHandler(
+                mir_api=self.mir_api,
+                create_supervised_task=self._create_supervised_task,
+                spawn_logged_task=self._spawn_logged_task,
+            )
         else:
             self.mission_group = NullMissionsGroupHandler()
 

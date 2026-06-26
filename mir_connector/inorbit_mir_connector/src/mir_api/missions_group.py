@@ -3,18 +3,19 @@
 # SPDX-License-Identifier: MIT
 
 import asyncio
-from abc import ABC, abstractmethod
-
-from .mir_api_v2 import MirApiV2
-from tenacity import (
-    retry,
-    wait_exponential_jitter,
-    before_sleep_log,
-    retry_if_exception_type,
-)
-import httpx
 import logging
 import uuid
+from abc import ABC, abstractmethod
+
+import httpx
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception_type,
+    wait_exponential_jitter,
+)
+
+from .mir_api_v2 import MirApiV2
 
 
 class MirMissionsGroupHandler(ABC):
@@ -80,11 +81,28 @@ class TmpMissionsGroupHandler(MirMissionsGroupHandler):
     # Remove missions created in the temporary missions group every 6 hours
     MISSIONS_GARBAGE_COLLECTION_INTERVAL_SECS = 6 * 60 * 60
 
-    def __init__(self, mir_api: MirApiV2):
+    def __init__(self, mir_api: MirApiV2, create_supervised_task=None, spawn_logged_task=None):
+        """Initialize the temporary missions group handler.
+
+        Args:
+            mir_api: MiR REST API client.
+            create_supervised_task: Scheduler for the garbage-collection loop. The connector
+                injects a supervisor that re-runs the loop on crash; defaults to bare
+                ``asyncio.create_task``.
+            spawn_logged_task: Scheduler for one-shot setup. The connector injects a wrapper that
+                logs failures instead of swallowing them; defaults to bare ``asyncio.create_task``.
+        """
         super().__init__()
 
         self.mir_api = mir_api
         self._logger = logging.getLogger(name=self.__class__.__name__)
+
+        self._create_supervised_task = create_supervised_task or (
+            lambda name, coro_factory: asyncio.create_task(coro_factory())
+        )
+        self._spawn_logged_task = spawn_logged_task or (
+            lambda name, coro: asyncio.create_task(coro)
+        )
 
         # Missions group id for temporary missions
         # If None, it indicates the missions group has not been set up
@@ -101,9 +119,14 @@ class TmpMissionsGroupHandler(MirMissionsGroupHandler):
 
     async def start(self):
         """Start the temporary missions group."""
-        # Start async setup and garbage collection for missions
-        self._bg_tasks.append(asyncio.create_task(self.setup_connector_missions()))
-        self._bg_tasks.append(asyncio.create_task(self._missions_garbage_collector()))
+        # Setup runs once; the garbage collector loops forever, so it is passed as a factory the
+        # supervisor can re-create on restart.
+        self._bg_tasks.append(
+            self._spawn_logged_task("missions-group-setup", self.setup_connector_missions())
+        )
+        self._bg_tasks.append(
+            self._create_supervised_task("missions-gc", self._missions_garbage_collector)
+        )
 
     async def stop(self):
         """Stop the temporary missions group."""

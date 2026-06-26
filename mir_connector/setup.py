@@ -12,19 +12,19 @@ requirements = [
     # via ``opentelemetry-exporter-prometheus`` (a dep of inorbit-connector),
     # but we declare it explicitly because the import is direct.
     "prometheus-client>=0.25,<1.0",
-    "pytz>=2022.7",
+    "pytz>=2025.1",
     # NOTE: both pyyaml and ruamel.yaml packages are included here. Otherwise, the
     # edge-sdk dependency won't run. Consider migrating edge-sdk yaml dependency
     # to ruamel.yaml or fix the dependency issue and then remove pyyaml from here.
-    "pyyaml>=6.0,<6.1",
+    "pyyaml~=6.0.2",
     "ruamel.yaml>=0.18,<0.19",
     "pydantic>=2.11,<3",
-    "pydantic-settings>=2.11,<3",
+    "pydantic-settings>=2.14,<3",
     "tenacity>=9.1.2",
     # InOrbit
     "inorbit-edge[video]~=3.1",
-    "inorbit-connector[video]>=3.1,<4.0",
-    "inorbit-edge-executor~=3.2.5",
+    "inorbit-connector[video]>=3.2,<4.0",
+    "inorbit-edge-executor~=4.0.3",
 ]
 
 test_requirements = [

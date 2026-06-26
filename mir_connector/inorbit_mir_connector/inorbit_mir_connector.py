@@ -32,6 +32,7 @@ def setup_logging():
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("asyncio").setLevel(logging.WARNING)
+    logging.getLogger("aiosqlite").setLevel(logging.WARNING)
 
     # Reduce noise from InOrbit SDK - these log every MQTT publish
     logging.getLogger("inorbit_edge.robot").setLevel(logging.INFO)

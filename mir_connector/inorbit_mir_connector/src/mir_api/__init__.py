@@ -1,1 +1,6 @@
-from .mir_api_v2 import MirApiV2, SetStateId  # noqa: F401
+from .mir_api_v2 import (  # noqa: F401
+    DockingOffsetError,
+    MirApiV2,
+    SetStateId,
+    resolve_marker_type,
+)

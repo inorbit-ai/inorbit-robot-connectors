@@ -7,7 +7,7 @@
 # Upstream commit: c516f7d9e8e6b8b3cbaa396e2984ce149c6e7925 (2026-05-21)
 #
 # Modifications from upstream:
-#   - 2026-06-26: rebased intra-package import prefix mir_connector.src.* -> inorbit_mir_connector.src.*
+#   - 2026-06-26: rebased import prefix mir_connector.src.* -> inorbit_mir_connector.src.*
 
 """Tree builder for MiR missions with compiled native mission steps."""
 

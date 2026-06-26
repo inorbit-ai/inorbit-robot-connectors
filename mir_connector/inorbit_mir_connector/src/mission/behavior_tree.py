@@ -7,7 +7,9 @@
 # Upstream commit: c516f7d9e8e6b8b3cbaa396e2984ce149c6e7925 (2026-05-21)
 #
 # Modifications from upstream:
-#   - 2026-06-26: rebased intra-package import prefix mir_connector.src.* -> inorbit_mir_connector.src.*
+#   - 2026-06-26: rebased import prefix mir_connector.src.* -> inorbit_mir_connector.src.*
+#   - 2026-06-26: MirApi -> MirApiV2 (our class is MirApiV2; no alias) in import + type hints
+#   - 2026-06-26: added "# noqa: E501" to one long line (vendored ruff style, not relinted)
 
 """Custom behavior tree nodes for executing compiled native MiR missions.
 
@@ -42,7 +44,7 @@ from inorbit_mir_connector.src.mission.datatypes import (
     MirWaypoint,
     MissionStepExecuteMirNativeMission,
 )
-from inorbit_mir_connector.src.mir_api import DockingOffsetError, MirApi, resolve_marker_type
+from inorbit_mir_connector.src.mir_api import DockingOffsetError, MirApiV2, resolve_marker_type
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +70,7 @@ class MirBehaviorTreeBuilderContext(BehaviorTreeBuilderContext):
 
     def __init__(
         self,
-        mir_api: MirApi,
+        mir_api: MirApiV2,
         missions_group_id: Optional[str],
         firmware_version: str,
         connector_type: str = "",
@@ -81,7 +83,7 @@ class MirBehaviorTreeBuilderContext(BehaviorTreeBuilderContext):
         self._connector_type = connector_type
 
     @property
-    def mir_api(self) -> MirApi:
+    def mir_api(self) -> MirApiV2:
         return self._mir_api
 
     @property
@@ -244,7 +246,7 @@ class WaitForMirMissionCompletionNode(BehaviorTree):
                     f"({consecutive_errors}/{max_consecutive_errors}): {e}"
                 )
                 if consecutive_errors >= max_consecutive_errors:
-                    error_msg = f"MiR mission {queue_id} lost: {consecutive_errors} consecutive poll failures"
+                    error_msg = f"MiR mission {queue_id} lost: {consecutive_errors} consecutive poll failures"  # noqa: E501
                     logger.error(error_msg)
                     self._shared_memory.set(SharedMemoryKeys.MIR_ERROR_MESSAGE, error_msg)
                     raise RuntimeError(error_msg)

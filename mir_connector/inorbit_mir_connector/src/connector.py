@@ -113,17 +113,9 @@ class MirConnector(Connector):
         # ``HttpUrl``; cast to str because ``MissionInOrbitAPI``
         # concatenates it with str paths — strip the trailing slash
         # HttpUrl normalization adds so joined paths don't double it).
-        self.mission_executor: MirMissionExecutor = MirMissionExecutor(
-            robot_id=robot_id,
-            inorbit_api=MissionInOrbitAPI(
-                base_url=str(self.config.api_url).rstrip("/"),
-                api_key=self.config.api_key,
-            ),
-            mir_api=self.mir_api,
-            database_file=self._robot_config.mission_database_file,
-        )
-
-        # Set up temporary mission groups
+        # Set up temporary mission groups. Built before the mission executor:
+        # native-mission translation creates its MiR missions inside this group,
+        # so the executor needs the handler at construction time.
         if self._robot_config.enable_temporary_mission_group:
             self.mission_group = TmpMissionsGroupHandler(
                 mir_api=self.mir_api,
@@ -132,6 +124,19 @@ class MirConnector(Connector):
             )
         else:
             self.mission_group = NullMissionsGroupHandler()
+
+        self.mission_executor: MirMissionExecutor = MirMissionExecutor(
+            robot_id=robot_id,
+            inorbit_api=MissionInOrbitAPI(
+                base_url=str(self.config.api_url).rstrip("/"),
+                api_key=self.config.api_key,
+            ),
+            mir_api=self.mir_api,
+            database_file=self._robot_config.mission_database_file,
+            missions_group=self.mission_group,
+            firmware_version=self._robot_config.mir_firmware_version,
+            connector_type=self.config.connector_type,
+        )
 
         # Initialize status as None to prevent publishing before the robot is connected
         self.status = None

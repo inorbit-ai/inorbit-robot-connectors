@@ -8,6 +8,8 @@
 #
 # Modifications from upstream:
 #   - 2026-06-26: rebased import prefix mir_connector.src.* -> inorbit_mir_connector.src.*
+#   - 2026-06-26: added TestOrientationNormalization (orientation wrapped to MiR's
+#     [-180, 180] range; MiR rejects move_to_position outside it with HTTP 400)
 
 """Unit tests for InOrbitToMirTranslator."""
 
@@ -81,6 +83,30 @@ class TestTranslateWaypointsOnly:
         assert len(step.actions) == 2
         assert all(isinstance(a, MirWaypoint) for a in step.actions)
         assert step.label == "Navigate 2 waypoints"
+
+
+class TestOrientationNormalization:
+    """MiR's move_to_position rejects orientation outside [-180, 180] with a 400
+    (``input_number_out_of_range``). InOrbit waypoint theta is an unbounded angle
+    in radians, so the degrees conversion must wrap into MiR's range."""
+
+    @pytest.mark.parametrize(
+        "theta_rad, expected_deg",
+        [
+            (math.radians(90), 90.0),  # in range, unchanged
+            (math.radians(-90), -90.0),  # in range, unchanged
+            (math.radians(185), -175.0),  # just over +180
+            (math.radians(-185), 175.0),  # just under -180
+            (math.radians(364.1), 4.1),  # full turn + a bit
+            (6.354400934754617, math.degrees(6.354400934754617) - 360),  # real mission theta
+        ],
+    )
+    def test_orientation_wrapped_into_mir_range(self, theta_rad, expected_deg):
+        result = InOrbitToMirTranslator.translate(_mission([_pose_wp(1, 2, theta=theta_rad)]))
+        wp = result.definition.steps[0].actions[0]
+        assert isinstance(wp, MirWaypoint)
+        assert -180 <= wp.orientation <= 180
+        assert wp.orientation == pytest.approx(expected_deg, abs=1e-6)
 
 
 class TestTranslateWaitNested:

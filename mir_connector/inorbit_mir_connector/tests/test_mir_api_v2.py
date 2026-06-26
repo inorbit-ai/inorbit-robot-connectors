@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: MIT
 
+import logging
+
 import pytest
 from inorbit_mir_connector.src.mir_api import MirApiV2
 from deepdiff import DeepDiff
@@ -29,6 +31,30 @@ async def test_http_error(mir_api, httpx_mock):
     )
     with pytest.raises(httpx.HTTPStatusError):
         await mir_api.get_metrics()
+
+
+@pytest.mark.asyncio
+async def test_http_error_logs_response_body(mir_api, httpx_mock, caplog):
+    """A failed MiR request must log the response body.
+
+    ``raise_for_status()`` produces an ``HTTPStatusError`` whose ``str()`` only
+    carries the status line ("Client error '400 Bad Request' ...") — the body
+    MiR returns explaining *why* it rejected the request (e.g. a bad mission
+    action parameter) is otherwise lost. Native-mission creation surfaces that
+    error as its abort reason, so the body must reach the logs.
+    """
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{mir_api.mir_api_base_url}/missions",
+        status_code=400,
+        json={"error": {"message": "action parameter 'time' is invalid"}},
+    )
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(httpx.HTTPStatusError):
+            await mir_api.create_mission(group_id="group-guid", name="m")
+
+    assert "400" in caplog.text
+    assert "action parameter 'time' is invalid" in caplog.text
 
 
 @pytest.mark.asyncio

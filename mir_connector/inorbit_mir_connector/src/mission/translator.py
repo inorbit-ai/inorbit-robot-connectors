@@ -7,7 +7,10 @@
 # Upstream commit: c516f7d9e8e6b8b3cbaa396e2984ce149c6e7925 (2026-05-21)
 #
 # Modifications from upstream:
-#   - none (verbatim; intra-package imports are relative, e.g. ``from .datatypes import ...``)
+#   - 2026-06-26: normalize waypoint orientation into MiR's [-180, 180] range. Upstream
+#     emitted raw math.degrees(theta); MiR's move_to_position rejects orientation outside
+#     [-180, 180] with HTTP 400 (input_number_out_of_range) and InOrbit theta is an
+#     unbounded radian angle (e.g. 6.35 rad -> 364deg).
 
 """Mission translator that compiles consecutive InOrbit waypoint and
 nestable action steps into single native MiR missions.
@@ -126,8 +129,11 @@ class InOrbitToMirTranslator:
                 wp = step.waypoint
                 x, y, theta = wp.x, wp.y, wp.theta
 
-                # MiR expects orientation in degrees
-                orientation_deg = math.degrees(theta)
+                # MiR expects orientation in degrees, wrapped to [-180, 180]:
+                # move_to_position rejects anything outside that range with HTTP 400
+                # (input_number_out_of_range). InOrbit theta is an unbounded radian
+                # angle, so normalize after converting.
+                orientation_deg = (math.degrees(theta) + 180) % 360 - 180
 
                 pending_actions.append(
                     MirWaypoint(label=step.label, x=x, y=y, orientation=orientation_deg)

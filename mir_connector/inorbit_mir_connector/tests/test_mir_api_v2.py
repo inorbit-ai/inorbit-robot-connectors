@@ -71,6 +71,30 @@ async def test_get_executing_mission_id(mir_api, httpx_mock):
 
 
 @pytest.mark.asyncio
+async def test_abort_all_missions(mir_api, httpx_mock):
+    httpx_mock.add_response(
+        method="DELETE", url=f"{mir_api.mir_api_base_url}/mission_queue", status_code=204
+    )
+    await mir_api.abort_all_missions()
+    request = httpx_mock.get_request(method="DELETE")
+    assert request is not None
+    assert str(request.url) == f"{mir_api.mir_api_base_url}/mission_queue"
+
+
+@pytest.mark.asyncio
+async def test_abort_mission(mir_api, httpx_mock):
+    """abort_mission scopes the abort to a single queue entry via DELETE
+    /mission_queue/{id}, leaving the rest of the queue intact."""
+    httpx_mock.add_response(
+        method="DELETE", url=f"{mir_api.mir_api_base_url}/mission_queue/42", status_code=204
+    )
+    await mir_api.abort_mission(42)
+    request = httpx_mock.get_request(method="DELETE")
+    assert request is not None
+    assert str(request.url) == f"{mir_api.mir_api_base_url}/mission_queue/42"
+
+
+@pytest.mark.asyncio
 async def test_get_metrics(mir_api, httpx_mock):
     input = """
 # HELP mir_robot_localization_score A measure of the robots position estimate relative to the map. A value of 0 indicates a perfect value and values closer to zero are better.

@@ -14,12 +14,16 @@ upstream module ships no execution test for this node.
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 from inorbit_edge_executor.datatypes import MissionRuntimeSharedMemory
 
 from inorbit_mir_connector.src.mission.behavior_tree import (
+    CleanupMirMissionNode,
     CreateMirNativeMissionNode,
     MirBehaviorTreeBuilderContext,
+    MirMissionAbortedNode,
     SharedMemoryKeys,
 )
 from inorbit_mir_connector.src.mission.datatypes import (
@@ -39,8 +43,16 @@ class FakeMirApi:
         self.created: list[dict] = []
         self.actions: list[dict] = []
         self.queued: list[str] = []
+        self.aborted_entries: list = []
+        self.abort_all_count: int = 0
         self._offsets_by_marker = offsets_by_marker or {}
         self._queue_id = queue_id
+
+    async def abort_mission(self, mission_queue_id):
+        self.aborted_entries.append(mission_queue_id)
+
+    async def abort_all_missions(self):
+        self.abort_all_count += 1
 
     async def create_mission(self, group_id, name, guid, description):
         self.created.append(
@@ -194,3 +206,81 @@ async def test_docking_without_offset_raises_and_does_not_queue():
 
     assert api.queued == []
     assert ctx.shared_memory.get(SharedMemoryKeys.MIR_ERROR_MESSAGE)
+
+
+def _build_abort_context(api, queue_id):
+    """Context with a frozen shared memory holding (optionally) a queue id.
+
+    Mirrors the shape CreateMirNativeMissionNode leaves behind: the queue/error
+    keys are declared, the memory is frozen, then the queue id is stored. Pass
+    queue_id=None to model an abort before any mission was queued.
+    """
+    ctx = MirBehaviorTreeBuilderContext(
+        mir_api=api,
+        missions_group_id="grp-1",
+        firmware_version="v3",
+        connector_type="mir",
+        mt=AsyncMock(),
+        error_context={"last_error": "boom"},
+    )
+    sm = MissionRuntimeSharedMemory()
+    sm.add(SharedMemoryKeys.MIR_QUEUE_ID, None)
+    sm.add(SharedMemoryKeys.MIR_ERROR_MESSAGE, None)
+    sm.freeze()
+    if queue_id is not None:
+        sm.set(SharedMemoryKeys.MIR_QUEUE_ID, queue_id)
+    ctx.shared_memory = sm
+    return ctx
+
+
+@pytest.mark.asyncio
+async def test_abort_node_scopes_abort_to_queue_entry():
+    api = FakeMirApi()
+    ctx = _build_abort_context(api, queue_id=42)
+    node = MirMissionAbortedNode(ctx)
+
+    await node._execute()
+
+    # Only the one queued mission is aborted; the queue is left otherwise intact.
+    assert api.aborted_entries == [42]
+    assert api.abort_all_count == 0
+    # Base MissionAbortedNode still reports the abort to mission tracking.
+    ctx.mt.abort.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_abort_node_without_queue_id_aborts_nothing():
+    api = FakeMirApi()
+    ctx = _build_abort_context(api, queue_id=None)
+    node = MirMissionAbortedNode(ctx)
+
+    await node._execute()
+
+    # No queue id -> no MiR abort call at all (no fallback to abort_all_missions).
+    assert api.aborted_entries == []
+    assert api.abort_all_count == 0
+    ctx.mt.abort.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_node_scopes_abort_to_queue_entry():
+    api = FakeMirApi()
+    ctx = _build_abort_context(api, queue_id=42)
+    node = CleanupMirMissionNode(ctx)
+
+    await node._execute()
+
+    assert api.aborted_entries == [42]
+    assert api.abort_all_count == 0
+
+
+@pytest.mark.asyncio
+async def test_cleanup_node_without_queue_id_is_noop():
+    api = FakeMirApi()
+    ctx = _build_abort_context(api, queue_id=None)
+    node = CleanupMirMissionNode(ctx)
+
+    await node._execute()
+
+    assert api.aborted_entries == []
+    assert api.abort_all_count == 0

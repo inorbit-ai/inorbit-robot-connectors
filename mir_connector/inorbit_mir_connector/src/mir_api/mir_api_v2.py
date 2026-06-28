@@ -251,6 +251,20 @@ class MirApiV2(MirApiBaseClass):
         )
         self.logger.debug(f"Missions aborted: {response.text}")
 
+    async def abort_mission(self, mission_queue_id):
+        """Aborts a single mission queue entry.
+
+        ``DELETE /mission_queue/{id}`` aborts only the specified mission (pending or
+        executing) and leaves the rest of the queue intact, unlike
+        ``abort_all_missions`` which clears the whole queue.
+        """
+        queue_entry_url = f"/{MISSION_QUEUE_ENDPOINT_V2}/{mission_queue_id}"
+        response = await self._delete(
+            queue_entry_url,
+            headers={"Content-Type": "application/json"},
+        )
+        self.logger.debug(f"Mission {mission_queue_id} aborted: {response.text}")
+
     async def set_state(self, state_id: int):
         """Set robot state
 

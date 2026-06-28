@@ -255,6 +255,11 @@ class MirApiBaseClass(ABC):
         pass
 
     @abstractmethod
+    async def abort_mission(self, mission_queue_id):
+        """Aborts a single mission from the mission queue by its mission_queue id"""
+        pass
+
+    @abstractmethod
     async def queue_mission(self, mission_id: str):
         """Receives a mission ID and sends a request to append it to the robot's mission queue"""
         pass

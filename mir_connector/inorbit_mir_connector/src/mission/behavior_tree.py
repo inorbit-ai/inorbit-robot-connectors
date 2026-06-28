@@ -14,6 +14,11 @@
 #   - 2026-06-27: replaced _STATE_DONE/_STATE_ABORT string constants with a
 #     MirMissionQueueState(StrEnum) for consistency with connector enums
 #   - 2026-06-27: renamed local n -> n_actions in CreateMirNativeMissionNode._execute
+#   - 2026-06-27: scoped abort: MirMissionAbortedNode/CleanupMirMissionNode now call
+#     abort_mission(queue_id) (DELETE /mission_queue/{id}) instead of abort_all_missions,
+#     so other queued/fleet missions survive; no fallback when the queue id is absent
+#   - 2026-06-27: CleanupMirMissionNode.__init__ now stores context.shared_memory (needed
+#     to read the queue id for the scoped abort above)
 
 """Custom behavior tree nodes for executing compiled native MiR missions.
 
@@ -314,11 +319,15 @@ class MirMissionAbortedNode(MissionAbortedNode):
         if error_message:
             logger.error(f"MiR mission aborted: {error_message}")
 
-        try:
-            await self._mir_api.abort_all_missions()
-            logger.info("Aborted MiR mission queue")
-        except Exception as e:
-            logger.warning(f"Failed to abort MiR mission queue: {e}")
+        queue_id = self._shared_memory.get(SharedMemoryKeys.MIR_QUEUE_ID)
+        if queue_id is not None:
+            try:
+                await self._mir_api.abort_mission(queue_id)
+                logger.info(f"Aborted MiR mission queue entry {queue_id}")
+            except Exception as e:
+                logger.warning(f"Failed to abort MiR mission queue entry {queue_id}: {e}")
+        else:
+            logger.warning("No MiR queue id in shared memory; nothing to abort")
 
         await super()._execute()
 
@@ -333,13 +342,18 @@ class CleanupMirMissionNode(BehaviorTree):
     def __init__(self, context: MirBehaviorTreeBuilderContext, **kwargs):
         super().__init__(**kwargs)
         self._mir_api = context.mir_api
+        self._shared_memory = context.shared_memory
 
     async def _execute(self):
-        logger.info("Cleaning up MiR mission (aborting queue)")
+        queue_id = self._shared_memory.get(SharedMemoryKeys.MIR_QUEUE_ID)
+        if queue_id is None:
+            logger.warning("No MiR queue id in shared memory; nothing to clean up")
+            return
+        logger.info(f"Cleaning up MiR mission (aborting queue entry {queue_id})")
         try:
-            await self._mir_api.abort_all_missions()
+            await self._mir_api.abort_mission(queue_id)
         except Exception as e:
-            logger.warning(f"Failed to abort MiR missions during cleanup: {e}")
+            logger.warning(f"Failed to abort MiR mission queue entry {queue_id} during cleanup: {e}")
 
     @classmethod
     def from_object(cls, context, **kwargs):

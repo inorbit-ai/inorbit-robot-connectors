@@ -3,21 +3,23 @@
 # SPDX-License-Identifier: MIT
 
 import hashlib
-import math
 import logging
+import math
 import time
-import httpx
 from enum import Enum
 from typing import Optional
-from prometheus_client import parser
 
+import httpx
 from inorbit_connector.metrics.http import (
     record_upstream_http_error,
     record_upstream_http_request,
 )
 from inorbit_edge.missions import MISSION_STATE_EXECUTING
+from prometheus_client import parser
+
 from inorbit_mir_connector.config.connector_model import CONNECTOR_TYPE
 from inorbit_mir_connector.src.metrics import error_kind
+
 from .mir_api_base import MirApiBaseClass
 
 API_V2_CONTEXT_URL = "/api/v2.0.0"
@@ -29,6 +31,7 @@ MISSION_GROUPS_ENDPOINT_V2 = "mission_groups"
 MISSIONS_ENDPOINT_V2 = "missions"
 STATUS_ENDPOINT_V2 = "status"
 DIAGNOSTICS_ENDPOINT_V2 = "experimental/diagnostics"
+POSITIONS_ENDPOINT_V2 = "positions"
 
 
 class SetStateId(int, Enum):
@@ -188,6 +191,17 @@ class MirApiV2(MirApiBaseClass):
         response = await self._get(missions_api_url)
         return response.json()
 
+    async def get_mission_queue_entry(self, queue_id):
+        """Return full details of a single mission queue entry.
+
+        Single ``GET /mission_queue/{id}`` — distinct from the heavyweight
+        ``get_mission`` (which composes four GETs), so it is light enough for
+        the ~1 s native-mission completion poll.
+        """
+        mission_api_url = f"/{MISSION_QUEUE_ENDPOINT_V2}/{queue_id}"
+        response = await self._get(mission_api_url)
+        return response.json()
+
     async def get_executing_mission_id(self):
         """Returns the id of the mission being currently executed by the robot"""
         missions_api_url = f"/{MISSION_QUEUE_ENDPOINT_V2}"
@@ -227,6 +241,7 @@ class MirApiV2(MirApiBaseClass):
             json=mission_queues,
         )
         self.logger.debug(f"Mission queued: {response.text}")
+        return response.json()
 
     async def abort_all_missions(self):
         """Aborts all missions"""
@@ -236,6 +251,20 @@ class MirApiV2(MirApiBaseClass):
             headers={"Content-Type": "application/json"},
         )
         self.logger.debug(f"Missions aborted: {response.text}")
+
+    async def abort_mission(self, mission_queue_id):
+        """Aborts a single mission queue entry.
+
+        ``DELETE /mission_queue/{id}`` aborts only the specified mission (pending or
+        executing) and leaves the rest of the queue intact, unlike
+        ``abort_all_missions`` which clears the whole queue.
+        """
+        queue_entry_url = f"/{MISSION_QUEUE_ENDPOINT_V2}/{mission_queue_id}"
+        response = await self._delete(
+            queue_entry_url,
+            headers={"Content-Type": "application/json"},
+        )
+        self.logger.debug(f"Mission {mission_queue_id} aborted: {response.text}")
 
     async def set_state(self, state_id: int):
         """Set robot state
@@ -332,3 +361,71 @@ class MirApiV2(MirApiBaseClass):
         """
         response = await self._get(f"maps/{map_id}")
         return response.json()
+
+    async def get_position_docking_offsets(self, position_guid: str) -> list:
+        """Return the docking offsets attached to a position.
+
+        Each offset record carries a ``guid``. Positions with no offset
+        configured (e.g. most chargers) return an empty list.
+        """
+        offsets_api_url = f"/{POSITIONS_ENDPOINT_V2}/{position_guid}/docking_offsets"
+        response = await self._get(offsets_api_url)
+        return response.json()
+
+
+# Ported from the Mappalink MiR connector (mir_connector/src/mir_api/mir_api.py:292-344,
+# commit c516f7d9e8e6b8b3cbaa396e2984ce149c6e7925) for the vendored mission module, which
+# imports DockingOffsetError / resolve_marker_type from this package. SPDX: MIT.
+class DockingOffsetError(Exception):
+    """A ``docking`` action's ``marker_type`` could not be resolved.
+
+    Raised when a docking action gives a ``marker`` but no ``marker_type`` and
+    the connector cannot fill it in — the position has no docking offset, or
+    the offset lookup failed. MiR rejects an offsetless docking action, so
+    failing here surfaces a clear cause instead of an opaque downstream HTTP
+    400.
+    """
+
+
+async def resolve_marker_type(
+    mir_api: MirApiV2,
+    action_type: str,
+    parameters: dict,
+    log: logging.Logger,
+) -> dict:
+    """Fill in ``marker_type`` for a MiR ``docking`` action.
+
+    MiR's ``docking`` action takes two correlated GUIDs: ``marker`` (the
+    target position) and ``marker_type`` (that position's docking-offset
+    record). A position has at most one offset, so ``marker_type`` can be
+    derived from ``marker`` alone.
+
+    Returns a copy of ``parameters`` with ``marker_type`` filled in. Raises
+    ``DockingOffsetError`` when the marker has no docking offset, or when the
+    offset lookup fails — MiR rejects an offsetless docking action, so failing
+    here gives a clear cause rather than an opaque downstream HTTP 400.
+
+    Non-docking actions, and docking actions whose ``marker_type`` is already
+    set to a non-empty value, pass through unchanged.
+    """
+    if action_type != "docking":
+        return parameters
+    marker = parameters.get("marker")
+    if not marker or parameters.get("marker_type"):
+        return parameters
+
+    try:
+        offsets = await mir_api.get_position_docking_offsets(marker)
+        guid = offsets[0]["guid"] if offsets else None
+    except Exception as ex:
+        raise DockingOffsetError(
+            f"docking: could not look up the docking offset for marker {marker}: {ex}"
+        ) from ex
+    if not guid:
+        raise DockingOffsetError(
+            f"docking: marker {marker} has no docking offset configured on the "
+            f"robot — MiR requires marker_type for docking; configure an offset "
+            f"for this position"
+        )
+    log.info(f"docking: resolved marker_type {guid} for marker {marker}")
+    return {**parameters, "marker_type": guid}

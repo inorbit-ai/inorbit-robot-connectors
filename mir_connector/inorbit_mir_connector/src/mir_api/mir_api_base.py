@@ -178,6 +178,29 @@ class MirApiBaseClass(ABC):
                     duration_seconds=duration,
                 )
 
+    async def _request(self, method: str, endpoint: str, **kwargs) -> httpx.Response:
+        """Issue a request and surface the MiR error body on failure.
+
+        Sits between the retrying verb wrappers and the metrics-only
+        ``_record_request``. ``HTTPStatusError.str()`` carries only the status
+        line ("Client error '400 Bad Request' for url ..."); MiR puts the
+        actual reason a request was rejected (e.g. an invalid mission action
+        parameter) in the response body, which would otherwise never reach the
+        logs or the mission abort reason.
+        """
+        try:
+            return await self._record_request(method, endpoint, **kwargs)
+        except httpx.HTTPStatusError as e:
+            body = e.response.text
+            self.logger.warning(
+                "MiR API %s %s -> %s: %s",
+                method,
+                endpoint,
+                e.response.status_code,
+                (body[:2000] if body else "<empty response body>"),
+            )
+            raise
+
     @retry(
         wait=wait_exponential_jitter(initial=1, max=10),
         stop=stop_after_attempt(3),
@@ -186,7 +209,7 @@ class MirApiBaseClass(ABC):
         reraise=True,
     )
     async def _get(self, endpoint: str, **kwargs) -> httpx.Response:
-        return await self._record_request("GET", endpoint, **kwargs)
+        return await self._request("GET", endpoint, **kwargs)
 
     @retry(
         wait=wait_exponential_jitter(initial=1, max=10),
@@ -196,7 +219,7 @@ class MirApiBaseClass(ABC):
         reraise=True,
     )
     async def _post(self, endpoint: str, **kwargs) -> httpx.Response:
-        return await self._record_request("POST", endpoint, **kwargs)
+        return await self._request("POST", endpoint, **kwargs)
 
     @retry(
         wait=wait_exponential_jitter(initial=1, max=10),
@@ -206,7 +229,7 @@ class MirApiBaseClass(ABC):
         reraise=True,
     )
     async def _put(self, endpoint: str, **kwargs) -> httpx.Response:
-        return await self._record_request("PUT", endpoint, **kwargs)
+        return await self._request("PUT", endpoint, **kwargs)
 
     @retry(
         wait=wait_exponential_jitter(initial=1, max=10),
@@ -216,7 +239,7 @@ class MirApiBaseClass(ABC):
         reraise=True,
     )
     async def _delete(self, endpoint: str, **kwargs) -> httpx.Response:
-        return await self._record_request("DELETE", endpoint, **kwargs)
+        return await self._request("DELETE", endpoint, **kwargs)
 
     async def close(self):
         await self._async_client.aclose()
@@ -229,6 +252,11 @@ class MirApiBaseClass(ABC):
     @abstractmethod
     async def abort_all_missions(self):
         """Aborts all missions"""
+        pass
+
+    @abstractmethod
+    async def abort_mission(self, mission_queue_id):
+        """Aborts a single mission from the mission queue by its mission_queue id"""
         pass
 
     @abstractmethod

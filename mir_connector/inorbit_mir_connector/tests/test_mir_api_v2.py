@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: MIT
 
+import logging
+
 import pytest
 from inorbit_mir_connector.src.mir_api import MirApiV2
 from deepdiff import DeepDiff
@@ -32,6 +34,30 @@ async def test_http_error(mir_api, httpx_mock):
 
 
 @pytest.mark.asyncio
+async def test_http_error_logs_response_body(mir_api, httpx_mock, caplog):
+    """A failed MiR request must log the response body.
+
+    ``raise_for_status()`` produces an ``HTTPStatusError`` whose ``str()`` only
+    carries the status line ("Client error '400 Bad Request' ...") — the body
+    MiR returns explaining *why* it rejected the request (e.g. a bad mission
+    action parameter) is otherwise lost. Native-mission creation surfaces that
+    error as its abort reason, so the body must reach the logs.
+    """
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{mir_api.mir_api_base_url}/missions",
+        status_code=400,
+        json={"error": {"message": "action parameter 'time' is invalid"}},
+    )
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(httpx.HTTPStatusError):
+            await mir_api.create_mission(group_id="group-guid", name="m")
+
+    assert "400" in caplog.text
+    assert "action parameter 'time' is invalid" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_get_executing_mission_id(mir_api, httpx_mock):
     missions = [
         {"id": 2, "state": "Aborted"},
@@ -42,6 +68,30 @@ async def test_get_executing_mission_id(mir_api, httpx_mock):
         method="GET", url=f"{mir_api.mir_api_base_url}/mission_queue", json=missions
     )
     assert await mir_api.get_executing_mission_id() == 1
+
+
+@pytest.mark.asyncio
+async def test_abort_all_missions(mir_api, httpx_mock):
+    httpx_mock.add_response(
+        method="DELETE", url=f"{mir_api.mir_api_base_url}/mission_queue", status_code=204
+    )
+    await mir_api.abort_all_missions()
+    request = httpx_mock.get_request(method="DELETE")
+    assert request is not None
+    assert str(request.url) == f"{mir_api.mir_api_base_url}/mission_queue"
+
+
+@pytest.mark.asyncio
+async def test_abort_mission(mir_api, httpx_mock):
+    """abort_mission scopes the abort to a single queue entry via DELETE
+    /mission_queue/{id}, leaving the rest of the queue intact."""
+    httpx_mock.add_response(
+        method="DELETE", url=f"{mir_api.mir_api_base_url}/mission_queue/42", status_code=204
+    )
+    await mir_api.abort_mission(42)
+    request = httpx_mock.get_request(method="DELETE")
+    assert request is not None
+    assert str(request.url) == f"{mir_api.mir_api_base_url}/mission_queue/42"
 
 
 @pytest.mark.asyncio

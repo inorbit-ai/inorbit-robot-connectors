@@ -5,6 +5,7 @@ import asyncio
 import logging
 import json
 from enum import Enum
+from typing import Optional
 
 from inorbit_connector.commands import CommandResultCode
 from inorbit_edge_executor.datatypes import MissionRuntimeOptions
@@ -13,12 +14,17 @@ from inorbit_edge_executor.worker_pool import WorkerPool
 from inorbit_edge_executor.db import get_db
 from .mir_api import MirApiV2
 from .mir_api import SetStateId
+from .mir_api.missions_group import MirMissionsGroupHandler
+from .mission.behavior_tree import MirBehaviorTreeBuilderContext
+from .mission.datatypes import MirInOrbitMission
+from .mission.translator import InOrbitToMirTranslator
+from .mission.tree_builder import MirTreeBuilder
 
 # Edge-mission execution module for MiR robots. It extends the inorbit-edge-executor module for
-# translating missions into MiR language and executing them.
-# TODO(b-Tomas): Impleemnt proper translation from InOrbit mission definitions into multi-step
-# MiR missions.
-#   - So far, this implements native pause/resume/abort methods for MiR missions.
+# translating InOrbit missions into native multi-step MiR missions and executing them, with
+# native pause/resume/abort. Translation is wired via the vendored mission module
+# (src/mission/): MirTreeBuilder compiles each mission into a behavior tree whose
+# waypoint/nestable-action runs become native MiR missions.
 
 
 class MissionScriptName(Enum):
@@ -31,10 +37,50 @@ class MissionScriptName(Enum):
 
 class MirWorkerPool(WorkerPool):
 
-    def __init__(self, mir_api: MirApiV2, *args, **kwargs):
+    def __init__(
+        self,
+        mir_api: MirApiV2,
+        *args,
+        missions_group: Optional[MirMissionsGroupHandler] = None,
+        firmware_version: str = "v3",
+        connector_type: str = "",
+        **kwargs,
+    ):
         self.mir_api = mir_api
-        super().__init__(*args, **kwargs)
+        self._missions_group = missions_group
+        self._firmware_version = firmware_version
+        self._connector_type = connector_type
+        super().__init__(*args, behavior_tree_builder=MirTreeBuilder(), **kwargs)
         self.logger = logging.getLogger(name=self.__class__.__name__)
+
+    # @override
+    def create_builder_context(self) -> MirBehaviorTreeBuilderContext:
+        """Build the MiR-aware context the tree builder needs.
+
+        Carries the MiR API plus the temporary missions-group id, firmware
+        version, and connector type. ``submit_work`` fills in mission,
+        options, and shared memory afterwards via ``prepare_builder_context``.
+        """
+        missions_group_id = None
+        if self._missions_group is not None:
+            missions_group_id = self._missions_group.missions_group_id
+        return MirBehaviorTreeBuilderContext(
+            mir_api=self.mir_api,
+            missions_group_id=missions_group_id,
+            firmware_version=self._firmware_version,
+            connector_type=self._connector_type,
+        )
+
+    # @override
+    def translate_mission(self, mission: Mission) -> MirInOrbitMission:
+        """Compile an InOrbit mission into a native-MiR mission definition."""
+        self.logger.debug(f"Translating mission {mission.id}")
+        return InOrbitToMirTranslator.translate(mission=mission)
+
+    # @override
+    def deserialize_mission(self, serialized_mission: dict) -> MirInOrbitMission:
+        """Rehydrate a persisted mission (e.g. on resume) as a MiR mission."""
+        return MirInOrbitMission.model_validate(serialized_mission)
 
     # @override
     async def pause_mission(self, mission_id):
@@ -76,7 +122,16 @@ class MirMissionExecutor:
     Handles mission submission, pause, resume, and abort operations.
     """
 
-    def __init__(self, robot_id, inorbit_api, mir_api, database_file=None):
+    def __init__(
+        self,
+        robot_id,
+        inorbit_api,
+        mir_api,
+        database_file=None,
+        missions_group: Optional[MirMissionsGroupHandler] = None,
+        firmware_version: str = "v3",
+        connector_type: str = "",
+    ):
         """
         Initialize the mission executor.
 
@@ -85,11 +140,18 @@ class MirMissionExecutor:
             inorbit_api: InOrbit API client instance
             mir_api: MIR robot API client instance
             database_file: Optional path to SQLite database file for mission storage
+            missions_group: Handler owning the temporary MiR missions group native
+                missions are created in (None disables native translation's group).
+            firmware_version: MiR firmware ("v2"/"v3"); selects move-action params.
+            connector_type: InOrbit connector type identity, carried on the context.
         """
         self.logger = logging.getLogger(name=self.__class__.__name__)
         self.robot_id = robot_id
         self.inorbit_api = inorbit_api
         self.mir_api = mir_api
+        self._missions_group = missions_group
+        self._firmware_version = firmware_version
+        self._connector_type = connector_type
         # Format database filename for inorbit-edge-executor
         # (expects "sqlite:<filename>" or "dummy")
         if database_file:
@@ -111,6 +173,9 @@ class MirMissionExecutor:
                 mir_api=self.mir_api,
                 api=self.inorbit_api,
                 db=db,
+                missions_group=self._missions_group,
+                firmware_version=self._firmware_version,
+                connector_type=self._connector_type,
             )
             await self._worker_pool.start()
             self._initialized = True

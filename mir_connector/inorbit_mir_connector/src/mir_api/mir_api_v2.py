@@ -199,7 +199,8 @@ class MirApiV2(MirApiBaseClass):
         the ~1 s native-mission completion poll.
         """
         mission_api_url = f"/{MISSION_QUEUE_ENDPOINT_V2}/{queue_id}"
-        return (await self._get(mission_api_url)).json()
+        response = await self._get(mission_api_url)
+        return response.json()
 
     async def get_executing_mission_id(self):
         """Returns the id of the mission being currently executed by the robot"""
@@ -368,7 +369,8 @@ class MirApiV2(MirApiBaseClass):
         configured (e.g. most chargers) return an empty list.
         """
         offsets_api_url = f"/{POSITIONS_ENDPOINT_V2}/{position_guid}/docking_offsets"
-        return (await self._get(offsets_api_url)).json()
+        response = await self._get(offsets_api_url)
+        return response.json()
 
 
 # Ported from the Mappalink MiR connector (mir_connector/src/mir_api/mir_api.py:292-344,

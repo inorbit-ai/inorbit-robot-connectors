@@ -72,6 +72,7 @@ _MIR_MOVE_DISTANCE_THRESHOLD = 0.1
 # Polling interval for mission queue state checks
 _POLL_INTERVAL_SECS = 1.0
 
+
 class MirMissionQueueState(StrEnum):
     """MiR mission queue entry states we act on while polling."""
 
@@ -353,7 +354,9 @@ class CleanupMirMissionNode(BehaviorTree):
         try:
             await self._mir_api.abort_mission(queue_id)
         except Exception as e:
-            logger.warning(f"Failed to abort MiR mission queue entry {queue_id} during cleanup: {e}")
+            logger.warning(
+                f"Failed to abort MiR mission queue entry {queue_id} during cleanup: {e}"
+            )
 
     @classmethod
     def from_object(cls, context, **kwargs):

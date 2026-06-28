@@ -19,6 +19,8 @@
 #     so other queued/fleet missions survive; no fallback when the queue id is absent
 #   - 2026-06-27: CleanupMirMissionNode.__init__ now stores context.shared_memory (needed
 #     to read the queue id for the scoped abort above)
+#   - 2026-06-27: made the missing-missions-group runtime error operator-actionable (names the
+#     two fixes: enable_temporary_mission_group, or configure a predefined missions group)
 
 """Custom behavior tree nodes for executing compiled native MiR missions.
 
@@ -148,7 +150,11 @@ class CreateMirNativeMissionNode(BehaviorTree):
         logger.info(f"Creating MiR native mission with {n_actions} actions: {mission_guid}")
 
         if not self._missions_group_id:
-            error_msg = "No missions group available for creating native MiR mission"
+            error_msg = (
+                "Cannot create native MiR mission: no MiR missions group is configured. "
+                "Enable 'enable_temporary_mission_group' in the connector config, or configure "
+                "a predefined missions group, then retry."
+            )
             logger.error(error_msg)
             self._shared_memory.set(SharedMemoryKeys.MIR_ERROR_MESSAGE, error_msg)
             raise RuntimeError(error_msg)

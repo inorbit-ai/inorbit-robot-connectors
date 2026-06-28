@@ -173,11 +173,14 @@ async def test_missing_missions_group_raises():
         api, [MirWaypoint(label="wp", x=1, y=2, orientation=0)], missions_group_id=None
     )
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="enable_temporary_mission_group"):
         await node._execute()
 
     assert api.created == []
-    assert ctx.shared_memory.get(SharedMemoryKeys.MIR_ERROR_MESSAGE)
+    # The operator-facing error names both remedies so it is actionable.
+    error_msg = ctx.shared_memory.get(SharedMemoryKeys.MIR_ERROR_MESSAGE)
+    assert "enable_temporary_mission_group" in error_msg
+    assert "predefined missions group" in error_msg
 
 
 @pytest.mark.asyncio

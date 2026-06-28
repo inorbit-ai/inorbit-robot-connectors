@@ -11,6 +11,9 @@
 #   - 2026-06-26: MirApi -> MirApiV2 (our class is MirApiV2; no alias) in import + type hints
 #   - 2026-06-26: added "# noqa: E501" to one long line (vendored ruff style, not relinted)
 #   - 2026-06-26: StrEnum import fallback for Python 3.10 (enum.StrEnum added in 3.11)
+#   - 2026-06-27: replaced _STATE_DONE/_STATE_ABORT string constants with a
+#     MirMissionQueueState(StrEnum) for consistency with connector enums
+#   - 2026-06-27: renamed local n -> n_actions in CreateMirNativeMissionNode._execute
 
 """Custom behavior tree nodes for executing compiled native MiR missions.
 
@@ -64,9 +67,11 @@ _MIR_MOVE_DISTANCE_THRESHOLD = 0.1
 # Polling interval for mission queue state checks
 _POLL_INTERVAL_SECS = 1.0
 
-# MiR mission queue states
-_STATE_DONE = "Done"
-_STATE_ABORT = "Aborted"
+class MirMissionQueueState(StrEnum):
+    """MiR mission queue entry states we act on while polling."""
+
+    DONE = "Done"
+    ABORTED = "Aborted"
 
 
 class SharedMemoryKeys(StrEnum):
@@ -131,10 +136,10 @@ class CreateMirNativeMissionNode(BehaviorTree):
 
     async def _execute(self):
         actions = self._step.actions
-        n = len(actions)
+        n_actions = len(actions)
         mission_guid = str(uuid.uuid4())
 
-        logger.info(f"Creating MiR native mission with {n} actions: {mission_guid}")
+        logger.info(f"Creating MiR native mission with {n_actions} actions: {mission_guid}")
 
         if not self._missions_group_id:
             error_msg = "No missions group available for creating native MiR mission"
@@ -145,7 +150,7 @@ class CreateMirNativeMissionNode(BehaviorTree):
         try:
             await self._mir_api.create_mission(
                 group_id=self._missions_group_id,
-                name=f"InOrbit Mission ({n} actions)",
+                name=f"InOrbit Mission ({n_actions} actions)",
                 guid=mission_guid,
                 description="Compiled mission created by InOrbit edge executor",
             )
@@ -265,11 +270,11 @@ class WaitForMirMissionCompletionNode(BehaviorTree):
 
             state = entry.get("state", "")
 
-            if state == _STATE_DONE:
+            if state == MirMissionQueueState.DONE:
                 logger.info(f"MiR mission {queue_id} completed successfully")
                 return
 
-            if state == _STATE_ABORT:
+            if state == MirMissionQueueState.ABORTED:
                 error_msg = (
                     f"MiR mission {queue_id} was aborted: {entry.get('message', 'no message')}"
                 )

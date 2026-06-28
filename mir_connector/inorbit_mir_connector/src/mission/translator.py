@@ -11,6 +11,8 @@
 #     emitted raw math.degrees(theta); MiR's move_to_position rejects orientation outside
 #     [-180, 180] with HTTP 400 (input_number_out_of_range) and InOrbit theta is an
 #     unbounded radian angle (e.g. 6.35 rad -> 364deg).
+#   - 2026-06-27: renamed local n -> n_pending_actions in flush_actions
+#   - 2026-06-27: waypoint_count via sum(map(...)) instead of a generator expression
 
 """Mission translator that compiles consecutive InOrbit waypoint and
 nestable action steps into single native MiR missions.
@@ -101,19 +103,19 @@ class InOrbitToMirTranslator:
         def flush_actions():
             if not pending_actions:
                 return
-            n = len(pending_actions)
-            waypoint_count = sum(1 for a in pending_actions if isinstance(a, MirWaypoint))
-            if waypoint_count == n:
+            n_pending_actions = len(pending_actions)
+            waypoint_count = sum(map(lambda a: isinstance(a, MirWaypoint), pending_actions))
+            if waypoint_count == n_pending_actions:
                 # All waypoints
                 label = (
                     (pending_labels[0] if pending_labels[0] else "Navigate to waypoint")
-                    if n == 1
-                    else f"Navigate {n} waypoints"
+                    if n_pending_actions == 1
+                    else f"Navigate {n_pending_actions} waypoints"
                 )
-            elif n == 1:
+            elif n_pending_actions == 1:
                 label = pending_labels[0] if pending_labels[0] else pending_actions[0].label or ""
             else:
-                label = f"Execute {n} actions"
+                label = f"Execute {n_pending_actions} actions"
             translated_steps.append(
                 MissionStepExecuteMirNativeMission(
                     label=label,

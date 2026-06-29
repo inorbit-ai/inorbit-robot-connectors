@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Per-task mission tracking for edge missions (spec §11.1).
+"""Per-task mission tracking for edge missions.
 
 Two regressions are covered:
 

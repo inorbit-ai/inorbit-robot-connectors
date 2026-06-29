@@ -8,9 +8,9 @@
 #
 # Modifications from upstream:
 #   - 2026-06-26: rebased import prefix mir_connector.src.* -> inorbit_mir_connector.src.*
-#   - 2026-06-27: apply the SDK step-node decorator in build_tree_for_mission so per-task
+#   - 2026-06-27: apply the step-node decorator in build_tree_for_mission so per-task
 #     mission tracking (TaskStarted/TaskCompletedNode), robot locking (LockRobotNode) and
-#     per-step timeouts (TimeoutNode) are restored for edge missions (spec §11.1). Upstream
+#     per-step timeouts (TimeoutNode) are restored for edge missions. Upstream
 #     dropped the decorator, so only the final task list was reported.
 
 """Tree builder for MiR missions with compiled native mission steps."""
@@ -30,6 +30,7 @@ from inorbit_edge_executor.behavior_tree import (
     register_accepted_node_types,
 )
 from inorbit_edge_executor.inorbit import MissionStatus
+
 from inorbit_mir_connector.src.mission.behavior_tree import (
     MirBehaviorTreeBuilderContext,
     MirMissionAbortedNode,

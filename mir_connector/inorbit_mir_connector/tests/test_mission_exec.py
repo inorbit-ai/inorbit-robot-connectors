@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Wiring tests for MirWorkerPool (spec §4.5).
+"""Wiring tests for MirWorkerPool.
 
 Confirms the worker pool routes the SDK mission engine through the vendored
 mission module: native tree builder, translation, context construction, and
@@ -21,7 +21,9 @@ from inorbit_edge_executor.datatypes import (
 )
 from inorbit_edge_executor.mission import Mission
 
-from inorbit_mir_connector.src.mission.behavior_tree import MirBehaviorTreeBuilderContext
+from inorbit_mir_connector.src.mission.behavior_tree import (
+    MirBehaviorTreeBuilderContext,
+)
 from inorbit_mir_connector.src.mission.datatypes import (
     MirInOrbitMission,
     MissionStepExecuteMirNativeMission,

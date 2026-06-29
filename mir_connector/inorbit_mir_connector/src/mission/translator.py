@@ -13,7 +13,7 @@
 #     unbounded radian angle (e.g. 6.35 rad -> 364deg).
 #   - 2026-06-27: renamed local n -> n_pending_actions in flush_actions
 #   - 2026-06-27: waypoint_count via sum(map(...)) instead of a generator expression
-#   - 2026-06-27: preserve InOrbit per-task tracking (spec §11.1). A grouped (nestable) step
+#   - 2026-06-27: preserve InOrbit per-task tracking. A grouped (nestable) step
 #     carrying complete_task now flushes the current native group and stamps complete_task onto
 #     the emitted MissionStepExecuteMirNativeMission, so the task is reported (it lands in
 #     Mission.tasks_list and the tree builder's decorator emits TaskStarted/TaskCompletedNode).
@@ -107,11 +107,20 @@ class InOrbitToMirTranslator:
         pending_labels: list[str] = []
         # complete_task to stamp onto the next flushed native group, so InOrbit per-task
         # tracking survives the grouping (set when a grouped step carries complete_task).
-        pending_complete_task: list[Union[str, None]] = [None]
+        pending_complete_task: Union[str, None] = None
 
         def flush_actions():
+            """Emit the buffered actions as one native MiR mission step.
+
+            Builds a ``MissionStepExecuteMirNativeMission`` from the pending
+            waypoints and actions, derives its label from their count and kind,
+            stamps ``completeTask`` when one is pending, appends it to
+            ``translated_steps``, and clears the buffers. A no-op (beyond
+            resetting the pending task) when nothing is buffered.
+            """
+            nonlocal pending_complete_task
             if not pending_actions:
-                pending_complete_task[0] = None
+                pending_complete_task = None
                 return
             n_pending_actions = len(pending_actions)
             waypoint_count = sum(map(lambda a: isinstance(a, MirWaypoint), pending_actions))
@@ -133,12 +142,12 @@ class InOrbitToMirTranslator:
             }
             # Only set completeTask when present: the field is typed ``str`` (default None),
             # so passing None explicitly fails validation.
-            if pending_complete_task[0] is not None:
-                native_kwargs["completeTask"] = pending_complete_task[0]
+            if pending_complete_task is not None:
+                native_kwargs["completeTask"] = pending_complete_task
             translated_steps.append(MissionStepExecuteMirNativeMission(**native_kwargs))
             pending_actions.clear()
             pending_labels.clear()
-            pending_complete_task[0] = None
+            pending_complete_task = None
 
         for step in mission.definition.steps:
             if isinstance(step, MissionStepPoseWaypoint):
@@ -156,7 +165,7 @@ class InOrbitToMirTranslator:
                 )
                 pending_labels.append(step.label or "")
                 if step.complete_task is not None:
-                    pending_complete_task[0] = step.complete_task
+                    pending_complete_task = step.complete_task
                     flush_actions()
                 continue
 
@@ -170,7 +179,7 @@ class InOrbitToMirTranslator:
                 )
                 pending_labels.append(step.label or "")
                 if step.complete_task is not None:
-                    pending_complete_task[0] = step.complete_task
+                    pending_complete_task = step.complete_task
                     flush_actions()
                 continue
 
@@ -184,7 +193,7 @@ class InOrbitToMirTranslator:
                 )
                 pending_labels.append(step.label or "")
                 if step.complete_task is not None:
-                    pending_complete_task[0] = step.complete_task
+                    pending_complete_task = step.complete_task
                     flush_actions()
                 continue
 

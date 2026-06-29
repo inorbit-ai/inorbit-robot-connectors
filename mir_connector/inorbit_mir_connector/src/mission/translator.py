@@ -24,6 +24,13 @@
 #     grouped step is bounded; if any grouped step has no timeout the native step stays unbounded
 #     (preserving prior behavior). WaitForMirMissionCompletionNode then bounds its completion poll
 #     instead of polling indefinitely.
+#   - 2026-06-29: route runAction -> native MiR action by the reserved `mir_actionType`
+#     argument key instead of the NESTABLE_MIR_ACTIONS name-match (deleted). vda5050-parity:
+#     present-but-blank type is a hard error; a missing exact key routes to the cloud action
+#     path (warning when a stray mir_-prefixed key is present); the reserved key is excluded
+#     from the action parameters (each surviving key is a MiR parameter id). Scope-bearing /
+#     control-flow / loop-only types are rejected before any robot-side mission exists via
+#     DENIED_NATIVE_ACTIONS. Zero surviving params warns. Spec: native-mission-action-steps.md.
 
 """Mission translator that compiles consecutive InOrbit waypoint and
 nestable action steps into single native MiR missions.
@@ -61,21 +68,54 @@ from .datatypes import (
 
 logger = logging.getLogger(__name__)
 
-# MiR action types that can be nested into a compiled native mission.
-NESTABLE_MIR_ACTIONS: set[str] = {
-    "docking",
-    "charging",
-    "wait",
-    "relative_move",
-    "adjust_localization",
-    "set_plc_register",
-    "wait_for_plc_register",
-    "sound",
-    "sound_stop",
-    "light",
-    "pickup_cart",
-    "place_cart",
-    "set_footprint",
+# Reserved argument key that marks a runAction for native MiR translation (vda5050 parity:
+# the vda5050 connector uses a reserved-argument-key marker rather than a name allowlist).
+RESERVED_MIR_ARG_TYPE_KEY = "mir_actionType"
+RESERVED_MIR_ARG_KEYS = frozenset({RESERVED_MIR_ARG_TYPE_KEY})
+MIR_RESERVED_PREFIX = "mir_"
+
+# MiR action types that cannot be expressed as a single flat add_action_to_mission call,
+# rejected at translate time (before any create_mission, so no orphan mission is left on the
+# robot). Two reasons, grounded in live GET /actions/{type} schemas (MiR100, SW v2.0.0):
+#   - scope-bearing: the schema carries a Scope parameter (the container holding nested child
+#     actions); the connector has no scope_reference machinery, so the flat call would silently
+#     drop the body. For two of these the plain leaf action posts the useful part.
+#   - loop-only: break/continue carry no params but are only legal inside a Loop scope, so a
+#     flat top-level step is an orphaned firmware error.
+# (`return` is NOT denied: it is a valid top-level abort.)
+_SCOPE_BEARING_DENIED = (
+    "if",
+    "while",
+    "loop",
+    "try_catch",
+    "prompt_user",
+    "reduce_protective_fields",
+    "set_reset_io",
+    "set_reset_plc",
+)
+_LOOP_ONLY_DENIED = ("break", "continue")
+# Scope-wrapper types whose plain leaf action expresses the postable part without the body.
+_SCOPE_DENIED_ALTERNATIVE = {"set_reset_io": "set_io", "set_reset_plc": "set_plc_register"}
+_SCOPE_DENIED_REASON = (
+    "carries a Scope (child-action) body the connector cannot build as a flat native step; "
+    "the body would be silently dropped"
+)
+_LOOP_ONLY_DENIED_REASON = (
+    "is only valid inside a Loop scope; as a flat top-level native step it is an orphaned "
+    "firmware error"
+)
+
+
+def _scope_denied_message(action_type: str) -> str:
+    msg = f"'{action_type}' {_SCOPE_DENIED_REASON}"
+    alt = _SCOPE_DENIED_ALTERNATIVE.get(action_type)
+    return f"{msg}; use '{alt}' instead" if alt else msg
+
+
+# action_type -> operator-facing reason it cannot be a native step.
+DENIED_NATIVE_ACTIONS: dict[str, str] = {
+    **{a: _scope_denied_message(a) for a in _SCOPE_BEARING_DENIED},
+    **{a: f"'{a}' {_LOOP_ONLY_DENIED_REASON}" for a in _LOOP_ONLY_DENIED},
 }
 
 
@@ -201,20 +241,54 @@ class InOrbitToMirTranslator:
                     flush_actions()
                 continue
 
-            if isinstance(step, MissionStepRunAction) and step.action_id in NESTABLE_MIR_ACTIONS:
-                pending_actions.append(
-                    MirAction(
-                        label=step.label,
-                        action_type=step.action_id,
-                        parameters=step.arguments or {},
+            if isinstance(step, MissionStepRunAction):
+                # None-safe: MissionStepRunAction.arguments defaults to None.
+                args = step.arguments or {}
+                if RESERVED_MIR_ARG_TYPE_KEY in args:
+                    action_type = args.get(RESERVED_MIR_ARG_TYPE_KEY)
+                    if not isinstance(action_type, str) or not action_type.strip():
+                        raise ValueError(
+                            f"runAction step {step.label!r}: {RESERVED_MIR_ARG_TYPE_KEY} must be "
+                            f"a non-empty string"
+                        )
+                    action_type = action_type.strip()
+                    # Reject scope-bearing / control-flow types here, before create_mission,
+                    # so no orphan mission is created on the robot.
+                    if action_type in DENIED_NATIVE_ACTIONS:
+                        raise ValueError(
+                            f"runAction step {step.label!r}: {DENIED_NATIVE_ACTIONS[action_type]}"
+                        )
+                    # Each surviving (non-reserved) key is a MiR action parameter id. Extract by
+                    # exact reserved-key exclusion (not prefix-strip), matching vda5050.
+                    parameters = {k: v for k, v in args.items() if k not in RESERVED_MIR_ARG_KEYS}
+                    if not parameters:
+                        logger.warning(
+                            f"runAction step {step.label!r}: native MiR action {action_type!r} "
+                            f"has no parameters after excluding reserved keys (all params "
+                            f"mis-keyed?)"
+                        )
+                    pending_actions.append(
+                        MirAction(
+                            label=step.label,
+                            action_type=action_type,
+                            parameters=parameters,
+                        )
                     )
-                )
-                pending_labels.append(step.label or "")
-                pending_timeouts.append(step.timeout_secs)
-                if step.complete_task is not None:
-                    pending_complete_task = step.complete_task
-                    flush_actions()
-                continue
+                    pending_labels.append(step.label or "")
+                    pending_timeouts.append(step.timeout_secs)
+                    if step.complete_task is not None:
+                        pending_complete_task = step.complete_task
+                        flush_actions()
+                    continue
+                # No exact reserved key: route to the cloud action path. Warn on a stray
+                # mir_-prefixed key so a fat-fingered type key fails loudly, not silently.
+                if any(isinstance(k, str) and k.startswith(MIR_RESERVED_PREFIX) for k in args):
+                    logger.warning(
+                        f"runAction step {step.label!r} has {MIR_RESERVED_PREFIX}-prefixed "
+                        f"arg(s) but no {RESERVED_MIR_ARG_TYPE_KEY}; routing to the cloud action "
+                        f"path (typo?)"
+                    )
+                # fall through to flush + passthrough below
 
             # Non-nestable step — flush pending actions first
             flush_actions()

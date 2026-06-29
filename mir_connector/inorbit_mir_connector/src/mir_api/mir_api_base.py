@@ -191,7 +191,7 @@ class MirApiBaseClass(ABC):
         try:
             return await self._record_request(method, endpoint, **kwargs)
         except httpx.HTTPStatusError as e:
-            body = e.response.text
+            body = (e.response.text or "").strip()
             self.logger.warning(
                 "MiR API %s %s -> %s: %s",
                 method,
@@ -199,7 +199,14 @@ class MirApiBaseClass(ABC):
                 e.response.status_code,
                 (body[:2000] if body else "<empty response body>"),
             )
-            raise
+            if not body:
+                raise
+            # Re-raise as HTTPStatusError (so should_retry_http_error still sees
+            # the status and retries 5xx/408/429) but with the MiR reason body
+            # folded into str(), so it reaches MIR_ERROR_MESSAGE, not just logs.
+            raise httpx.HTTPStatusError(
+                f"{e}: {body[:2000]}", request=e.request, response=e.response
+            ) from e
 
     @retry(
         wait=wait_exponential_jitter(initial=1, max=10),

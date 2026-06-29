@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock
 import pytest
 from inorbit_edge_executor.datatypes import MissionRuntimeSharedMemory
 
+from inorbit_mir_connector.src.mir_api import MirApiV2
 from inorbit_mir_connector.src.mission.behavior_tree import (
     CleanupMirMissionNode,
     CreateMirNativeMissionNode,
@@ -209,6 +210,40 @@ async def test_docking_without_offset_raises_and_does_not_queue():
 
     assert api.queued == []
     assert ctx.shared_memory.get(SharedMemoryKeys.MIR_ERROR_MESSAGE)
+
+
+@pytest.mark.asyncio
+async def test_create_failure_surfaces_mir_reason_in_error_message(httpx_mock):
+    """A MiR 4xx body (the reason it rejected the request) must reach the
+    operator-facing abort, not just the logs.
+
+    Drives the real MirApiV2 so the full chain is exercised: create_mission
+    400s -> mir_api_base._request augments the HTTPStatusError with the body ->
+    CreateMirNativeMissionNode surfaces ``{e}`` into MIR_ERROR_MESSAGE. A bare
+    HTTPStatusError would put only the status line ("400 Bad Request") there.
+    """
+    api = MirApiV2(
+        mir_host_address="example.com",
+        mir_host_port=8080,
+        mir_use_ssl=False,
+        mir_username="user",
+        mir_password="pass",
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{api.mir_api_base_url}/missions",
+        status_code=400,
+        json={"error": {"message": "action parameter 'time' is invalid"}},
+    )
+    node, ctx = _build_node(
+        api, [MirAction(label="Wait", action_type="wait", parameters={"time": "nope"})]
+    )
+
+    with pytest.raises(RuntimeError):
+        await node._execute()
+
+    error_msg = ctx.shared_memory.get(SharedMemoryKeys.MIR_ERROR_MESSAGE)
+    assert "action parameter 'time' is invalid" in error_msg
 
 
 def _build_abort_context(api, queue_id):

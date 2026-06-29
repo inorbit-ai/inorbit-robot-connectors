@@ -228,9 +228,7 @@ class Robot:
 
         # Log with appropriate level based on error frequency
         if self._consecutive_errors == 1:
-            self.logger.error(
-                f"Error in {operation}: {type(error).__name__}: {error}", exc_info=True
-            )
+            self.logger.error(f"Error in {operation}: {type(error).__name__}: {error}")
         elif self._consecutive_errors == self._max_consecutive_errors:
             self.logger.error(
                 f"Circuit breaker activated after {self._consecutive_errors} consecutive "

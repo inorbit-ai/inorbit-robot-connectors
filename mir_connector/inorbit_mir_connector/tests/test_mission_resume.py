@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Native-mission runtime-state survival across resume (spec §11.2).
+"""Native-mission runtime-state survival across resume.
 
 A native MiR step records the MiR queue id and mission guid in the mission's
 ``shared_memory`` (CreateMirNativeMissionNode), and a later node polls that
@@ -33,7 +33,10 @@ import unittest.mock as mock
 from types import SimpleNamespace
 
 import pytest
-from inorbit_edge_executor.behavior_tree import BehaviorTreeSequential, build_tree_from_object
+from inorbit_edge_executor.behavior_tree import (
+    BehaviorTreeSequential,
+    build_tree_from_object,
+)
 from inorbit_edge_executor.datatypes import (
     MissionDefinition,
     MissionRuntimeOptions,
@@ -101,7 +104,7 @@ class _FakeMirApi:
 
 @pytest.mark.asyncio
 async def test_native_runtime_state_survives_sqlite_roundtrip():
-    """queue id + guid survive serialize -> SQLite -> resume (the §11.2 concern)."""
+    """queue id + guid survive serialize -> SQLite -> resume."""
     tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
     tmp.close()
     db = await get_db(f"sqlite:{tmp.name}")

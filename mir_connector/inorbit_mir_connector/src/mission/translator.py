@@ -19,6 +19,11 @@
 #     Mission.tasks_list and the tree builder's decorator emits TaskStarted/TaskCompletedNode).
 #     Non-nestable steps already pass through verbatim and keep their complete_task. Grouping is
 #     unchanged for missions whose steps carry no complete_task.
+#   - 2026-06-28: enforce native-mission timeout. The translator now stamps timeout_secs onto the
+#     emitted native step as the SUM of the grouped steps' timeout_secs, but ONLY when every
+#     grouped step is bounded; if any grouped step has no timeout the native step stays unbounded
+#     (preserving prior behavior). WaitForMirMissionCompletionNode then bounds its completion poll
+#     instead of polling indefinitely.
 
 """Mission translator that compiles consecutive InOrbit waypoint and
 nestable action steps into single native MiR missions.
@@ -108,6 +113,9 @@ class InOrbitToMirTranslator:
         # complete_task to stamp onto the next flushed native group, so InOrbit per-task
         # tracking survives the grouping (set when a grouped step carries complete_task).
         pending_complete_task: Union[str, None] = None
+        # timeout_secs of each grouped step (None if a step is unbounded), parallel to
+        # pending_actions, so the flushed native step can carry an aggregate timeout.
+        pending_timeouts: list[Union[float, None]] = []
 
         def flush_actions():
             """Emit the buffered actions as one native MiR mission step.
@@ -121,6 +129,7 @@ class InOrbitToMirTranslator:
             nonlocal pending_complete_task
             if not pending_actions:
                 pending_complete_task = None
+                pending_timeouts.clear()
                 return
             n_pending_actions = len(pending_actions)
             waypoint_count = sum(map(lambda a: isinstance(a, MirWaypoint), pending_actions))
@@ -144,10 +153,17 @@ class InOrbitToMirTranslator:
             # so passing None explicitly fails validation.
             if pending_complete_task is not None:
                 native_kwargs["completeTask"] = pending_complete_task
+            # Bound the completion poll only when every grouped step is bounded; the native
+            # mission's timeout is the sum of the grouped steps' timeouts. If any step is
+            # unbounded the native step stays unbounded (no premature abort). The field is
+            # typed float (default None), so only set it when computed.
+            if pending_timeouts and all(t is not None for t in pending_timeouts):
+                native_kwargs["timeoutSecs"] = sum(pending_timeouts)
             translated_steps.append(MissionStepExecuteMirNativeMission(**native_kwargs))
             pending_actions.clear()
             pending_labels.clear()
             pending_complete_task = None
+            pending_timeouts.clear()
 
         for step in mission.definition.steps:
             if isinstance(step, MissionStepPoseWaypoint):
@@ -164,6 +180,7 @@ class InOrbitToMirTranslator:
                     MirWaypoint(label=step.label, x=x, y=y, orientation=orientation_deg)
                 )
                 pending_labels.append(step.label or "")
+                pending_timeouts.append(step.timeout_secs)
                 if step.complete_task is not None:
                     pending_complete_task = step.complete_task
                     flush_actions()
@@ -178,6 +195,7 @@ class InOrbitToMirTranslator:
                     )
                 )
                 pending_labels.append(step.label or "")
+                pending_timeouts.append(step.timeout_secs)
                 if step.complete_task is not None:
                     pending_complete_task = step.complete_task
                     flush_actions()
@@ -192,6 +210,7 @@ class InOrbitToMirTranslator:
                     )
                 )
                 pending_labels.append(step.label or "")
+                pending_timeouts.append(step.timeout_secs)
                 if step.complete_task is not None:
                     pending_complete_task = step.complete_task
                     flush_actions()

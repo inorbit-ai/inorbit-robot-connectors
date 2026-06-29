@@ -59,12 +59,16 @@ from inorbit_edge_executor.behavior_tree import (
 )
 from inorbit_edge_executor.inorbit import MissionStatus
 
+from inorbit_mir_connector.src.mir_api import (
+    DockingOffsetError,
+    MirApiV2,
+    resolve_marker_type,
+)
 from inorbit_mir_connector.src.mission.datatypes import (
     MirAction,
     MirWaypoint,
     MissionStepExecuteMirNativeMission,
 )
-from inorbit_mir_connector.src.mir_api import DockingOffsetError, MirApiV2, resolve_marker_type
 
 logger = logging.getLogger(__name__)
 

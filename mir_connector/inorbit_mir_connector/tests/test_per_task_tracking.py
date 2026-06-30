@@ -33,11 +33,13 @@ from inorbit_edge_executor.datatypes import (
     MissionRuntimeSharedMemory,
     MissionStepPoseWaypoint,
     MissionStepRunAction,
+    MissionStepSetData,
     MissionStepWait,
     Pose,
 )
 from inorbit_edge_executor.mission import Mission
 
+from inorbit_mir_connector.src.mission.behavior_tree import WaitForMirMissionCompletionNode
 from inorbit_mir_connector.src.mission.datatypes import MissionStepExecuteMirNativeMission
 from inorbit_mir_connector.src.mission.translator import InOrbitToMirTranslator
 from inorbit_mir_connector.src.mission_exec import MirWorkerPool
@@ -84,24 +86,28 @@ class TestTranslatorPreservesCompleteTask:
         assert len(result.definition.steps) == 1
         step = result.definition.steps[0]
         assert isinstance(step, MissionStepExecuteMirNativeMission)
-        assert step.complete_task == "task-1"
+        # The native step rides no single task; the task is carried per-action instead.
+        assert step.complete_task is None
+        assert step.action_task_ids == ["task-1"]
         # The task must reach the mission's tasks_list (what InOrbit displays).
         assert _task_ids(result) == ["task-1"]
 
-    def test_task_boundary_flushes_group(self):
-        # task on a middle waypoint flushes the group at that point.
+    def test_task_on_middle_step_no_longer_splits_group(self):
+        # A task on a middle waypoint no longer flushes the group: all three waypoints
+        # compile into one native step, the task riding the middle action.
         m = _mission([_wp(1, 2), _wp(3, 4, complete_task="t1"), _wp(5, 6)])
         result = InOrbitToMirTranslator.translate(m)
 
-        assert len(result.definition.steps) == 2
-        first, second = result.definition.steps
-        assert isinstance(first, MissionStepExecuteMirNativeMission)
-        assert [type(a).__name__ for a in first.actions] == ["MirWaypoint", "MirWaypoint"]
-        assert first.complete_task == "t1"
-        # trailing waypoint forms its own native group with no task.
-        assert isinstance(second, MissionStepExecuteMirNativeMission)
-        assert len(second.actions) == 1
-        assert second.complete_task is None
+        assert len(result.definition.steps) == 1
+        step = result.definition.steps[0]
+        assert isinstance(step, MissionStepExecuteMirNativeMission)
+        assert [type(a).__name__ for a in step.actions] == [
+            "MirWaypoint",
+            "MirWaypoint",
+            "MirWaypoint",
+        ]
+        assert step.complete_task is None
+        assert step.action_task_ids == [None, "t1", None]
         assert _task_ids(result) == ["t1"]
 
     def test_multiple_tasks_each_reported(self):
@@ -113,7 +119,39 @@ class TestTranslatorPreservesCompleteTask:
             ]
         )
         result = InOrbitToMirTranslator.translate(m)
+        # One native step carries both tasks, parallel to its actions.
+        assert len(result.definition.steps) == 1
+        assert result.definition.steps[0].action_task_ids == ["t1", None, "t2"]
         assert _task_ids(result) == ["t1", "t2"]
+
+    def test_production_payload_groups_into_one_native_mission(self):
+        # The reported regression shape: [setData, wp, wp, wait, wp] with a task on each
+        # nestable step. setData passes through; the four nestable steps compile into ONE
+        # native mission carrying all four tasks (parallel to actions).
+        m = _mission(
+            [
+                MissionStepSetData(data={"waypointDistanceTolerance": 1}, label="set"),
+                _wp(1, 2, label="a", complete_task="a"),
+                _wp(3, 4, label="b", complete_task="b"),
+                MissionStepWait(timeoutSecs=5, label="Wait 5 sec", completeTask="Wait 5 sec"),
+                _wp(5, 6, label="c", complete_task="c"),
+            ]
+        )
+        result = InOrbitToMirTranslator.translate(m)
+
+        assert len(result.definition.steps) == 2
+        passthrough, native = result.definition.steps
+        assert isinstance(passthrough, MissionStepSetData)
+        assert isinstance(native, MissionStepExecuteMirNativeMission)
+        assert [type(a).__name__ for a in native.actions] == [
+            "MirWaypoint",
+            "MirWaypoint",
+            "MirAction",
+            "MirWaypoint",
+        ]
+        assert native.complete_task is None
+        assert native.action_task_ids == ["a", "b", "Wait 5 sec", "c"]
+        assert _task_ids(result) == ["a", "b", "Wait 5 sec", "c"]
 
     def test_consecutive_no_task_waypoints_still_group(self):
         # Behaviour unchanged when no step carries complete_task.
@@ -166,10 +204,15 @@ def _build_tree(mission):
     return nodes
 
 
-def test_tree_emits_task_nodes_for_task_bearing_step():
+def test_grouped_task_tracked_by_wait_node_not_decorator():
     nodes = _build_tree(_mission([_wp(1, 2, complete_task="task-1")]))
-    assert any(isinstance(n, TaskStartedNode) for n in nodes)
-    assert any(isinstance(n, TaskCompletedNode) for n in nodes)
+    # Grouping drops the per-step decorator task nodes; the wait node carries the task and
+    # reports it from the native mission's per-action progress instead.
+    assert not any(isinstance(n, TaskStartedNode) for n in nodes)
+    assert not any(isinstance(n, TaskCompletedNode) for n in nodes)
+    wait_nodes = [n for n in nodes if isinstance(n, WaitForMirMissionCompletionNode)]
+    assert len(wait_nodes) == 1
+    assert wait_nodes[0]._action_task_ids == ["task-1"]
     # LockRobotNode is always added by the decorator (no-op unless use_locks).
     assert any(isinstance(n, LockRobotNode) for n in nodes)
 

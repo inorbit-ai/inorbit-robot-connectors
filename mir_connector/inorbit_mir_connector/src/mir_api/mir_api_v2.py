@@ -202,6 +202,18 @@ class MirApiV2(MirApiBaseClass):
         response = await self._get(mission_api_url)
         return response.json()
 
+    async def get_mission_queue_actions(self, queue_id):
+        """Actions executed so far for a queued mission (single light GET).
+
+        ``GET /mission_queue/{id}/actions`` returns the executed-so-far action
+        list; its length is the mission's action-level progress (the same signal
+        robot-side mission tracking uses). Distinct from ``get_mission`` (4 GETs),
+        so it is light enough for the ~1 s completion poll.
+        """
+        actions_api_url = f"/{MISSION_QUEUE_ENDPOINT_V2}/{queue_id}/actions"
+        response = await self._get(actions_api_url)
+        return response.json()
+
     async def get_executing_mission_id(self):
         """Returns the id of the mission being currently executed by the robot"""
         missions_api_url = f"/{MISSION_QUEUE_ENDPOINT_V2}"

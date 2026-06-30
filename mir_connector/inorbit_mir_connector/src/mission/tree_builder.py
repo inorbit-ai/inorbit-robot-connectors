@@ -12,12 +12,13 @@
 #     mission tracking (TaskStarted/TaskCompletedNode), robot locking (LockRobotNode) and
 #     per-step timeouts (TimeoutNode) are restored for edge missions. Upstream
 #     dropped the decorator, so only the final task list was reported.
+#   - 2026-06-30: removed the LoggingMissionCompletedNode debug subclass and use the base
+#     MissionCompletedNode directly. It only wrapped mt.completed() in noisy INFO logging
+#     (no behavior change).
 
 """Tree builder for MiR missions with compiled native mission steps."""
 
 from __future__ import annotations
-
-import logging
 
 from inorbit_edge_executor.behavior_tree import (
     BehaviorTree,
@@ -27,7 +28,6 @@ from inorbit_edge_executor.behavior_tree import (
     MissionCompletedNode,
     MissionInProgressNode,
     MissionPausedNode,
-    register_accepted_node_types,
 )
 from inorbit_edge_executor.inorbit import MissionStatus
 
@@ -36,24 +36,6 @@ from inorbit_mir_connector.src.mission.behavior_tree import (
     MirMissionAbortedNode,
     MirNodeFromStepBuilder,
 )
-
-logger = logging.getLogger(__name__)
-
-
-class LoggingMissionCompletedNode(MissionCompletedNode):
-    """MissionCompletedNode with debug logging around mt.completed()."""
-
-    async def _execute(self):
-        logger.info(f"MissionCompletedNode: calling mt.completed() for mission {self.mt.id}")
-        try:
-            result = await self.mt.completed()
-            logger.info(f"MissionCompletedNode: mt.completed() returned {result}")
-        except Exception as e:
-            logger.error(f"MissionCompletedNode: mt.completed() raised {e}")
-            raise
-
-
-register_accepted_node_types([LoggingMissionCompletedNode])
 
 
 class MirTreeBuilder(DefaultTreeBuilder):
@@ -83,7 +65,7 @@ class MirTreeBuilder(DefaultTreeBuilder):
             if node:
                 tree.add_node(node)
 
-        tree.add_node(LoggingMissionCompletedNode(context, label="mission completed"))
+        tree.add_node(MissionCompletedNode(context, label="mission completed"))
 
         # Error handling
         on_error = BehaviorTreeSequential(label="error handlers")

@@ -31,6 +31,11 @@
 #     from the action parameters (each surviving key is a MiR parameter id). Scope-bearing /
 #     control-flow / loop-only types are rejected before any robot-side mission exists via
 #     DENIED_NATIVE_ACTIONS. Zero surviving params warns. Spec: native-mission-action-steps.md.
+#   - 2026-06-30: group consecutive nestable steps even when each carries complete_task (no
+#     longer flush the native group per task). The per-action task ids ride on the native
+#     step (actionTaskIds, parallel to actions) and the original tasks_list is preserved, so
+#     InOrbit per-task tracking still reports each task as its MiR action runs while the
+#     whole group compiles into a single native mission.
 
 """Mission translator that compiles consecutive InOrbit waypoint and
 nestable action steps into single native MiR missions.
@@ -150,26 +155,25 @@ class InOrbitToMirTranslator:
         translated_steps: MirStepsList = []
         pending_actions: list[Union[MirWaypoint, MirAction]] = []
         pending_labels: list[str] = []
-        # complete_task to stamp onto the next flushed native group, so InOrbit per-task
-        # tracking survives the grouping (set when a grouped step carries complete_task).
-        pending_complete_task: Union[str, None] = None
         # timeout_secs of each grouped step (None if a step is unbounded), parallel to
         # pending_actions, so the flushed native step can carry an aggregate timeout.
         pending_timeouts: list[Union[float, None]] = []
+        # complete_task of each grouped step (None if untracked), parallel to
+        # pending_actions, so the native step can report each task as its MiR action runs.
+        pending_task_ids: list[Union[str, None]] = []
 
         def flush_actions():
             """Emit the buffered actions as one native MiR mission step.
 
             Builds a ``MissionStepExecuteMirNativeMission`` from the pending
             waypoints and actions, derives its label from their count and kind,
-            stamps ``completeTask`` when one is pending, appends it to
-            ``translated_steps``, and clears the buffers. A no-op (beyond
-            resetting the pending task) when nothing is buffered.
+            carries the per-action task ids (so each task is reported as its MiR
+            action runs), appends it to ``translated_steps``, and clears the
+            buffers. A no-op when nothing is buffered.
             """
-            nonlocal pending_complete_task
             if not pending_actions:
-                pending_complete_task = None
                 pending_timeouts.clear()
+                pending_task_ids.clear()
                 return
             n_pending_actions = len(pending_actions)
             waypoint_count = sum(map(lambda a: isinstance(a, MirWaypoint), pending_actions))
@@ -188,11 +192,11 @@ class InOrbitToMirTranslator:
                 "label": label,
                 "actions": list(pending_actions),
                 "robot_id": mission.robot_id,
+                # Per-action task ids (None where a step has no task), parallel to actions.
+                # The completion node marks each as its MiR action runs; the native step's
+                # own completeTask stays None so the SDK decorator adds no single-task wrap.
+                "action_task_ids": list(pending_task_ids),
             }
-            # Only set completeTask when present: the field is typed ``str`` (default None),
-            # so passing None explicitly fails validation.
-            if pending_complete_task is not None:
-                native_kwargs["completeTask"] = pending_complete_task
             # Bound the completion poll only when every grouped step is bounded; the native
             # mission's timeout is the sum of the grouped steps' timeouts. If any step is
             # unbounded the native step stays unbounded (no premature abort). The field is
@@ -202,8 +206,8 @@ class InOrbitToMirTranslator:
             translated_steps.append(MissionStepExecuteMirNativeMission(**native_kwargs))
             pending_actions.clear()
             pending_labels.clear()
-            pending_complete_task = None
             pending_timeouts.clear()
+            pending_task_ids.clear()
 
         for step in mission.definition.steps:
             if isinstance(step, MissionStepPoseWaypoint):
@@ -221,9 +225,7 @@ class InOrbitToMirTranslator:
                 )
                 pending_labels.append(step.label or "")
                 pending_timeouts.append(step.timeout_secs)
-                if step.complete_task is not None:
-                    pending_complete_task = step.complete_task
-                    flush_actions()
+                pending_task_ids.append(step.complete_task)
                 continue
 
             if isinstance(step, MissionStepWait):
@@ -236,9 +238,7 @@ class InOrbitToMirTranslator:
                 )
                 pending_labels.append(step.label or "")
                 pending_timeouts.append(step.timeout_secs)
-                if step.complete_task is not None:
-                    pending_complete_task = step.complete_task
-                    flush_actions()
+                pending_task_ids.append(step.complete_task)
                 continue
 
             if isinstance(step, MissionStepRunAction):
@@ -276,9 +276,7 @@ class InOrbitToMirTranslator:
                     )
                     pending_labels.append(step.label or "")
                     pending_timeouts.append(step.timeout_secs)
-                    if step.complete_task is not None:
-                        pending_complete_task = step.complete_task
-                        flush_actions()
+                    pending_task_ids.append(step.complete_task)
                     continue
                 # No exact reserved key: route to the cloud action path. Warn on a stray
                 # mir_-prefixed key so a fat-fingered type key fails loudly, not silently.
@@ -306,6 +304,9 @@ class InOrbitToMirTranslator:
             robot_id=mission.robot_id,
             definition=translated_definition,
             arguments=mission.arguments,
+            # Grouped native steps no longer expose complete_task to the task extractor, so
+            # pass the original per-step tasks through to keep InOrbit's task list intact.
+            tasks_list=mission.tasks_list,
         )
 
         logger.debug(

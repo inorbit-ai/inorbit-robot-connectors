@@ -7,7 +7,11 @@
 # Upstream commit: c516f7d9e8e6b8b3cbaa396e2984ce149c6e7925 (2026-05-21)
 #
 # Modifications from upstream:
-#   - none (verbatim; imports use inorbit_edge_executor.* and relative paths only)
+#   - 2026-06-30 Tomás Badenes: add action_task_ids to MissionStepExecuteMirNativeMission.
+#     Ordered InOrbit task ids parallel to actions (None = action has no task), so a grouped
+#     native mission reports each task as its MiR action runs instead of needing one native
+#     step per task. No alias (it is built internally, not parsed from InOrbit JSON), so it
+#     round-trips under every dump convention. Default empty for back-compat.
 
 """MiR-specific mission datatypes for mission translation.
 
@@ -64,6 +68,10 @@ class MissionStepExecuteMirNativeMission(MissionStep):
         description="Ordered actions for native MiR mission"
     )
     robot_id: str = Field(description="InOrbit robot ID")
+    action_task_ids: List[Union[str, None]] = Field(
+        default_factory=list,
+        description="InOrbit task ids parallel to actions (None = action has no task)",
+    )
 
     @model_validator(mode="before")
     @classmethod

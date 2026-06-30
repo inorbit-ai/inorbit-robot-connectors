@@ -280,7 +280,10 @@ def test_bounded_native_step_dump_roundtrips():
     )
     sm = MissionRuntimeSharedMemory()
     ctx = MirBehaviorTreeBuilderContext(
-        mir_api=mock.MagicMock(), missions_group_id="grp", firmware_version="v3", connector_type="mir"
+        mir_api=mock.MagicMock(),
+        missions_group_id="grp",
+        firmware_version="v3",
+        connector_type="mir",
     )
     ctx.shared_memory = sm
     node = CreateMirNativeMissionNode(ctx, step, label="create")

@@ -23,6 +23,12 @@
 #     two fixes: enable_temporary_mission_group, or configure a predefined missions group)
 #   - 2026-06-30: CreateMirNativeMissionNode.dump_object now dumps the step with by_alias=True
 #     so a bounded/tracked native step (timeoutSecs/completeTask) round-trips on resume
+#   - 2026-06-30: WaitForMirMissionCompletionNode now reports per-action InOrbit task
+#     progress. A grouped native step carries action_task_ids (parallel to its actions); the
+#     node maps the executed-action count (GET /mission_queue/{id}/actions, the signal
+#     robot-side mission tracking uses) to those tasks and marks each in_progress/completed
+#     as its action runs. Replaces the per-step TaskStarted/CompletedNode the SDK decorator
+#     can no longer emit once steps are grouped.
 
 """Custom behavior tree nodes for executing compiled native MiR missions.
 
@@ -246,12 +252,85 @@ class WaitForMirMissionCompletionNode(BehaviorTree):
         self,
         context: MirBehaviorTreeBuilderContext,
         timeout_secs: Optional[float] = None,
+        action_task_ids: Optional[list] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self._mir_api = context.mir_api
         self._shared_memory = context.shared_memory
         self._timeout_secs = timeout_secs
+        # Ordered InOrbit task ids parallel to the native mission's actions (None = no task).
+        self._action_task_ids = action_task_ids or []
+        # mission/mt drive InOrbit per-task tracking; both are None outside a real dispatch
+        # (e.g. some unit tests), so _report_progress no-ops when either is missing.
+        self._mission = context.mission
+        self._mt = context.mt
+        # action index -> last reported status ("p"=in_progress, "c"=completed), to avoid
+        # re-reporting. Not serialized: on resume it re-derives from MiR (marking is
+        # idempotent, so a re-report is harmless).
+        self._reported: dict = {}
+
+    def _tracking_tasks(self) -> bool:
+        """True when this group has at least one task to report and the tracking
+        collaborators (mission + mt) are available."""
+        return (
+            self._mt is not None
+            and self._mission is not None
+            and any(t is not None for t in self._action_task_ids)
+        )
+
+    async def _report_progress(self, queue_id):
+        """Mark grouped tasks as their MiR actions run.
+
+        Ports robot-side mission tracking's action-count signal: the length of
+        ``GET /mission_queue/{id}/actions`` is how many of the native mission's
+        actions have run, mapped to the parallel ``action_task_ids``. Best-effort:
+        never raises into the completion poll.
+        """
+        if not self._tracking_tasks():
+            return
+        try:
+            done = len(await self._mir_api.get_mission_queue_actions(queue_id))
+        except Exception as e:
+            logger.warning(f"Failed to poll per-action progress for {queue_id}: {e}")
+            return
+        await self._mark(done)
+
+    async def _mark(self, done):
+        """Mark tasks for actions through index ``done``: the last started action
+        (index ``done - 1``) is in progress, earlier ones are completed."""
+        changed = False
+        for i in range(min(done, len(self._action_task_ids))):
+            task_id = self._action_task_ids[i]
+            if task_id is None:
+                continue
+            status = "c" if i < done - 1 else "p"
+            previous = self._reported.get(i)
+            if previous == status or previous == "c":  # no change / never downgrade
+                continue
+            if status == "c":
+                self._mission.mark_task_completed(task_id)
+            else:
+                self._mission.mark_task_in_progress(task_id)
+            self._reported[i] = status
+            changed = True
+        if changed:
+            await self._mt.report_tasks()
+
+    async def _finish_tasks(self):
+        """Mark every remaining task completed (the mission reached Done; covers a
+        fast group whose actions all flipped between polls)."""
+        if not self._tracking_tasks():
+            return
+        changed = False
+        for i, task_id in enumerate(self._action_task_ids):
+            if task_id is None or self._reported.get(i) == "c":
+                continue
+            self._mission.mark_task_completed(task_id)
+            self._reported[i] = "c"
+            changed = True
+        if changed:
+            await self._mt.report_tasks()
 
     async def _execute(self):
         queue_id = self._shared_memory.get(SharedMemoryKeys.MIR_QUEUE_ID)
@@ -289,7 +368,10 @@ class WaitForMirMissionCompletionNode(BehaviorTree):
 
             state = entry.get("state", "")
 
+            await self._report_progress(queue_id)
+
             if state == MirMissionQueueState.DONE:
+                await self._finish_tasks()
                 logger.info(f"MiR mission {queue_id} completed successfully")
                 return
 
@@ -308,11 +390,15 @@ class WaitForMirMissionCompletionNode(BehaviorTree):
         obj = super().dump_object()
         if self._timeout_secs is not None:
             obj["timeout_secs"] = self._timeout_secs
+        if self._action_task_ids:
+            obj["action_task_ids"] = self._action_task_ids
         return obj
 
     @classmethod
-    def from_object(cls, context, timeout_secs=None, **kwargs):
-        return WaitForMirMissionCompletionNode(context, timeout_secs=timeout_secs, **kwargs)
+    def from_object(cls, context, timeout_secs=None, action_task_ids=None, **kwargs):
+        return WaitForMirMissionCompletionNode(
+            context, timeout_secs=timeout_secs, action_task_ids=action_task_ids, **kwargs
+        )
 
 
 class MirMissionAbortedNode(MissionAbortedNode):
@@ -396,6 +482,7 @@ class MirNodeFromStepBuilder(NodeFromStepBuilder):
             WaitForMirMissionCompletionNode(
                 self._mir_context,
                 timeout_secs=step.timeout_secs,
+                action_task_ids=step.action_task_ids,
                 label=f"Wait for MiR mission '{step.label}'",
             )
         )

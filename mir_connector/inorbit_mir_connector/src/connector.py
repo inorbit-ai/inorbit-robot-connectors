@@ -6,6 +6,7 @@ import base64
 import math
 import uuid
 
+import httpx
 import pytz
 from inorbit_connector.commands import CommandResultCode
 
@@ -584,6 +585,11 @@ class MirConnector(Connector):
         # publish mission data
         try:
             await self.mission_tracking.report_mission(self.status, self.metrics or {})
+        except httpx.HTTPError as e:
+            # Transient MiR API/connection errors (server disconnects, timeouts,
+            # 5xx after retries). Expected during network blips - log concisely
+            # without a traceback, matching _disconnect's best-effort pattern.
+            self._logger.warning(f"Error reporting mission: {e}")
         except Exception:
             self._logger.exception("Error reporting mission")
 

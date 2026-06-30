@@ -791,3 +791,30 @@ def test_shutdown_handler_is_reentrant_safe_and_swallows_errors():
     # Repeated interrupt while shutting down: ignored, stop() not called again.
     handler()
     connector.stop.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_execution_loop_logs_transient_mission_error_without_traceback(
+    connector_with_mission_tracking, caplog
+):
+    """A transient MiR connection drop while reporting a mission must log one
+    concise line, not a full httpx traceback (which spammed the logs)."""
+    connector = connector_with_mission_tracking
+    connector.robot._status = {"robot_model": "MiR100"}
+    connector.publish_pose = MagicMock()
+    connector.publish_odometry = MagicMock()
+    connector.publish_key_values = MagicMock()
+    connector.publish_system_stats = MagicMock()
+    connector.mission_tracking.report_mission = AsyncMock(
+        side_effect=httpx.RemoteProtocolError("Server disconnected without sending a response")
+    )
+
+    with caplog.at_level("WARNING"):
+        # Must not raise despite the failing report.
+        await connector._execution_loop()
+
+    records = [r for r in caplog.records if "Error reporting mission" in r.getMessage()]
+    assert len(records) == 1
+    assert records[0].levelname == "WARNING"
+    assert records[0].exc_info is None  # concise, no traceback
+    assert "Server disconnected" in records[0].getMessage()

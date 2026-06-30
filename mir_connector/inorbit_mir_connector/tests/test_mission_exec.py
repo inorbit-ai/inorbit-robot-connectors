@@ -12,13 +12,19 @@ started — only the synchronous override hooks are exercised.
 
 from __future__ import annotations
 
+import json
+import logging
+import unittest.mock as mock
 from types import SimpleNamespace
 
+import pytest
+from inorbit_connector.commands import CommandResultCode
 from inorbit_edge_executor.datatypes import (
     MissionDefinition,
     MissionStepPoseWaypoint,
     Pose,
 )
+from inorbit_edge_executor.exceptions import TranslationException
 from inorbit_edge_executor.mission import Mission
 
 from inorbit_mir_connector.src.mission.behavior_tree import (
@@ -29,7 +35,7 @@ from inorbit_mir_connector.src.mission.datatypes import (
     MissionStepExecuteMirNativeMission,
 )
 from inorbit_mir_connector.src.mission.tree_builder import MirTreeBuilder
-from inorbit_mir_connector.src.mission_exec import MirWorkerPool
+from inorbit_mir_connector.src.mission_exec import MirMissionExecutor, MirWorkerPool
 
 ROBOT_ID = "mir-1"
 
@@ -109,3 +115,30 @@ def test_deserialize_mission_round_trips():
 
     assert isinstance(restored, MirInOrbitMission)
     assert isinstance(restored.definition.steps[0], MissionStepExecuteMirNativeMission)
+
+
+@pytest.mark.asyncio
+async def test_translate_failure_surfaces_reason():
+    """A swallowed translate-time error reaches result_function, not an empty detail."""
+    reason = "runAction step 'x': 'if' is a control-flow action"
+
+    async def fail(*_a, **_kw):
+        try:
+            raise ValueError(reason)
+        except ValueError:
+            raise TranslationException()  # bare, chains the ValueError on __context__
+
+    executor = MirMissionExecutor.__new__(MirMissionExecutor)
+    executor.logger = logging.getLogger("test")
+    executor.robot_id = ROBOT_ID
+    executor._worker_pool = SimpleNamespace(submit_work=fail)
+
+    result_function = mock.MagicMock()
+    await executor._handle_execute_mission_action(
+        {"missionId": "m1", "missionDefinition": json.dumps({"steps": []})},
+        {"result_function": result_function},
+    )
+
+    result_function.assert_called_once()
+    assert result_function.call_args.args[0] == CommandResultCode.FAILURE
+    assert reason in result_function.call_args.kwargs["execution_status_details"]

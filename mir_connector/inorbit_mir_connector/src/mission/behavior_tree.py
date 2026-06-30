@@ -21,6 +21,8 @@
 #     to read the queue id for the scoped abort above)
 #   - 2026-06-27: made the missing-missions-group runtime error operator-actionable (names the
 #     two fixes: enable_temporary_mission_group, or configure a predefined missions group)
+#   - 2026-06-30: CreateMirNativeMissionNode.dump_object now dumps the step with by_alias=True
+#     so a bounded/tracked native step (timeoutSecs/completeTask) round-trips on resume
 
 """Custom behavior tree nodes for executing compiled native MiR missions.
 
@@ -226,7 +228,8 @@ class CreateMirNativeMissionNode(BehaviorTree):
 
     def dump_object(self):
         obj = super().dump_object()
-        obj["step"] = self._step.model_dump(mode="json", exclude_none=True)
+        # by_alias: step model is extra="forbid" alias-only; snake_case keys fail resume.
+        obj["step"] = self._step.model_dump(mode="json", exclude_none=True, by_alias=True)
         return obj
 
     @classmethod

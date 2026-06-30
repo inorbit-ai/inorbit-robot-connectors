@@ -268,3 +268,23 @@ async def test_resume_skips_create_node_no_duplicate_mission():
     assert api2.queued == []
     # Wait node resumed from the restored queue id and saw it complete.
     assert api2.polled == [QUEUE_ID]
+
+
+def test_bounded_native_step_dump_roundtrips():
+    """A native step carrying timeoutSecs dumps with aliases so resume re-validates it."""
+    step = MissionStepExecuteMirNativeMission(
+        label="grp",
+        actions=[MirWaypoint(label="wp", x=1.0, y=2.0, orientation=0.0)],
+        robot_id=ROBOT_ID,
+        timeoutSecs=25.0,
+    )
+    sm = MissionRuntimeSharedMemory()
+    ctx = MirBehaviorTreeBuilderContext(
+        mir_api=mock.MagicMock(), missions_group_id="grp", firmware_version="v3", connector_type="mir"
+    )
+    ctx.shared_memory = sm
+    node = CreateMirNativeMissionNode(ctx, step, label="create")
+
+    dumped = node.dump_object()["step"]
+    assert "timeoutSecs" in dumped and "timeout_secs" not in dumped
+    MissionStepExecuteMirNativeMission.model_validate(dumped)  # raised ValidationError pre-fix

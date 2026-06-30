@@ -203,15 +203,32 @@ class MirApiV2(MirApiBaseClass):
         return response.json()
 
     async def get_mission_queue_actions(self, queue_id):
-        """Actions executed so far for a queued mission (single light GET).
+        """Started+completed actions for a queued mission (single light GET).
 
-        ``GET /mission_queue/{id}/actions`` returns the executed-so-far action
-        list; its length is the mission's action-level progress (the same signal
-        robot-side mission tracking uses). Distinct from ``get_mission`` (4 GETs),
-        so it is light enough for the ~1 s completion poll.
+        ``GET /mission_queue/{id}/actions`` returns a shallow list,
+        ``[{"id": <int>, "url": ...}]`` -- only an integer execution id and a
+        url, no ``action_id``/``state``/``finished``. The list grows as the
+        mission runs (the last entry is the one executing). To resolve which
+        mission-definition action an entry is (its ``action_id``) and whether it
+        finished, fetch each entry via ``get_mission_queue_action``. Distinct
+        from ``get_mission`` (4 GETs), so it is light enough for the ~1 s poll.
         """
         actions_api_url = f"/{MISSION_QUEUE_ENDPOINT_V2}/{queue_id}/actions"
         response = await self._get(actions_api_url)
+        return response.json()
+
+    async def get_mission_queue_action(self, queue_id, action_int_id):
+        """Full detail of a single executed mission-queue action (single light GET).
+
+        ``GET /mission_queue/{id}/actions/{action_int_id}`` returns the rich
+        entry: ``{id, action_id, state, started, finished, action_type,
+        parameters}``. ``action_id`` equals the mission-definition action guid
+        (what ``add_action_to_mission`` returns), so it maps a running queue
+        action back to the action we created. Completion signal is ``finished``
+        (a timestamp once done); ``state`` can be ``""`` even when finished.
+        """
+        action_api_url = f"/{MISSION_QUEUE_ENDPOINT_V2}/{queue_id}/actions/{action_int_id}"
+        response = await self._get(action_api_url)
         return response.json()
 
     async def get_executing_mission_id(self):

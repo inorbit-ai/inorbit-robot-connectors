@@ -69,6 +69,7 @@ class FakeMirApi:
                 "priority": priority,
             }
         )
+        return {"guid": f"action-guid-{priority}"}
 
     async def queue_mission(self, mission_guid):
         self.queued.append(mission_guid)

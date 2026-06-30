@@ -197,7 +197,7 @@ class _RecordingMirApi:
         self.created.append(guid)
 
     async def add_action_to_mission(self, action_type, mission_id, parameters, priority):
-        pass
+        return {"guid": f"action-guid-{priority}"}
 
     async def queue_mission(self, mission_guid):
         self.queued.append(mission_guid)

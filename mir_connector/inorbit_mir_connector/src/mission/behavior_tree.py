@@ -24,11 +24,16 @@
 #   - 2026-06-30: CreateMirNativeMissionNode.dump_object now dumps the step with by_alias=True
 #     so a bounded/tracked native step (timeoutSecs/completeTask) round-trips on resume
 #   - 2026-06-30: WaitForMirMissionCompletionNode now reports per-action InOrbit task
-#     progress. A grouped native step carries action_task_ids (parallel to its actions); the
-#     node maps the executed-action count (GET /mission_queue/{id}/actions, the signal
-#     robot-side mission tracking uses) to those tasks and marks each in_progress/completed
-#     as its action runs. Replaces the per-step TaskStarted/CompletedNode the SDK decorator
-#     can no longer emit once steps are grouped.
+#     progress, replacing the per-step TaskStarted/CompletedNode the SDK decorator can no
+#     longer emit once steps are grouped. A grouped native step carries action_task_ids
+#     (parallel to its actions). CreateMirNativeMissionNode captures the guid each
+#     add_action_to_mission returns into shared memory (MIR_ACTION_GUIDS, ordered parallel to
+#     the actions); the completion node pairs each guid with its task id, then per poll
+#     resolves each queued action's action_id (== that guid) via GET /mission_queue/{id}/
+#     actions/{int_id} and marks the paired task in_progress/completed from the action's
+#     `finished` timestamp. Matching by guid (not list length) ignores a load_mission's
+#     inlined sub-actions, whose guids are foreign to our set, so nested missions no longer
+#     over-complete. Best-effort: a tracking error never aborts the completion poll.
 
 """Custom behavior tree nodes for executing compiled native MiR missions.
 
@@ -98,6 +103,10 @@ class SharedMemoryKeys(StrEnum):
     MIR_MISSION_GUID = "mir_mission_guid"
     MIR_QUEUE_ID = "mir_queue_id"
     MIR_ERROR_MESSAGE = "mir_error_message"
+    # Ordered guids of the created mission actions (parallel to the step's actions, and so
+    # to action_task_ids). Written by CreateMirNativeMissionNode, read by the completion node
+    # to pair each guid with its InOrbit task id. Serialized -> survives resume.
+    MIR_ACTION_GUIDS = "mir_action_guids"
 
 
 class MirBehaviorTreeBuilderContext(BehaviorTreeBuilderContext):
@@ -153,6 +162,7 @@ class CreateMirNativeMissionNode(BehaviorTree):
         self._shared_memory.add(SharedMemoryKeys.MIR_MISSION_GUID, None)
         self._shared_memory.add(SharedMemoryKeys.MIR_QUEUE_ID, None)
         self._shared_memory.add(SharedMemoryKeys.MIR_ERROR_MESSAGE, None)
+        self._shared_memory.add(SharedMemoryKeys.MIR_ACTION_GUIDS, None)
 
     async def _execute(self):
         actions = self._step.actions
@@ -179,6 +189,7 @@ class CreateMirNativeMissionNode(BehaviorTree):
                 description="Compiled mission created by InOrbit edge executor",
             )
 
+            action_guids = []
             for i, action in enumerate(actions):
                 if isinstance(action, MirWaypoint):
                     action_type = "move_to_position"
@@ -207,17 +218,23 @@ class CreateMirNativeMissionNode(BehaviorTree):
                     for k, v in param_values.items()
                 ]
 
-                await self._mir_api.add_action_to_mission(
+                created = await self._mir_api.add_action_to_mission(
                     action_type=action_type,
                     mission_id=mission_guid,
                     parameters=action_parameters,
                     priority=i + 1,
                 )
+                # action_id reported by the mission queue at runtime == this guid; the
+                # completion node matches on it to mark the paired InOrbit task. A missing
+                # guid (unexpected response shape) becomes None -> that task just falls back
+                # to mark-at-end rather than crashing the dispatch.
+                action_guids.append((created or {}).get("guid"))
 
             queue_response = await self._mir_api.queue_mission(mission_guid)
             queue_id = queue_response.get("id")
             self._shared_memory.set(SharedMemoryKeys.MIR_MISSION_GUID, mission_guid)
             self._shared_memory.set(SharedMemoryKeys.MIR_QUEUE_ID, queue_id)
+            self._shared_memory.set(SharedMemoryKeys.MIR_ACTION_GUIDS, action_guids)
             logger.info(f"Queued MiR native mission: {mission_guid} (queue id: {queue_id})")
 
         except DockingOffsetError as e:
@@ -269,6 +286,14 @@ class WaitForMirMissionCompletionNode(BehaviorTree):
         # re-reporting. Not serialized: on resume it re-derives from MiR (marking is
         # idempotent, so a re-report is harmless).
         self._reported: dict = {}
+        # {our action guid -> InOrbit task id}, built lazily on first poll from
+        # MIR_ACTION_GUIDS (shared memory) zipped with action_task_ids. None until built.
+        self._guid_to_task: Optional[dict] = None
+        # queue-action int id -> (action_id, finished_bool). Once finished, never re-fetched,
+        # so steady state is ~1 detail GET/poll. Not serialized: re-derives on resume.
+        self._detail_cache: dict = {}
+        # warn once if our guids never match any queued action_id (fail-safe degradation).
+        self._warned_no_match = False
 
     def _tracking_tasks(self) -> bool:
         """True when this group has at least one task to report and the tracking
@@ -279,43 +304,77 @@ class WaitForMirMissionCompletionNode(BehaviorTree):
             and any(t is not None for t in self._action_task_ids)
         )
 
-    async def _report_progress(self, queue_id):
-        """Mark grouped tasks as their MiR actions run.
+    def _build_pairing(self):
+        """Build ``{our action guid -> task id}`` from MIR_ACTION_GUIDS (set by
+        CreateMirNativeMissionNode) zipped with the parallel ``action_task_ids``."""
+        guids = self._shared_memory.get(SharedMemoryKeys.MIR_ACTION_GUIDS) or []
+        self._guid_to_task = {
+            g: t for g, t in zip(guids, self._action_task_ids) if g is not None and t is not None
+        }
 
-        Ports robot-side mission tracking's action-count signal: the length of
-        ``GET /mission_queue/{id}/actions`` is how many of the native mission's
-        actions have run, mapped to the parallel ``action_task_ids``. Best-effort:
-        never raises into the completion poll.
+    async def _report_progress(self, queue_id):
+        """Mark each grouped task as the MiR action it is paired with runs.
+
+        The queue action list (``GET /mission_queue/{id}/actions``) is shallow
+        (``[{id, url}]``); each entry's ``action_id`` and ``finished`` come from the
+        detail endpoint. ``action_id`` equals the guid we captured at creation, so we
+        map it back to the paired InOrbit task. A ``load_mission``'s inlined
+        sub-actions carry foreign guids and are simply not in the pairing, so they are
+        ignored. Best-effort: never raises into the completion poll.
         """
         if not self._tracking_tasks():
             return
+        if self._guid_to_task is None:
+            self._build_pairing()
+        if not self._guid_to_task:
+            return
         try:
-            done = len(await self._mir_api.get_mission_queue_actions(queue_id))
+            entries = await self._mir_api.get_mission_queue_actions(queue_id)
+            for entry in entries:
+                int_id = entry.get("id")
+                cached = self._detail_cache.get(int_id)
+                if cached is not None and cached[1]:  # already resolved as finished
+                    continue
+                detail = await self._mir_api.get_mission_queue_action(queue_id, int_id)
+                self._detail_cache[int_id] = (
+                    detail.get("action_id"),
+                    detail.get("finished") is not None,
+                )
         except Exception as e:
             logger.warning(f"Failed to poll per-action progress for {queue_id}: {e}")
             return
-        await self._mark(done)
+        finished_by_guid = {action_id: fin for action_id, fin in self._detail_cache.values()}
+        await self._mark(finished_by_guid, polled=bool(entries))
 
-    async def _mark(self, done):
-        """Mark tasks for actions through index ``done``: the last started action
-        (index ``done - 1``) is in progress, earlier ones are completed."""
+    async def _mark(self, finished_by_guid, polled):
+        """Mark each paired task from its action's queue state: present and finished
+        -> completed, present and running -> in progress, absent -> leave for later."""
         changed = False
-        for i in range(min(done, len(self._action_task_ids))):
-            task_id = self._action_task_ids[i]
-            if task_id is None:
-                continue
-            status = "c" if i < done - 1 else "p"
-            previous = self._reported.get(i)
+        matched = False
+        for guid, task_id in self._guid_to_task.items():
+            if guid not in finished_by_guid:
+                continue  # not started yet, or a foreign sub-action guid
+            matched = True
+            status = "c" if finished_by_guid[guid] else "p"
+            previous = self._reported.get(task_id)
             if previous == status or previous == "c":  # no change / never downgrade
                 continue
             if status == "c":
                 self._mission.mark_task_completed(task_id)
             else:
                 self._mission.mark_task_in_progress(task_id)
-            self._reported[i] = status
+            self._reported[task_id] = status
             changed = True
         if changed:
             await self._mt.report_tasks()
+        elif polled and not matched and not self._warned_no_match:
+            # The queue has actions but none carry our guids: granular tracking is
+            # degrading to mark-at-end (_finish_tasks still completes everything at Done).
+            self._warned_no_match = True
+            logger.warning(
+                "MiR per-task tracking: no queued action_id matched the created action "
+                "guids; tasks will be completed at mission end (action_id/guid mismatch?)"
+            )
 
     async def _finish_tasks(self):
         """Mark every remaining task completed (the mission reached Done; covers a
@@ -323,11 +382,11 @@ class WaitForMirMissionCompletionNode(BehaviorTree):
         if not self._tracking_tasks():
             return
         changed = False
-        for i, task_id in enumerate(self._action_task_ids):
-            if task_id is None or self._reported.get(i) == "c":
+        for task_id in self._action_task_ids:
+            if task_id is None or self._reported.get(task_id) == "c":
                 continue
             self._mission.mark_task_completed(task_id)
-            self._reported[i] = "c"
+            self._reported[task_id] = "c"
             changed = True
         if changed:
             await self._mt.report_tasks()

@@ -798,8 +798,8 @@ to that mission's GUID.
   failure reason, but an unknown parameter id may be silently ignored by the robot, so the action runs
   without it and still reports success. Cross-check against `GET /actions/{type}`.
 - References must be GUIDs, except `docking.marker_type`.
-- A rejected action leaves an empty, unqueued mission in the connector's temporary missions group;
-  nothing runs on the robot.
+- A rejected action (blank or denied `mir_actionType`) fails during translation, before any mission
+  is created on the robot; nothing runs.
 - A failure identifies the mission, not which step within it failed.
 
 ## Next steps

@@ -102,15 +102,14 @@ class TestNativeMissionTimeout:
         assert isinstance(step, MissionStepExecuteMirNativeMission)
         assert step.timeout_secs is None
 
-    def test_task_boundary_split_computes_per_group(self):
-        # [wp(10, completeTask="t1"), wp(20)] -> first native step timeout 10,
-        # second native step unbounded (no timeout aggregated across the split).
+    def test_task_on_step_no_longer_splits_timeout(self):
+        # [wp(10, completeTask="t1"), wp(20)] now groups into one native step (a task no
+        # longer flushes the group), so the timeout is the sum of both bounded steps.
         m = _mission([_wp(10, complete_task="t1"), _wp(20)])
         result = InOrbitToMirTranslator.translate(m)
 
-        assert len(result.definition.steps) == 2
-        first, second = result.definition.steps
-        assert isinstance(first, MissionStepExecuteMirNativeMission)
-        assert first.timeout_secs == 10
-        assert isinstance(second, MissionStepExecuteMirNativeMission)
-        assert second.timeout_secs == 20
+        assert len(result.definition.steps) == 1
+        step = result.definition.steps[0]
+        assert isinstance(step, MissionStepExecuteMirNativeMission)
+        assert step.timeout_secs == 30
+        assert step.action_task_ids == ["t1", None]

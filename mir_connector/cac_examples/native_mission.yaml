@@ -1,0 +1,75 @@
+# MissionDefinition examples for the MiR <> InOrbit Connector.
+#
+# A `runAction` step runs a MiR robot action when its `arguments` set `mir_actionType` to the action
+# type. Every other argument is a MiR action parameter, named by its parameter id and sent to the
+# robot as written, so it must be the type/format MiR expects (see "Running MiR Actions in Missions"
+# in the connector README for the value types).
+#
+# `actionId` is required by the schema but ignored for these steps; use any stable value.
+#
+# MissionDefinition is account-scoped: fill `scope` with your account (e.g. `account/<ACCOUNT_ID>`)
+# before applying with the InOrbit CLI.
+
+apiVersion: v0.1
+kind: MissionDefinition
+metadata:
+  id: mir-dock-and-charge
+  # REQUIRED. MissionDefinition is account-scoped.
+  # scope: account/<ACCOUNT_ID>
+spec:
+  label: "Dock and charge"
+  steps:
+    # docking: `marker` is a position GUID. `marker_type` is auto-resolved by the connector from
+    # the marker's docking offset, so do NOT hand-author it.
+    - label: "Dock at charger"
+      runAction:
+        actionId: mir-action
+        arguments:
+          mir_actionType: docking
+          marker: "<position-guid>"
+    # charging: Duration is the pre-formatted string HH:MM:SS.ffffff; the boolean is an unquoted
+    # JSON literal (not the string "true").
+    - label: "Charge to 80%"
+      runAction:
+        actionId: mir-action
+        arguments:
+          mir_actionType: charging
+          minimum_time: "00:10:00.000000"
+          minimum_percentage: 80
+          charge_until_new_mission: true
+---
+apiVersion: v0.1
+kind: MissionDefinition
+metadata:
+  id: mir-native-action-samples
+  # scope: account/<ACCOUNT_ID>
+spec:
+  label: "MiR action samples"
+  steps:
+    # set_io: `module` is a Reference -> a resolved object GUID (no name-to-GUID lookup).
+    # `operation` is a Selection -> the exact choice value ("on"/"off").
+    - label: "Turn output on"
+      runAction:
+        actionId: mir-action
+        arguments:
+          mir_actionType: set_io
+          module: "<io-module-guid>"
+          port: 1
+          operation: "on"
+    # sound: `sound` is a Reference GUID; `volume` is a bare number.
+    - label: "Beep"
+      runAction:
+        actionId: mir-action
+        arguments:
+          mir_actionType: sound
+          sound: "<sound-guid>"
+          volume: 80
+          mode: "full"
+    # load_mission: embed a pre-existing MiR mission in-flow. `mission_id` is the child mission's
+    # GUID (no name-to-GUID lookup). load_mission is not advertised by GET /actions but is accepted.
+    - label: "Run subroutine mission"
+      runAction:
+        actionId: mir-action
+        arguments:
+          mir_actionType: load_mission
+          mission_id: "<child-mission-guid>"

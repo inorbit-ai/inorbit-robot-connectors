@@ -272,10 +272,12 @@ class MirMissionExecutor:
                 execution_status_details=f"Invalid JSON: {e}",
             )
         except Exception as e:
-            self.logger.error(f"Failed to execute mission: {e}")
+            # TranslationException is bare (empty str); real reason is on the chained cause.
+            detail = str(e) or str(e.__cause__ or "") or str(e.__context__ or "") or repr(e)
+            self.logger.error(f"Failed to execute mission: {detail}")
             options["result_function"](
                 CommandResultCode.FAILURE,
-                execution_status_details=str(e),
+                execution_status_details=detail,
             )
 
     async def _handle_cancel_mission(self, script_args: dict, options: dict) -> None:

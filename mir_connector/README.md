@@ -19,7 +19,7 @@ The [InOrbit](https://inorbit.ai/) Robot Connector for [MiR Motors](https://dire
 ## ✨ Features
 
 - **Real-time Monitoring**: Robot pose, system status, battery levels, and error states
-- **Mission Control**: Dispatch, pause, cancel missions via [Actions](https://developer.inorbit.ai/docs#configuring-action-definitions)
+- **Mission Control**: Dispatch, pause, cancel missions via [Actions](https://developer.inorbit.ai/docs#configuring-action-definitions), including [running MiR robot actions as mission steps](#-running-mir-actions-in-missions)
 - **Custom Scripts**: Execute custom shell scripts on the connector via Custom Actions
 - **Mission Tracking**: Full [Mission Tracking](https://developer.inorbit.ai/docs#configuring-mission-tracking) support
 - **SSL Support**: Secure connections with full certificate validation
@@ -712,6 +712,95 @@ docker compose -f docker-compose.example.yaml -f docker-compose.metrics.example.
 ```
 
 Set `GCP_PROJECT` and provide a service-account key (or switch to the `debug` exporter for local verification). For the full GCP setup and the design rules the config follows, see `inorbit-connector-python/examples/metrics/`.
+
+## 🤖 Running MiR Actions in Missions
+
+A mission `runAction` step can run any action from the MiR robot's action catalog (docking, charging,
+I/O, sound, and so on). Set `mir_actionType` to the action type, and add each of the action's
+parameters as a sibling argument:
+
+```yaml
+apiVersion: v0.1
+kind: MissionDefinition
+metadata:
+  id: mir-dock-and-charge
+  scope: account/<ACCOUNT_ID>
+spec:
+  label: "Dock and charge"
+  steps:
+    - label: "Dock at charger"
+      runAction:
+        actionId: mir-action
+        arguments:
+          mir_actionType: docking
+          marker: "<position-guid>"
+    - label: "Charge to 80%"
+      runAction:
+        actionId: mir-action
+        arguments:
+          mir_actionType: charging
+          minimum_time: "00:10:00.000000"
+          minimum_percentage: 80
+          charge_until_new_mission: true
+```
+
+- `mir_actionType` is the MiR action type. A step without it runs as a normal InOrbit action; if it is
+  set but empty, the mission is rejected.
+- `actionId` is required by the schema but ignored for these steps; use any stable value.
+- Every other argument is a MiR action parameter, named by its parameter `id` and sent to the robot as
+  written.
+
+More examples are in [`cac_examples/native_mission.yaml`](cac_examples/native_mission.yaml); apply them
+with the [InOrbit CLI](https://developer.inorbit.ai/docs#using-the-inorbit-cli).
+
+### Parameter value types
+
+MiR type-checks each parameter, so supply the type and format it expects:
+
+- **Duration**: a string formatted `HH:MM:SS.ffffff` (90.5 seconds is `"00:01:30.500000"`); a plain
+  number of seconds is rejected. Applies to `wait.time`, `charging.minimum_time`, the `*.timeout`
+  parameters, `sound.duration`, and similar.
+- **Reference**: the target object's GUID, not its display name. The connector does not resolve names to
+  GUIDs, except `docking.marker_type`, which it derives from the docking `marker`. PLC registers
+  (`set_plc_register.register`, `wait_for_plc_register.register`) take an integer id (1-200), not a GUID.
+- **Selection**: the exact option value, not its label (`operation` is `"on"`/`"off"`, `release_cart` is
+  `"yes"`/`"no"`, `light.color_1` is a hex string such as `"#ff0000"`).
+- **Number / Boolean**: an unquoted JSON literal (`80`, `true`), never a quoted string (`"true"`).
+- **String**: a plain string; some parameters reject an empty string (`throw_error.message`,
+  `create_autolog.description`, `email.subject`/`message`, `run_ur_program.program_name`).
+
+### Finding action types
+
+`GET /actions` lists the action types a robot supports, and `GET /actions/{type}` returns one type's
+parameters (id, type, constraints). Both vary by MiR model and firmware.
+
+```bash
+curl -u <user>:<pass> https://<robot-host>/api/v2.0.0/actions
+curl -u <user>:<pass> https://<robot-host>/api/v2.0.0/actions/docking
+```
+
+Some actions cannot be used as a step and are rejected before the mission starts:
+
+| Action | Use instead |
+|---|---|
+| `if`, `while`, `loop`, `try_catch`, `prompt_user`, `reduce_protective_fields` | InOrbit mission steps for control flow |
+| `set_reset_io` | `set_io` |
+| `set_reset_plc` | `set_plc_register` |
+| `break`, `continue` | (only valid inside a loop) |
+
+For navigation and waits, prefer the InOrbit `waypoint` and `timeoutSecs` mission steps rather than the
+`move_to_position` and `wait` actions. To run an existing MiR mission inline, use `load_mission` with `mission_id` set
+to that mission's GUID.
+
+### Limitations
+
+- Parameter ids and values are not validated before dispatch. A bad value is reported as the mission's
+  failure reason, but an unknown parameter id may be silently ignored by the robot, so the action runs
+  without it and still reports success. Cross-check against `GET /actions/{type}`.
+- References must be GUIDs, except `docking.marker_type`.
+- A rejected action (blank or denied `mir_actionType`) fails during translation, before any mission
+  is created on the robot; nothing runs.
+- A failure identifies the mission, not which step within it failed.
 
 ## Next steps
 

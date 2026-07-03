@@ -672,7 +672,8 @@ async def test_connector_loop_publishes_system_stats(connector_with_mission_trac
 @pytest.mark.asyncio
 async def test_missions_garbage_collector(connector):
     # Missions in the temporary group
-    connector.tmp_missions_group_id = "tmp_group_id"
+    connector.mission_group._missions_group_id = "tmp_group_id"
+    connector.mission_group.mir_api = connector.mir_api
     connector.mir_api.get_mission_group_missions.return_value = [
         {
             "url": "/v2.0.0/missions/72003359-6445-419c-85fb-df5576a9ce2e",
@@ -719,7 +720,7 @@ async def test_missions_garbage_collector(connector):
         },  # Not safe to delete
     }
     connector.mir_api.get_mission.side_effect = lambda id: defs[id]
-    await connector._delete_unused_missions()
+    await connector.mission_group._delete_unused_missions()
     # Only deletes the mission definition of mission with id 1
     # and mission that is not in the queue
     connector.mir_api.delete_mission_definition.assert_any_call(

@@ -187,10 +187,6 @@ class MirMissionExecutor:
             await self._worker_pool.shutdown()
             self.logger.info("MIR Mission Executor shut down")
 
-    def is_initialized(self) -> bool:
-        """Check if the mission executor is initialized."""
-        return self._initialized
-
     async def has_active_mission(self) -> bool:
         """True if an InOrbit-dispatched mission is currently executing for this robot.
 

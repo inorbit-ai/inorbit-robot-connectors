@@ -593,11 +593,6 @@ class MirConnector(Connector):
         except Exception:
             self._logger.exception("Error reporting mission")
 
-    def publish_api_error(self):
-        """Publish an error message when the API call fails.
-        This value can be used for setting up status and incidents in InOrbit"""
-        self.publish_key_values(api_connected=False)
-
     async def send_waypoint_over_missions(self, pose):
         """Use the connector's mission group to create a move mission to a designated pose."""
         mission_id = str(uuid.uuid4())
@@ -651,29 +646,6 @@ class MirConnector(Connector):
             priority=1,
         )
         await self.mir_api.queue_mission(mission_id)
-
-    async def _delete_unused_missions(self):
-        """Delete unused mission definitions from the temporary missions group."""
-        if not hasattr(self, "tmp_missions_group_id") or not self.tmp_missions_group_id:
-            self._logger.warning("Cannot delete unused missions: missions group not set up")
-            return
-
-        try:
-            mission_defs = await self.mir_api.get_mission_group_missions(self.tmp_missions_group_id)
-            missions_queue = await self.mir_api.get_missions_queue()
-            # Do not delete definitions of missions that are pending or executing
-            protected_mission_defs = [
-                (await self.mir_api.get_mission(mission["id"]))["mission_id"]
-                for mission in missions_queue
-                if mission["state"] in ["Pending", "Executing"]
-            ]
-            # Delete mission definitions that are not protected
-            for mission_def in mission_defs:
-                mission_id = mission_def["guid"]
-                if mission_id not in protected_mission_defs:
-                    await self.mir_api.delete_mission_definition(mission_id)
-        except Exception as ex:
-            self._logger.error(f"Error deleting unused missions: {ex}")
 
     async def fetch_map(self, frame_id: str) -> MapConfigTemp | None:
         """Fetch a map from the MiR robot for the given frame_id.

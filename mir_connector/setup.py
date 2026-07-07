@@ -81,5 +81,5 @@ setup(
     python_requires=">=3.10",
     # Do not edit this string manually, always use bump-my-version. See
     # https://github.com/inorbit-ai/inorbit-robot-connectors/tree/main/mir_connector#version-bump
-    version="2.2.0",
+    version="3.0.0",
 )

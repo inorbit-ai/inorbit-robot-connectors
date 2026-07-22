@@ -302,6 +302,16 @@ class CreateMirNativeMissionNode(BehaviorTree):
         return CreateMirNativeMissionNode(context, step, **kwargs)
 
 
+def _iter_task_ids(entries):
+    """Flatten action_task_ids: nested list entries carry a guided move's
+    per-waypoint task ids."""
+    for entry in entries:
+        if isinstance(entry, list):
+            yield from entry
+        else:
+            yield entry
+
+
 class WaitForMirMissionCompletionNode(BehaviorTree):
     """Polls MiR mission queue until the queued native mission completes."""
 
@@ -341,12 +351,13 @@ class WaitForMirMissionCompletionNode(BehaviorTree):
         return (
             self._mt is not None
             and self._mission is not None
-            and any(t is not None for t in self._action_task_ids)
+            and any(t is not None for t in _iter_task_ids(self._action_task_ids))
         )
 
     def _build_pairing(self):
         """Build ``{our action guid -> task id}`` from MIR_ACTION_GUIDS (set by
-        CreateMirNativeMissionNode) zipped with the parallel ``action_task_ids``."""
+        CreateMirNativeMissionNode) zipped with the parallel ``action_task_ids``.
+        A list entry pairs a guided_move guid with its per-waypoint task ids."""
         guids = self._shared_memory.get(SharedMemoryKeys.MIR_ACTION_GUIDS) or []
         self._guid_to_task = {
             g: t for g, t in zip(guids, self._action_task_ids) if g is not None and t is not None
@@ -388,23 +399,24 @@ class WaitForMirMissionCompletionNode(BehaviorTree):
 
     async def _mark(self, finished_by_guid, polled):
         """Mark each paired task from its action's queue state: present and finished
-        -> completed, present and running -> in progress, absent -> leave for later."""
+        -> completed, present and running -> in progress, absent -> leave for later.
+        A list entry (guided_move) is marked per-waypoint: finished completes every
+        task in the entry, running defers to ``_mark_guided_progress``."""
         changed = False
         matched = False
-        for guid, task_id in self._guid_to_task.items():
+        for guid, entry in self._guid_to_task.items():
             if guid not in finished_by_guid:
                 continue  # not started yet, or a foreign sub-action guid
             matched = True
-            status = "c" if finished_by_guid[guid] else "p"
-            previous = self._reported.get(task_id)
-            if previous == status or previous == "c":  # no change / never downgrade
+            finished = finished_by_guid[guid]
+            if isinstance(entry, list):
+                if finished:
+                    for task_id in entry:
+                        changed |= self._mark_one(task_id, "c")
+                else:
+                    changed |= await self._mark_guided_progress(entry)
                 continue
-            if status == "c":
-                self._mission.mark_task_completed(task_id)
-            else:
-                self._mission.mark_task_in_progress(task_id)
-            self._reported[task_id] = status
-            changed = True
+            changed |= self._mark_one(entry, "c" if finished else "p")
         if changed:
             await self._mt.report_tasks()
         elif polled and not matched and not self._warned_no_match:
@@ -416,13 +428,55 @@ class WaitForMirMissionCompletionNode(BehaviorTree):
                 "guids; tasks will be completed at mission end (action_id/guid mismatch?)"
             )
 
+    def _mark_one(self, task_id, status):
+        """Mark one task ("c"/"p"); no-op on None, repeats, and downgrades."""
+        if task_id is None:
+            return False
+        previous = self._reported.get(task_id)
+        if previous == status or previous == "c":
+            return False
+        if status == "c":
+            self._mission.mark_task_completed(task_id)
+        else:
+            self._mission.mark_task_in_progress(task_id)
+        self._reported[task_id] = status
+        return True
+
+    async def _mark_guided_progress(self, entry):
+        """Granular tracking for a RUNNING guided_move action.
+
+        ``entry`` is the task-id list parallel to the run's [*waypoints, goal]
+        steps. ``GET /guided_move`` reports current_waypoint_index over
+        [start, *waypoints, goal] (0 = start). Conservative mapping until
+        robot-verified (UNVERIFIED, spec routes-guided-move.md): run step i is
+        completed when index >= i + 2; the first pending task is in_progress.
+        Best-effort: poll failures degrade to mark-at-end.
+        """
+        try:
+            status = await self._mir_api.get_guided_move()
+        except Exception as e:
+            logger.warning(f"Failed to poll guided move status: {e}")
+            return False
+        index = (status or {}).get("current_waypoint_index")
+        changed = False
+        marked_in_progress = False
+        for i, task_id in enumerate(entry):
+            if task_id is None:
+                continue
+            if isinstance(index, int) and index >= i + 2:
+                changed |= self._mark_one(task_id, "c")
+            elif not marked_in_progress and self._reported.get(task_id) != "c":
+                changed |= self._mark_one(task_id, "p")
+                marked_in_progress = True
+        return changed
+
     async def _finish_tasks(self):
         """Mark every remaining task completed (the mission reached Done; covers a
         fast group whose actions all flipped between polls)."""
         if not self._tracking_tasks():
             return
         changed = False
-        for task_id in self._action_task_ids:
+        for task_id in _iter_task_ids(self._action_task_ids):
             if task_id is None or self._reported.get(task_id) == "c":
                 continue
             self._mission.mark_task_completed(task_id)

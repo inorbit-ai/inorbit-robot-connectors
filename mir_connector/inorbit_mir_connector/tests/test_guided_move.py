@@ -30,6 +30,8 @@ from inorbit_edge_executor.mission import Mission
 from inorbit_mir_connector.src.mission.behavior_tree import (
     CreateMirNativeMissionNode,
     MirBehaviorTreeBuilderContext,
+    SharedMemoryKeys,
+    WaitForMirMissionCompletionNode,
 )
 from inorbit_mir_connector.src.mission.datatypes import (
     GuidedMoveWaypoint,
@@ -362,3 +364,125 @@ async def test_guided_move_failure_names_firmware_requirement():
 
     with pytest.raises(RuntimeError, match="3.8.0"):
         await node._execute()
+
+
+class FakeTrackingMirApi:
+    """Drives WaitForMirMissionCompletionNode._report_progress: queue actions +
+    per-action detail + guided move status."""
+
+    def __init__(self):
+        # queue action int id -> {"action_id": guid, "finished": ts_or_None}
+        self.queue_actions: dict = {}
+        self.guided_move: dict | None = None
+        self.guided_move_calls = 0
+
+    async def get_mission_queue_actions(self, queue_id):
+        return [{"id": i} for i in self.queue_actions]
+
+    async def get_mission_queue_action(self, queue_id, action_int_id):
+        return {"id": action_int_id, **self.queue_actions[action_int_id]}
+
+    async def get_guided_move(self):
+        self.guided_move_calls += 1
+        return self.guided_move
+
+
+class FakeMission:
+    def __init__(self):
+        self.completed: list[str] = []
+        self.in_progress: list[str] = []
+
+    def mark_task_completed(self, task_id):
+        self.completed.append(task_id)
+
+    def mark_task_in_progress(self, task_id):
+        self.in_progress.append(task_id)
+
+
+class FakeMT:
+    def __init__(self):
+        self.reports = 0
+
+    async def report_tasks(self):
+        self.reports += 1
+
+
+def _build_wait_node(api, action_task_ids, action_guids):
+    ctx = MirBehaviorTreeBuilderContext(
+        mir_api=api,
+        missions_group_id="grp-1",
+        firmware_version="v3",
+        connector_type="mir",
+    )
+    ctx.shared_memory = MissionRuntimeSharedMemory()
+    ctx.mission = FakeMission()
+    ctx.mt = FakeMT()
+    node = WaitForMirMissionCompletionNode(ctx, action_task_ids=action_task_ids)
+    ctx.shared_memory.add(SharedMemoryKeys.MIR_ACTION_GUIDS, action_guids)
+    ctx.shared_memory.add(SharedMemoryKeys.MIR_QUEUE_ID, 7)
+    ctx.shared_memory.freeze()
+    return node, ctx
+
+
+@pytest.mark.asyncio
+async def test_guided_running_marks_intermediates_by_index():
+    api = FakeTrackingMirApi()
+    api.queue_actions = {1: {"action_id": "guid-gm", "finished": None}}
+    # current_waypoint_index=3: run steps 0 and 1 completed (i <= k-2)
+    api.guided_move = {"current_waypoint_index": 3}
+    node, ctx = _build_wait_node(api, [["t0", "t1", "t2", "t-goal"]], ["guid-gm"])
+
+    await node._report_progress(7)
+
+    assert ctx.mission.completed == ["t0", "t1"]
+    assert ctx.mt.reports == 1
+
+
+@pytest.mark.asyncio
+async def test_guided_running_low_index_marks_first_task_in_progress():
+    api = FakeTrackingMirApi()
+    api.queue_actions = {1: {"action_id": "guid-gm", "finished": None}}
+    api.guided_move = {"current_waypoint_index": 0}
+    node, ctx = _build_wait_node(api, [["t0", "t1"]], ["guid-gm"])
+
+    await node._report_progress(7)
+
+    assert ctx.mission.completed == []
+    assert ctx.mission.in_progress == ["t0"]
+
+
+@pytest.mark.asyncio
+async def test_guided_finished_completes_all_its_tasks():
+    api = FakeTrackingMirApi()
+    api.queue_actions = {1: {"action_id": "guid-gm", "finished": "2026-07-22T10:00:00"}}
+    node, ctx = _build_wait_node(api, [[None, "t1", "t-goal"]], ["guid-gm"])
+
+    await node._report_progress(7)
+
+    assert sorted(ctx.mission.completed) == ["t-goal", "t1"]
+    assert api.guided_move_calls == 0  # finished action: no guided-move poll needed
+
+
+@pytest.mark.asyncio
+async def test_guided_poll_failure_degrades_to_mark_at_end():
+    class Boom(FakeTrackingMirApi):
+        async def get_guided_move(self):
+            raise RuntimeError("boom")
+
+    api = Boom()
+    api.queue_actions = {1: {"action_id": "guid-gm", "finished": None}}
+    node, ctx = _build_wait_node(api, [["t0", "t1"]], ["guid-gm"])
+
+    await node._report_progress(7)  # must not raise
+
+    assert ctx.mission.completed == []
+
+
+@pytest.mark.asyncio
+async def test_finish_tasks_flattens_nested_entries():
+    api = FakeTrackingMirApi()
+    node, ctx = _build_wait_node(api, [["t0", None, "t1"], "t2"], ["guid-gm", "guid-2"])
+
+    await node._finish_tasks()
+
+    assert sorted(ctx.mission.completed) == ["t0", "t1", "t2"]

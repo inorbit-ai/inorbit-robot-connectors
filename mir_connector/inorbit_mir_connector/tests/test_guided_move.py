@@ -9,12 +9,14 @@ Spec: specs/routes-guided-move.md
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 
 import pytest
 from inorbit_edge_executor.datatypes import (
     MissionDefinition,
+    MissionRuntimeSharedMemory,
     MissionStepPoseWaypoint,
     MissionStepWait,
     Pose,
@@ -25,6 +27,10 @@ from inorbit_edge_executor.datatypes import (
 )
 from inorbit_edge_executor.mission import Mission
 
+from inorbit_mir_connector.src.mission.behavior_tree import (
+    CreateMirNativeMissionNode,
+    MirBehaviorTreeBuilderContext,
+)
 from inorbit_mir_connector.src.mission.datatypes import (
     GuidedMoveWaypoint,
     MirAction,
@@ -230,3 +236,129 @@ class TestRouteRunGrouping:
         with caplog.at_level(logging.WARNING):
             InOrbitToMirTranslator.translate(_mission([step, _route_wp(2, 2)]))
         assert any("properties" in r.message.lower() for r in caplog.records)
+
+
+class FakeMirApi:
+    def __init__(self, queue_id=42):
+        self.created = []
+        self.actions = []
+        self.queued = []
+        self._queue_id = queue_id
+
+    async def create_mission(self, group_id, name, guid, description):
+        self.created.append({"group_id": group_id, "guid": guid})
+
+    async def add_action_to_mission(self, action_type, mission_id, parameters, priority):
+        self.actions.append(
+            {"action_type": action_type, "parameters": parameters, "priority": priority}
+        )
+        return {"guid": f"action-guid-{priority}"}
+
+    async def queue_mission(self, mission_guid):
+        self.queued.append(mission_guid)
+        return {"id": self._queue_id}
+
+    async def get_position_docking_offsets(self, position_guid):
+        return []
+
+
+def _build_create_node(api, actions, action_task_ids=None):
+    ctx = MirBehaviorTreeBuilderContext(
+        mir_api=api,
+        missions_group_id="grp-1",
+        firmware_version="v3",
+        connector_type="mir",
+    )
+    ctx.shared_memory = MissionRuntimeSharedMemory()
+    step = MissionStepExecuteMirNativeMission(
+        label="native",
+        actions=actions,
+        robot_id="mir-1",
+        action_task_ids=action_task_ids or [],
+    )
+    node = CreateMirNativeMissionNode(ctx, step)
+    ctx.shared_memory.freeze()
+    return node, ctx
+
+
+def _params_by_id(recorded_action):
+    return {p["id"]: p["value"] for p in recorded_action["parameters"]}
+
+
+@pytest.mark.asyncio
+async def test_guided_move_action_parameters():
+    api = FakeMirApi()
+    gm = MirGuidedMove(
+        label="route",
+        goal_x=5.0,
+        goal_y=6.0,
+        goal_orientation=90.0,
+        waypoints=[
+            GuidedMoveWaypoint(x=1.0, y=2.0, node_radius=0.6, edge_radius=0.6),
+            GuidedMoveWaypoint(x=3.0, y=4.0),
+        ],
+        goal_node_radius=0.5,
+        goal_edge_radius=0.5,
+    )
+    node, ctx = _build_create_node(api, [gm])
+
+    await node._execute()
+
+    assert [a["action_type"] for a in api.actions] == ["guided_move"]
+    params = _params_by_id(api.actions[0])
+    assert params["x"] == 5.0
+    assert params["y"] == 6.0
+    assert params["orientation"] == 90.0
+    assert params["goal_node_radius"] == 0.5
+    assert params["goal_edge_radius"] == 0.5
+    assert params["blocked_path_timeout"] == 60.0
+    assert json.loads(params["waypoints"]) == [
+        {"x": 1.0, "y": 2.0, "node_radius": 0.6, "edge_radius": 0.6},
+        {"x": 3.0, "y": 4.0},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_guided_move_without_radiuses_omits_radius_params():
+    api = FakeMirApi()
+    gm = MirGuidedMove(label="route", goal_x=1.0, goal_y=2.0, goal_orientation=0.0)
+    node, ctx = _build_create_node(api, [gm])
+
+    await node._execute()
+
+    params = _params_by_id(api.actions[0])
+    assert "goal_node_radius" not in params
+    assert "goal_edge_radius" not in params
+    assert json.loads(params["waypoints"]) == []
+
+
+@pytest.mark.asyncio
+async def test_guided_move_mixes_with_other_actions_in_order():
+    api = FakeMirApi()
+    gm = MirGuidedMove(label="route", goal_x=1.0, goal_y=2.0, goal_orientation=0.0)
+    node, ctx = _build_create_node(
+        api,
+        [
+            gm,
+            MirWaypoint(label="wp", x=9.0, y=9.0, orientation=0.0),
+        ],
+    )
+
+    await node._execute()
+
+    assert [a["action_type"] for a in api.actions] == ["guided_move", "move_to_position"]
+    assert [a["priority"] for a in api.actions] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_guided_move_failure_names_firmware_requirement():
+    class FailingApi(FakeMirApi):
+        async def add_action_to_mission(self, action_type, mission_id, parameters, priority):
+            raise RuntimeError("invalid action type")
+
+    api = FailingApi()
+    gm = MirGuidedMove(label="route", goal_x=1.0, goal_y=2.0, goal_orientation=0.0)
+    node, ctx = _build_create_node(api, [gm])
+
+    with pytest.raises(RuntimeError, match="3.8.0"):
+        await node._execute()

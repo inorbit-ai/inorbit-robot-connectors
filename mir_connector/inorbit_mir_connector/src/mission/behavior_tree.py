@@ -34,6 +34,9 @@
 #     `finished` timestamp. Matching by guid (not list length) ignores a load_mission's
 #     inlined sub-actions, whose guids are foreign to our set, so nested missions no longer
 #     over-complete. Best-effort: a tracking error never aborts the completion poll.
+#   - 2026-07-22 Tomás Badenes: build MiR guided_move actions from MirGuidedMove entries and
+#     track their per-waypoint tasks via GET /guided_move (spec routes-guided-move.md).
+#     Action type string and parameter ids are UNVERIFIED against a live 3.8+ robot.
 
 """Custom behavior tree nodes for executing compiled native MiR missions.
 
@@ -47,6 +50,7 @@ The tree for a single MissionStepExecuteMirNativeMission step:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 import uuid
@@ -79,6 +83,7 @@ from inorbit_mir_connector.src.mir_api import (
 )
 from inorbit_mir_connector.src.mission.datatypes import (
     MirAction,
+    MirGuidedMove,
     MirWaypoint,
     MissionStepExecuteMirNativeMission,
 )
@@ -87,6 +92,10 @@ logger = logging.getLogger(__name__)
 
 # Distance threshold for MiR move missions (meters)
 _MIR_MOVE_DISTANCE_THRESHOLD = 0.1
+
+# UNVERIFIED on a live 3.8+ robot: action type string and parameter ids assumed from
+# "How to use Guided move 1.1" (spec routes-guided-move.md, verify checklist).
+_MIR_GUIDED_MOVE_ACTION_TYPE = "guided_move"
 
 # Polling interval for mission queue state checks
 _POLL_INTERVAL_SECS = 1.0
@@ -203,6 +212,32 @@ class CreateMirNativeMissionNode(BehaviorTree):
                         param_values["retries"] = 5
                     else:
                         param_values["blocked_path_timeout"] = 60.0
+                elif isinstance(action, MirGuidedMove):
+                    action_type = _MIR_GUIDED_MOVE_ACTION_TYPE
+                    waypoints_json = [
+                        {
+                            k: v
+                            for k, v in {
+                                "x": w.x,
+                                "y": w.y,
+                                "node_radius": w.node_radius,
+                                "edge_radius": w.edge_radius,
+                            }.items()
+                            if v is not None
+                        }
+                        for w in action.waypoints
+                    ]
+                    param_values = {
+                        "x": action.goal_x,
+                        "y": action.goal_y,
+                        "orientation": action.goal_orientation,
+                        "blocked_path_timeout": 60.0,
+                        "waypoints": json.dumps(waypoints_json),
+                    }
+                    if action.goal_node_radius is not None:
+                        param_values["goal_node_radius"] = action.goal_node_radius
+                    if action.goal_edge_radius is not None:
+                        param_values["goal_edge_radius"] = action.goal_edge_radius
                 elif isinstance(action, MirAction):
                     action_type = action.action_type
                     param_values = dict(action.parameters)
@@ -245,6 +280,11 @@ class CreateMirNativeMissionNode(BehaviorTree):
             raise RuntimeError(error_msg) from e
         except Exception as e:
             error_msg = f"Failed to create/queue MiR native mission: {e}"
+            if any(isinstance(a, MirGuidedMove) for a in actions):
+                error_msg += (
+                    " (mission contains a route/guided_move action; MiR software 3.8.0+ "
+                    "is required for guided moves)"
+                )
             logger.error(error_msg)
             self._shared_memory.set(SharedMemoryKeys.MIR_ERROR_MESSAGE, error_msg)
             raise RuntimeError(error_msg) from e

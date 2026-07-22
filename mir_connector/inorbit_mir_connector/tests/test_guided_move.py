@@ -9,16 +9,64 @@ Spec: specs/routes-guided-move.md
 
 from __future__ import annotations
 
-from inorbit_edge_executor.datatypes import RouteSegmentCorridor
+import logging
+import math
+
+import pytest
+from inorbit_edge_executor.datatypes import (
+    MissionDefinition,
+    MissionStepPoseWaypoint,
+    MissionStepWait,
+    Pose,
+    RouteSegment,
+    RouteSegmentCorridor,
+    RouteSegmentTrajectory,
+    RouteSegmentTrajectoryNurbsParameters,
+)
+from inorbit_edge_executor.mission import Mission
+
 from inorbit_mir_connector.src.mission.datatypes import (
     GuidedMoveWaypoint,
+    MirAction,
     MirGuidedMove,
+    MirWaypoint,
     MissionStepExecuteMirNativeMission,
 )
 from inorbit_mir_connector.src.mission.translator import (
     GUIDED_MOVE_MAX_RADIUS,
+    InOrbitToMirTranslator,
     _corridor_to_radius,
 )
+
+ROBOT_ID = "test-robot-01"
+
+
+def _route_wp(x, y, theta=0.0, width=None, label="rwp", complete_task=None, timeout=None):
+    seg_kwargs = {"routeId": "route-1"}
+    if width is not None:
+        seg_kwargs["corridor"] = {"width": width}
+    kwargs = {
+        "waypoint": Pose(x=x, y=y, theta=theta),
+        "routeSegment": RouteSegment(**seg_kwargs),
+        "label": label,
+    }
+    if complete_task is not None:
+        kwargs["completeTask"] = complete_task
+    if timeout is not None:
+        kwargs["timeoutSecs"] = timeout
+    return MissionStepPoseWaypoint(**kwargs)
+
+
+def _plain_wp(x, y, theta=0.0, label="wp"):
+    return MissionStepPoseWaypoint(waypoint=Pose(x=x, y=y, theta=theta), label=label)
+
+
+def _mission(steps, label="test"):
+    return Mission(
+        id="mission-001",
+        robot_id=ROBOT_ID,
+        definition=MissionDefinition(label=label, steps=steps),
+    )
 
 
 class TestGuidedMoveDatatypes:
@@ -76,3 +124,109 @@ class TestCorridorToRadius:
 
     def test_none_corridor_is_none(self):
         assert _corridor_to_radius(None) is None
+
+
+class TestRouteRunGrouping:
+    def test_route_run_collapses_into_one_guided_move(self):
+        m = _mission(
+            [
+                _route_wp(1, 1, width=1.0, complete_task="t1"),
+                _route_wp(2, 2, width=2.0, complete_task="t2"),
+                _route_wp(3, 3, theta=math.radians(90), width=1.0, complete_task="t3"),
+            ]
+        )
+        result = InOrbitToMirTranslator.translate(m)
+
+        assert len(result.definition.steps) == 1
+        step = result.definition.steps[0]
+        assert len(step.actions) == 1
+        gm = step.actions[0]
+        assert isinstance(gm, MirGuidedMove)
+        # goal = last run step, its corridor maps to goal radiuses
+        assert (gm.goal_x, gm.goal_y) == (3.0, 3.0)
+        assert gm.goal_orientation == pytest.approx(90.0)
+        assert gm.goal_node_radius == 0.5
+        assert gm.goal_edge_radius == 0.5
+        # intermediates carry their own leg radius (edge INTO the waypoint)
+        assert [(w.x, w.y, w.node_radius, w.edge_radius) for w in gm.waypoints] == [
+            (1.0, 1.0, 0.5, 0.5),
+            (2.0, 2.0, 1.0, 1.0),
+        ]
+        # nested task-id entry parallel to [*waypoints, goal]
+        assert step.action_task_ids == [["t1", "t2", "t3"]]
+
+    def test_no_corridor_leg_has_none_radiuses(self):
+        m = _mission([_route_wp(1, 1), _route_wp(2, 2)])
+        gm = InOrbitToMirTranslator.translate(m).definition.steps[0].actions[0]
+        assert gm.waypoints[0].node_radius is None
+        assert gm.goal_node_radius is None
+
+    def test_single_leg_run_has_empty_waypoints(self):
+        m = _mission([_route_wp(4, 5, width=1.0)])
+        gm = InOrbitToMirTranslator.translate(m).definition.steps[0].actions[0]
+        assert gm.waypoints == []
+        assert (gm.goal_x, gm.goal_y) == (4.0, 5.0)
+
+    def test_plain_waypoint_breaks_run_but_stays_in_native_group(self):
+        m = _mission([_route_wp(1, 1), _route_wp(2, 2), _plain_wp(9, 9)])
+        step = InOrbitToMirTranslator.translate(m).definition.steps[0]
+        assert len(step.actions) == 2
+        assert isinstance(step.actions[0], MirGuidedMove)
+        assert isinstance(step.actions[1], MirWaypoint)
+
+    def test_wait_breaks_run(self):
+        m = _mission(
+            [
+                _route_wp(1, 1),
+                MissionStepWait(timeoutSecs=5, label="wait"),
+                _route_wp(2, 2),
+            ]
+        )
+        step = InOrbitToMirTranslator.translate(m).definition.steps[0]
+        assert [type(a) for a in step.actions] == [MirGuidedMove, MirAction, MirGuidedMove]
+
+    def test_route_run_timeout_summed_when_all_bounded(self):
+        m = _mission([_route_wp(1, 1, timeout=10), _route_wp(2, 2, timeout=20)])
+        step = InOrbitToMirTranslator.translate(m).definition.steps[0]
+        assert step.timeout_secs == 30
+
+    def test_route_run_unbounded_when_any_step_unbounded(self):
+        m = _mission([_route_wp(1, 1, timeout=10), _route_wp(2, 2)])
+        step = InOrbitToMirTranslator.translate(m).definition.steps[0]
+        assert step.timeout_secs is None
+
+    def test_nurbs_trajectory_rejected(self):
+        nurbs = RouteSegmentTrajectory(
+            type="nurbs",
+            parameters=RouteSegmentTrajectoryNurbsParameters(
+                degree=2,
+                knotVector=[0, 0, 0, 1, 1, 1],
+                controlPoints=[{"x": 0.0, "y": 0.0}, {"x": 1.0, "y": 1.0}, {"x": 2.0, "y": 0.0}],
+            ),
+        )
+        step = MissionStepPoseWaypoint(
+            waypoint=Pose(x=1, y=1, theta=0),
+            routeSegment=RouteSegment(routeId="route-1", trajectory=nurbs),
+            label="nurbs-wp",
+        )
+        with pytest.raises(ValueError, match="(?i)nurbs"):
+            InOrbitToMirTranslator.translate(_mission([step]))
+
+    def test_intermediate_theta_dropped_with_warning(self, caplog):
+        m = _mission(
+            [
+                _route_wp(1, 1, theta=math.radians(45)),
+                _route_wp(2, 2, theta=math.radians(90)),
+            ]
+        )
+        with caplog.at_level(logging.WARNING):
+            gm = InOrbitToMirTranslator.translate(m).definition.steps[0].actions[0]
+        assert not hasattr(gm.waypoints[0], "orientation")
+        assert any("theta" in r.message.lower() for r in caplog.records)
+
+    def test_route_properties_dropped_with_warning(self, caplog):
+        step = _route_wp(1, 1, width=1.0)
+        step.routeSegment.properties = {"maxSpeed": {"value": "0.5"}}
+        with caplog.at_level(logging.WARNING):
+            InOrbitToMirTranslator.translate(_mission([step, _route_wp(2, 2)]))
+        assert any("properties" in r.message.lower() for r in caplog.records)

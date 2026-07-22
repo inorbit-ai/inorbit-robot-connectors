@@ -68,7 +68,9 @@ from inorbit_edge_executor.datatypes import (
 from inorbit_edge_executor.mission import Mission
 
 from .datatypes import (
+    GuidedMoveWaypoint,
     MirAction,
+    MirGuidedMove,
     MirInOrbitMission,
     MirStepsList,
     MirWaypoint,
@@ -187,6 +189,54 @@ class InOrbitToMirTranslator:
         # complete_task of each grouped step (None if untracked), parallel to
         # pending_actions, so the native step can report each task as its MiR action runs.
         pending_task_ids: list[Union[str, None]] = []
+        # Buffered consecutive route steps (step, leg_radius), collapsed into one
+        # MirGuidedMove when the run ends.
+        pending_route_steps: list[tuple[MissionStepPoseWaypoint, Union[float, None]]] = []
+
+        def flush_route_run():
+            """Collapse buffered route steps into one MirGuidedMove.
+
+            The last step is the goal (its corridor maps to the goal radiuses);
+            the rest become guided-move waypoints, each carrying the radius of
+            the leg INTO it. Task ids ride as one nested list entry parallel to
+            [*waypoints, goal]. A no-op when nothing is buffered.
+            """
+            if not pending_route_steps:
+                return
+            goal_step, goal_radius = pending_route_steps[-1]
+            waypoints = []
+            for s, radius in pending_route_steps[:-1]:
+                if s.waypoint.theta is not None:
+                    logger.warning(
+                        f"Route step {s.label!r}: intermediate waypoint theta is dropped "
+                        f"(MiR guided-move waypoints carry no orientation)"
+                    )
+                waypoints.append(
+                    GuidedMoveWaypoint(
+                        x=s.waypoint.x, y=s.waypoint.y, node_radius=radius, edge_radius=radius
+                    )
+                )
+            wp = goal_step.waypoint
+            orientation_deg = (math.degrees(wp.theta) + 180) % 360 - 180
+            n_route_steps = len(pending_route_steps)
+            label = goal_step.label or f"Route ({n_route_steps} waypoints)"
+            pending_actions.append(
+                MirGuidedMove(
+                    label=label,
+                    goal_x=wp.x,
+                    goal_y=wp.y,
+                    goal_orientation=orientation_deg,
+                    waypoints=waypoints,
+                    goal_node_radius=goal_radius,
+                    goal_edge_radius=goal_radius,
+                )
+            )
+            pending_labels.append(label)
+            timeouts = [s.timeout_secs for s, _ in pending_route_steps]
+            pending_timeouts.append(sum(timeouts) if all(t is not None for t in timeouts) else None)
+            # Nested entry: per-run-step task ids, parallel to [*waypoints, goal].
+            pending_task_ids.append([s.complete_task for s, _ in pending_route_steps])
+            pending_route_steps.clear()
 
         def flush_actions():
             """Emit the buffered actions as one native MiR mission step.
@@ -197,6 +247,7 @@ class InOrbitToMirTranslator:
             action runs), appends it to ``translated_steps``, and clears the
             buffers. A no-op when nothing is buffered.
             """
+            flush_route_run()
             if not pending_actions:
                 pending_timeouts.clear()
                 pending_task_ids.clear()
@@ -237,6 +288,22 @@ class InOrbitToMirTranslator:
 
         for step in mission.definition.steps:
             if isinstance(step, MissionStepPoseWaypoint):
+                route_segment = step.routeSegment
+                if route_segment is not None:
+                    if route_segment.trajectory is not None:
+                        raise ValueError(
+                            f"Route step {step.label!r}: NURBS trajectories are not supported "
+                            f"by the MiR connector (v1 supports straight-line segments only)"
+                        )
+                    if route_segment.properties:
+                        logger.warning(
+                            f"Route step {step.label!r}: route properties "
+                            f"{sorted(route_segment.properties)} are not supported and ignored"
+                        )
+                    pending_route_steps.append((step, _corridor_to_radius(route_segment.corridor)))
+                    continue
+                flush_route_run()
+
                 wp = step.waypoint
                 x, y, theta = wp.x, wp.y, wp.theta
 
@@ -255,6 +322,7 @@ class InOrbitToMirTranslator:
                 continue
 
             if isinstance(step, MissionStepWait):
+                flush_route_run()
                 pending_actions.append(
                     MirAction(
                         label=step.label,
@@ -293,6 +361,7 @@ class InOrbitToMirTranslator:
                             f"has no parameters after excluding reserved keys (all params "
                             f"mis-keyed?)"
                         )
+                    flush_route_run()
                     pending_actions.append(
                         MirAction(
                             label=step.label,

@@ -36,6 +36,11 @@
 #     step (actionTaskIds, parallel to actions) and the original tasks_list is preserved, so
 #     InOrbit per-task tracking still reports each task as its MiR action runs while the
 #     whole group compiles into a single native mission.
+#   - 2026-07-22 Tomás Badenes: InOrbit routes -> MiR guided_move (spec
+#     routes-guided-move.md): corridor-to-radius mapping; consecutive waypoint steps with a
+#     straight-line routeSegment collapse into one MirGuidedMove inside the native group;
+#     NURBS trajectories rejected at translate time; intermediate thetas and route
+#     properties (maxSpeed) dropped with a warning.
 
 """Mission translator that compiles consecutive InOrbit waypoint and
 nestable action steps into single native MiR missions.
@@ -100,7 +105,10 @@ _SCOPE_BEARING_DENIED = (
 )
 _LOOP_ONLY_DENIED = ("break", "continue")
 # Scope-wrapper types whose plain leaf action expresses the postable part without the body.
-_SCOPE_DENIED_ALTERNATIVE = {"set_reset_io": "set_io", "set_reset_plc": "set_plc_register"}
+_SCOPE_DENIED_ALTERNATIVE = {
+    "set_reset_io": "set_io",
+    "set_reset_plc": "set_plc_register",
+}
 _SCOPE_DENIED_REASON = (
     "carries a Scope (child-action) body the connector cannot build as a flat native step; "
     "the body would be silently dropped"
@@ -130,6 +138,27 @@ def _seconds_to_mir_duration(seconds: float) -> str:
     m = int((seconds % 3600) // 60)
     s = seconds % 60
     return f"{h:02d}:{m:02d}:{s:09.6f}"
+
+
+# MiR guided_move radius fields accept [0.0, 5.0] m (How to use Guided move 1.1).
+GUIDED_MOVE_MAX_RADIUS = 5.0
+
+
+def _corridor_to_radius(corridor) -> Union[float, None]:
+    """Map an InOrbit route corridor to a MiR guided-move radius (meters).
+
+    InOrbit corridor is total width; MiR radius is per side, so width/2. An
+    asymmetric corridor cannot be expressed symmetrically: use the
+    conservative min(leftWidth, rightWidth). None means no corridor (MiR
+    defaults apply).
+    """
+    if corridor is None:
+        return None
+    if corridor.width is not None:
+        radius = corridor.width / 2
+    else:
+        radius = min(corridor.leftWidth, corridor.rightWidth)
+    return min(radius, GUIDED_MOVE_MAX_RADIUS)
 
 
 class InOrbitToMirTranslator:
@@ -176,7 +205,9 @@ class InOrbitToMirTranslator:
                 pending_task_ids.clear()
                 return
             n_pending_actions = len(pending_actions)
-            waypoint_count = sum(map(lambda a: isinstance(a, MirWaypoint), pending_actions))
+            waypoint_count = sum(
+                map(lambda a: isinstance(a, MirWaypoint), pending_actions)
+            )
             if waypoint_count == n_pending_actions:
                 # All waypoints
                 label = (
@@ -185,7 +216,11 @@ class InOrbitToMirTranslator:
                     else f"Navigate {n_pending_actions} waypoints"
                 )
             elif n_pending_actions == 1:
-                label = pending_labels[0] if pending_labels[0] else pending_actions[0].label or ""
+                label = (
+                    pending_labels[0]
+                    if pending_labels[0]
+                    else pending_actions[0].label or ""
+                )
             else:
                 label = f"Execute {n_pending_actions} actions"
             native_kwargs: dict = {
@@ -233,7 +268,9 @@ class InOrbitToMirTranslator:
                     MirAction(
                         label=step.label,
                         action_type="wait",
-                        parameters={"time": _seconds_to_mir_duration(step.timeout_secs or 0)},
+                        parameters={
+                            "time": _seconds_to_mir_duration(step.timeout_secs or 0)
+                        },
                     )
                 )
                 pending_labels.append(step.label or "")
@@ -260,7 +297,9 @@ class InOrbitToMirTranslator:
                         )
                     # Each surviving (non-reserved) key is a MiR action parameter id. Extract by
                     # exact reserved-key exclusion (not prefix-strip), matching vda5050.
-                    parameters = {k: v for k, v in args.items() if k not in RESERVED_MIR_ARG_KEYS}
+                    parameters = {
+                        k: v for k, v in args.items() if k not in RESERVED_MIR_ARG_KEYS
+                    }
                     if not parameters:
                         logger.warning(
                             f"runAction step {step.label!r}: native MiR action {action_type!r} "
@@ -280,7 +319,10 @@ class InOrbitToMirTranslator:
                     continue
                 # No exact reserved key: route to the cloud action path. Warn on a stray
                 # mir_-prefixed key so a fat-fingered type key fails loudly, not silently.
-                if any(isinstance(k, str) and k.startswith(MIR_RESERVED_PREFIX) for k in args):
+                if any(
+                    isinstance(k, str) and k.startswith(MIR_RESERVED_PREFIX)
+                    for k in args
+                ):
                     logger.warning(
                         f"runAction step {step.label!r} has {MIR_RESERVED_PREFIX}-prefixed "
                         f"arg(s) but no {RESERVED_MIR_ARG_TYPE_KEY}; routing to the cloud action "

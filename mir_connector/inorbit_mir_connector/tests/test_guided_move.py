@@ -28,9 +28,7 @@ class TestGuidedMoveDatatypes:
             goal_x=5.0,
             goal_y=6.0,
             goal_orientation=90.0,
-            waypoints=[
-                GuidedMoveWaypoint(x=1.0, y=2.0, node_radius=0.6, edge_radius=0.6)
-            ],
+            waypoints=[GuidedMoveWaypoint(x=1.0, y=2.0, node_radius=0.6, edge_radius=0.6)],
             goal_node_radius=0.5,
             goal_edge_radius=0.5,
         )
@@ -74,10 +72,7 @@ class TestCorridorToRadius:
         assert _corridor_to_radius(c) == 0.4
 
     def test_clamped_to_mir_max(self):
-        assert (
-            _corridor_to_radius(RouteSegmentCorridor(width=14.0))
-            == GUIDED_MOVE_MAX_RADIUS
-        )
+        assert _corridor_to_radius(RouteSegmentCorridor(width=14.0)) == GUIDED_MOVE_MAX_RADIUS
 
     def test_none_corridor_is_none(self):
         assert _corridor_to_radius(None) is None

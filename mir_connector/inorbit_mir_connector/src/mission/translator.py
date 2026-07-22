@@ -105,10 +105,7 @@ _SCOPE_BEARING_DENIED = (
 )
 _LOOP_ONLY_DENIED = ("break", "continue")
 # Scope-wrapper types whose plain leaf action expresses the postable part without the body.
-_SCOPE_DENIED_ALTERNATIVE = {
-    "set_reset_io": "set_io",
-    "set_reset_plc": "set_plc_register",
-}
+_SCOPE_DENIED_ALTERNATIVE = {"set_reset_io": "set_io", "set_reset_plc": "set_plc_register"}
 _SCOPE_DENIED_REASON = (
     "carries a Scope (child-action) body the connector cannot build as a flat native step; "
     "the body would be silently dropped"
@@ -205,9 +202,7 @@ class InOrbitToMirTranslator:
                 pending_task_ids.clear()
                 return
             n_pending_actions = len(pending_actions)
-            waypoint_count = sum(
-                map(lambda a: isinstance(a, MirWaypoint), pending_actions)
-            )
+            waypoint_count = sum(map(lambda a: isinstance(a, MirWaypoint), pending_actions))
             if waypoint_count == n_pending_actions:
                 # All waypoints
                 label = (
@@ -216,11 +211,7 @@ class InOrbitToMirTranslator:
                     else f"Navigate {n_pending_actions} waypoints"
                 )
             elif n_pending_actions == 1:
-                label = (
-                    pending_labels[0]
-                    if pending_labels[0]
-                    else pending_actions[0].label or ""
-                )
+                label = pending_labels[0] if pending_labels[0] else pending_actions[0].label or ""
             else:
                 label = f"Execute {n_pending_actions} actions"
             native_kwargs: dict = {
@@ -268,9 +259,7 @@ class InOrbitToMirTranslator:
                     MirAction(
                         label=step.label,
                         action_type="wait",
-                        parameters={
-                            "time": _seconds_to_mir_duration(step.timeout_secs or 0)
-                        },
+                        parameters={"time": _seconds_to_mir_duration(step.timeout_secs or 0)},
                     )
                 )
                 pending_labels.append(step.label or "")
@@ -297,9 +286,7 @@ class InOrbitToMirTranslator:
                         )
                     # Each surviving (non-reserved) key is a MiR action parameter id. Extract by
                     # exact reserved-key exclusion (not prefix-strip), matching vda5050.
-                    parameters = {
-                        k: v for k, v in args.items() if k not in RESERVED_MIR_ARG_KEYS
-                    }
+                    parameters = {k: v for k, v in args.items() if k not in RESERVED_MIR_ARG_KEYS}
                     if not parameters:
                         logger.warning(
                             f"runAction step {step.label!r}: native MiR action {action_type!r} "
@@ -319,10 +306,7 @@ class InOrbitToMirTranslator:
                     continue
                 # No exact reserved key: route to the cloud action path. Warn on a stray
                 # mir_-prefixed key so a fat-fingered type key fails loudly, not silently.
-                if any(
-                    isinstance(k, str) and k.startswith(MIR_RESERVED_PREFIX)
-                    for k in args
-                ):
+                if any(isinstance(k, str) and k.startswith(MIR_RESERVED_PREFIX) for k in args):
                     logger.warning(
                         f"runAction step {step.label!r} has {MIR_RESERVED_PREFIX}-prefixed "
                         f"arg(s) but no {RESERVED_MIR_ARG_TYPE_KEY}; routing to the cloud action "

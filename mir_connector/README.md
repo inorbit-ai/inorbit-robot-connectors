@@ -802,6 +802,27 @@ to that mission's GUID.
   is created on the robot; nothing runs.
 - A failure identifies the mission, not which step within it failed.
 
+## 🛣️ Routes
+
+InOrbit routes (CaC `SpatialAnnotation` of `type: route`) are dispatched as consecutive
+waypoint mission steps carrying a resolved `routeSegment` per leg. The connector collapses
+each run of consecutive route steps into a single MiR `guided_move` action, so the robot
+drives through the waypoints without stopping at each one.
+
+Requirements:
+
+- MiR software 3.8+ (guided move was introduced in that release).
+- `graph` must be included in the account's MissionExecution `planner.allowed` so routes
+  are resolved server-side before dispatch.
+- Straight-line segments only: a route segment with a NURBS trajectory is rejected at
+  translation time, before any mission is created on the robot.
+
+Corridor width maps to the guided-move radiuses: a symmetric corridor's total `width`
+becomes `width / 2` per side; an asymmetric corridor (`leftWidth`/`rightWidth`) uses the
+narrower side for both radiuses. Values that would exceed 5 m (corridor wider than 10 m)
+are clamped to MiR's 5 m radius maximum. A step without a corridor omits the radiuses and
+the robot's own defaults apply.
+
 ## Next steps
 
 Now that all of your MiR robots are InOrbit connected, visit the [config as code examples](cac_examples/README.md)

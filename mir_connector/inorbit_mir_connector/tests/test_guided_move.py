@@ -232,6 +232,14 @@ class TestRouteRunGrouping:
         assert not hasattr(gm.waypoints[0], "orientation")
         assert any("theta" in r.message.lower() for r in caplog.records)
 
+    def test_intermediate_zero_theta_dropped_without_warning(self, caplog):
+        # Dispatched waypoints virtually always carry theta (usually 0.0); warning
+        # only when it is nonzero, or every multi-leg route would log noise.
+        m = _mission([_route_wp(1, 1, theta=0.0), _route_wp(2, 2, theta=0.0)])
+        with caplog.at_level(logging.WARNING):
+            InOrbitToMirTranslator.translate(m)
+        assert not any("theta" in r.message.lower() for r in caplog.records)
+
     def test_route_properties_dropped_with_warning(self, caplog):
         step = _route_wp(1, 1, width=1.0)
         step.routeSegment.properties = {"maxSpeed": {"value": "0.5"}}
@@ -429,7 +437,7 @@ async def test_guided_running_marks_intermediates_by_index():
     api = FakeTrackingMirApi()
     api.queue_actions = {1: {"action_id": "guid-gm", "finished": None}}
     # current_waypoint_index=3: run steps 0 and 1 completed (i <= k-2)
-    api.guided_move = {"current_waypoint_index": 3}
+    api.guided_move = {"current_waypoint_index": 3, "action_id": "guid-gm"}
     node, ctx = _build_wait_node(api, [["t0", "t1", "t2", "t-goal"]], ["guid-gm"])
 
     await node._report_progress(7)
@@ -442,13 +450,43 @@ async def test_guided_running_marks_intermediates_by_index():
 async def test_guided_running_low_index_marks_first_task_in_progress():
     api = FakeTrackingMirApi()
     api.queue_actions = {1: {"action_id": "guid-gm", "finished": None}}
-    api.guided_move = {"current_waypoint_index": 0}
+    api.guided_move = {"current_waypoint_index": 0, "action_id": "guid-gm"}
     node, ctx = _build_wait_node(api, [["t0", "t1"]], ["guid-gm"])
 
     await node._report_progress(7)
 
     assert ctx.mission.completed == []
     assert ctx.mission.in_progress == ["t0"]
+
+
+@pytest.mark.asyncio
+async def test_guided_stale_first_poll_withholds_completion_then_trusts_index_change():
+    api = FakeTrackingMirApi()
+    api.queue_actions = {1: {"action_id": "guid-gm", "finished": None}}
+    # No action_id in the guided-move status: identity unconfirmed (candidate for staleness).
+    api.guided_move = {"current_waypoint_index": 3}
+    node, ctx = _build_wait_node(api, [["t0", "t1", "t2", "t-goal"]], ["guid-gm"])
+
+    await node._report_progress(7)
+    # First poll for this guid: baseline recorded, no completions applied yet.
+    assert ctx.mission.completed == []
+
+    api.guided_move = {"current_waypoint_index": 4}  # index changed since baseline -> trusted
+    await node._report_progress(7)
+    assert ctx.mission.completed == ["t0", "t1", "t2"]
+
+
+@pytest.mark.asyncio
+async def test_guided_stale_status_unchanged_index_never_completes():
+    api = FakeTrackingMirApi()
+    api.queue_actions = {1: {"action_id": "guid-gm", "finished": None}}
+    api.guided_move = {"current_waypoint_index": 3}
+    node, ctx = _build_wait_node(api, [["t0", "t1", "t2", "t-goal"]], ["guid-gm"])
+
+    await node._report_progress(7)
+    await node._report_progress(7)  # same index again: still untrusted
+
+    assert ctx.mission.completed == []
 
 
 @pytest.mark.asyncio
@@ -486,3 +524,35 @@ async def test_finish_tasks_flattens_nested_entries():
     await node._finish_tasks()
 
     assert sorted(ctx.mission.completed) == ["t0", "t1", "t2"]
+
+
+@pytest.mark.asyncio
+async def test_translated_route_run_posts_one_guided_move_action():
+    """Integration: translator output fed straight into CreateMirNativeMissionNode."""
+    m = _mission(
+        [
+            _route_wp(1, 1, width=1.0, complete_task="t1"),
+            _route_wp(2, 2, width=2.0, complete_task="t2"),
+            _route_wp(3, 3, theta=math.radians(90), width=1.0, complete_task="t3"),
+        ]
+    )
+    step = InOrbitToMirTranslator.translate(m).definition.steps[0]
+    assert isinstance(step, MissionStepExecuteMirNativeMission)
+
+    api = FakeMirApi()
+    node, ctx = _build_create_node(api, step.actions, step.action_task_ids)
+
+    await node._execute()
+
+    assert [a["action_type"] for a in api.actions] == ["guided_move"]
+    params = _params_by_id(api.actions[0])
+    assert params["x"] == 3.0
+    assert params["y"] == 3.0
+    assert params["orientation"] == pytest.approx(90.0)
+    assert json.loads(params["waypoints"]) == [
+        {"x": 1.0, "y": 1.0, "node_radius": 0.5, "edge_radius": 0.5},
+        {"x": 2.0, "y": 2.0, "node_radius": 1.0, "edge_radius": 1.0},
+    ]
+    assert params["goal_node_radius"] == 0.5
+    assert params["goal_edge_radius"] == 0.5
+    assert step.action_task_ids == [["t1", "t2", "t3"]]

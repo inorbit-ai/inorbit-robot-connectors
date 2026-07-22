@@ -41,6 +41,9 @@
 #     straight-line routeSegment collapse into one MirGuidedMove inside the native group;
 #     NURBS trajectories rejected at translate time; intermediate thetas and route
 #     properties (maxSpeed) dropped with a warning.
+#   - 2026-07-22 Tomás Badenes: warn on dropped intermediate route theta only when it is
+#     nonzero (dispatched waypoints virtually always carry theta, usually 0.0, so the
+#     warning was firing on every multi-leg route).
 
 """Mission translator that compiles consecutive InOrbit waypoint and
 nestable action steps into single native MiR missions.
@@ -206,7 +209,7 @@ class InOrbitToMirTranslator:
             goal_step, goal_radius = pending_route_steps[-1]
             waypoints = []
             for s, radius in pending_route_steps[:-1]:
-                if s.waypoint.theta is not None:
+                if s.waypoint.theta:
                     logger.warning(
                         f"Route step {s.label!r}: intermediate waypoint theta is dropped "
                         f"(MiR guided-move waypoints carry no orientation)"

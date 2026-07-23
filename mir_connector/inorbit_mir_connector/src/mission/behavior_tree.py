@@ -40,6 +40,8 @@
 #   - 2026-07-23 Tomás Badenes: apply a GET /guided_move status only when its action_id matches
 #     the tracked action guid (the endpoint reports current-or-latest, so an unmatched status
 #     may belong to a previous or concurrent guided move); otherwise degrade to mark-at-end.
+#   - 2026-07-23 Tomás Badenes: expand _iter_task_ids docstring explaining the nested
+#     action_task_ids shape (docs only, no functional change).
 
 """Custom behavior tree nodes for executing compiled native MiR missions.
 
@@ -306,8 +308,16 @@ class CreateMirNativeMissionNode(BehaviorTree):
 
 
 def _iter_task_ids(entries):
-    """Flatten action_task_ids: nested list entries carry a guided move's
-    per-waypoint task ids."""
+    """Yield every task id in an ``action_task_ids`` list, one level flattened.
+
+    ``action_task_ids`` is parallel to the mission's actions: a scalar entry
+    (task id or None) for a plain action, a nested list for a guided move whose
+    single MiR action covers N route steps (see
+    ``MissionStepExecuteMirNativeMission.action_task_ids``). The nesting only
+    matters when mapping the robot's current_waypoint_index to a specific task
+    (``_mark_guided_progress``); consumers that just need "all task ids in this
+    group" (``_tracking_tasks``, ``_finish_tasks``) use this flattened view.
+    """
     for entry in entries:
         if isinstance(entry, list):
             yield from entry

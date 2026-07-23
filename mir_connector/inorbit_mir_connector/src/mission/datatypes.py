@@ -15,6 +15,8 @@
 #   - 2026-07-22 Tomás Badenes: add GuidedMoveWaypoint + MirGuidedMove (InOrbit routes ->
 #     MiR guided_move); widen actions and action_task_ids (a nested list entry carries a
 #     guided move's per-waypoint task ids).
+#   - 2026-07-23 Tomás Badenes: document the action_task_ids shape with a worked example
+#     (comment only, no functional change).
 
 """MiR-specific mission datatypes for mission translation.
 
@@ -99,6 +101,14 @@ class MissionStepExecuteMirNativeMission(MissionStep):
         description="Ordered actions for native MiR mission"
     )
     robot_id: str = Field(description="InOrbit robot ID")
+    # Parallel to `actions`: entry i answers "which InOrbit task(s) does action i
+    # complete?". A scalar entry (task id or None) pairs with a plain action, which maps
+    # to exactly one InOrbit step. A MirGuidedMove collapses N route steps into ONE MiR
+    # action, and each of those steps may carry its own completeTask, so its entry is a
+    # nested list parallel to the run's [*waypoints, goal]; the position is what lets the
+    # completion node map the robot's current_waypoint_index to the right task mid-run.
+    # E.g. steps [route(t1), route(t2), route_goal(t3), waypoint(t4)] compile to
+    # actions=[MirGuidedMove, MirWaypoint] and action_task_ids=[["t1", "t2", "t3"], "t4"].
     action_task_ids: List[Union[str, None, List[Union[str, None]]]] = Field(
         default_factory=list,
         description=(

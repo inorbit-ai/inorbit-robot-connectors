@@ -35,7 +35,7 @@
 #     inlined sub-actions, whose guids are foreign to our set, so nested missions no longer
 #     over-complete. Best-effort: a tracking error never aborts the completion poll.
 #   - 2026-07-22 Tomás Badenes: build MiR guided_move actions from MirGuidedMove entries and
-#     track their per-waypoint tasks via GET /guided_move (spec routes-guided-move.md).
+#     track their per-waypoint tasks via GET /guided_move (InOrbit routes support).
 #     Action type string and parameter ids are UNVERIFIED against a live 3.8+ robot.
 #   - 2026-07-23 Tomás Badenes: apply a GET /guided_move status only when its action_id matches
 #     the tracked action guid (the endpoint reports current-or-latest, so an unmatched status
@@ -97,7 +97,7 @@ logger = logging.getLogger(__name__)
 _MIR_MOVE_DISTANCE_THRESHOLD = 0.1
 
 # UNVERIFIED on a live 3.8+ robot: action type string and parameter ids assumed from
-# "How to use Guided move 1.1" (spec routes-guided-move.md, verify checklist).
+# MiR's "How to use Guided move 1.1" application guide; confirm via GET /actions.
 _MIR_GUIDED_MOVE_ACTION_TYPE = "guided_move"
 
 # Polling interval for mission queue state checks
@@ -453,9 +453,9 @@ class WaitForMirMissionCompletionNode(BehaviorTree):
         with current_waypoint_index over [start, *waypoints, goal] (0 = start),
         so the status is applied only when its ``action_id`` matches ``guid``
         (any other status may belong to a previous or concurrent guided move).
-        Whether the index means "reached" or "heading to" is unverified
-        (UNVERIFIED, spec routes-guided-move.md), so run step i is completed
-        only when index >= i + 2 (never early under either reading); the first
+        Whether the index means "reached" or "heading to" is UNVERIFIED
+        against a live robot, so run step i is completed only when
+        index >= i + 2 (never early under either reading); the first
         pending task is in_progress. Best-effort: poll failures and unmatched
         statuses degrade to mark-at-end.
         """

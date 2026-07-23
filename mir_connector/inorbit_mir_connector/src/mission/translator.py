@@ -36,8 +36,8 @@
 #     step (actionTaskIds, parallel to actions) and the original tasks_list is preserved, so
 #     InOrbit per-task tracking still reports each task as its MiR action runs while the
 #     whole group compiles into a single native mission.
-#   - 2026-07-22 Tomás Badenes: InOrbit routes -> MiR guided_move (spec
-#     routes-guided-move.md): corridor-to-radius mapping; consecutive waypoint steps with a
+#   - 2026-07-22 Tomás Badenes: InOrbit routes -> MiR guided_move:
+#     corridor-to-radius mapping; consecutive waypoint steps with a
 #     straight-line routeSegment collapse into one MirGuidedMove inside the native group;
 #     NURBS trajectories rejected at translate time; intermediate thetas and route
 #     properties (maxSpeed) dropped with a warning.
@@ -145,7 +145,7 @@ def _seconds_to_mir_duration(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:09.6f}"
 
 
-# MiR guided_move radius fields accept [0.0, 5.0] m (How to use Guided move 1.1).
+# MiR guided_move radius fields accept [0.0, 5.0] m (MiR's "How to use Guided move" guide).
 GUIDED_MOVE_MAX_RADIUS = 5.0
 
 

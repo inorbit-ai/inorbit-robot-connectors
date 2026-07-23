@@ -36,17 +36,11 @@
 #     step (actionTaskIds, parallel to actions) and the original tasks_list is preserved, so
 #     InOrbit per-task tracking still reports each task as its MiR action runs while the
 #     whole group compiles into a single native mission.
-#   - 2026-07-22 Tomás Badenes: InOrbit routes -> MiR guided_move:
-#     corridor-to-radius mapping; consecutive waypoint steps with a
-#     straight-line routeSegment collapse into one MirGuidedMove inside the native group;
-#     NURBS trajectories rejected at translate time; intermediate thetas and route
-#     properties (maxSpeed) dropped with a warning.
-#   - 2026-07-22 Tomás Badenes: warn on dropped intermediate route theta only when it is
-#     nonzero (dispatched waypoints virtually always carry theta, usually 0.0, so the
-#     warning was firing on every multi-leg route).
-#   - 2026-07-23 Tomás Badenes: treat a None waypoint theta as 0.0 (Pose.theta is optional
-#     and math.degrees(None) raised TypeError), and name the actual trajectory type in the
-#     non-straight-segment rejection message.
+#   - 2026-07-23 Tomás Badenes: InOrbit routes -> MiR guided_move: corridor-to-radius
+#     mapping; consecutive waypoint steps with a straight-line routeSegment collapse into
+#     one MirGuidedMove inside the native group; non-straight trajectories rejected at
+#     translate time; nonzero intermediate thetas and route properties (maxSpeed) dropped
+#     with a warning; None waypoint theta treated as 0.0.
 
 """Mission translator that compiles consecutive InOrbit waypoint and
 nestable action steps into single native MiR missions.

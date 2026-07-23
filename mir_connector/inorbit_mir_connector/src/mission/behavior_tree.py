@@ -34,14 +34,11 @@
 #     `finished` timestamp. Matching by guid (not list length) ignores a load_mission's
 #     inlined sub-actions, whose guids are foreign to our set, so nested missions no longer
 #     over-complete. Best-effort: a tracking error never aborts the completion poll.
-#   - 2026-07-22 Tomás Badenes: build MiR guided_move actions from MirGuidedMove entries and
-#     track their per-waypoint tasks via GET /guided_move (InOrbit routes support).
-#     Action type string and parameter ids are UNVERIFIED against a live 3.8+ robot.
-#   - 2026-07-23 Tomás Badenes: apply a GET /guided_move status only when its action_id matches
-#     the tracked action guid (the endpoint reports current-or-latest, so an unmatched status
-#     may belong to a previous or concurrent guided move); otherwise degrade to mark-at-end.
-#   - 2026-07-23 Tomás Badenes: expand _iter_task_ids docstring explaining the nested
-#     action_task_ids shape (docs only, no functional change).
+#   - 2026-07-23 Tomás Badenes: InOrbit routes support: build MiR guided_move actions from
+#     MirGuidedMove entries and track their per-waypoint tasks via GET /guided_move, applying
+#     a status only when its action_id matches the tracked action guid (the endpoint reports
+#     current-or-latest); otherwise degrade to mark-at-end. Action type string and parameter
+#     ids are UNVERIFIED against a live 3.8+ robot.
 
 """Custom behavior tree nodes for executing compiled native MiR missions.
 
@@ -308,16 +305,9 @@ class CreateMirNativeMissionNode(BehaviorTree):
 
 
 def _iter_task_ids(entries):
-    """Yield every task id in an ``action_task_ids`` list, one level flattened.
-
-    ``action_task_ids`` is parallel to the mission's actions: a scalar entry
-    (task id or None) for a plain action, a nested list for a guided move whose
-    single MiR action covers N route steps (see
-    ``MissionStepExecuteMirNativeMission.action_task_ids``). The nesting only
-    matters when mapping the robot's current_waypoint_index to a specific task
-    (``_mark_guided_progress``); consumers that just need "all task ids in this
-    group" (``_tracking_tasks``, ``_finish_tasks``) use this flattened view.
-    """
+    """Yield every task id in an ``action_task_ids`` list, one level flattened
+    (a nested list entry carries a guided move's per-waypoint task ids; only
+    ``_mark_guided_progress`` cares about the positions)."""
     for entry in entries:
         if isinstance(entry, list):
             yield from entry

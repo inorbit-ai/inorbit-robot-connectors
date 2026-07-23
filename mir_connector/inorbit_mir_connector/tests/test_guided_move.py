@@ -240,6 +240,17 @@ class TestRouteRunGrouping:
             InOrbitToMirTranslator.translate(m)
         assert not any("theta" in r.message.lower() for r in caplog.records)
 
+    def test_none_theta_defaults_to_zero_orientation(self):
+        # Pose.theta is Optional; a None goal theta must not crash translation.
+        m = _mission([_route_wp(1, 1, theta=None), _route_wp(2, 2, theta=None)])
+        gm = InOrbitToMirTranslator.translate(m).definition.steps[0].actions[0]
+        assert gm.goal_orientation == 0.0
+
+    def test_plain_waypoint_none_theta_defaults_to_zero_orientation(self):
+        m = _mission([_plain_wp(1, 1, theta=None)])
+        wp = InOrbitToMirTranslator.translate(m).definition.steps[0].actions[0]
+        assert wp.orientation == 0.0
+
     def test_route_properties_dropped_with_warning(self, caplog):
         step = _route_wp(1, 1, width=1.0)
         step.routeSegment.properties = {"maxSpeed": {"value": "0.5"}}
@@ -460,33 +471,40 @@ async def test_guided_running_low_index_marks_first_task_in_progress():
 
 
 @pytest.mark.asyncio
-async def test_guided_stale_first_poll_withholds_completion_then_trusts_index_change():
+async def test_guided_status_without_matching_action_id_is_ignored():
     api = FakeTrackingMirApi()
     api.queue_actions = {1: {"action_id": "guid-gm", "finished": None}}
-    # No action_id in the guided-move status: identity unconfirmed (candidate for staleness).
+    # No action_id in the guided-move status: may belong to another guided move.
     api.guided_move = {"current_waypoint_index": 3}
     node, ctx = _build_wait_node(api, [["t0", "t1", "t2", "t-goal"]], ["guid-gm"])
 
     await node._report_progress(7)
-    # First poll for this guid: baseline recorded, no completions applied yet.
-    assert ctx.mission.completed == []
-
-    api.guided_move = {"current_waypoint_index": 4}  # index changed since baseline -> trusted
+    api.guided_move = {"current_waypoint_index": 4}  # advancing index changes nothing
     await node._report_progress(7)
-    assert ctx.mission.completed == ["t0", "t1", "t2"]
+
+    assert ctx.mission.completed == []
+    assert ctx.mission.in_progress == []
 
 
 @pytest.mark.asyncio
-async def test_guided_stale_status_unchanged_index_never_completes():
+async def test_guided_second_move_ignores_first_moves_status():
+    # Two guided moves queued in one mission: while the FIRST runs, the status
+    # carries its action_id and must not advance the SECOND run's tasks.
     api = FakeTrackingMirApi()
-    api.queue_actions = {1: {"action_id": "guid-gm", "finished": None}}
-    api.guided_move = {"current_waypoint_index": 3}
-    node, ctx = _build_wait_node(api, [["t0", "t1", "t2", "t-goal"]], ["guid-gm"])
+    api.queue_actions = {
+        1: {"action_id": "guid-a", "finished": None},
+        2: {"action_id": "guid-b", "finished": None},
+    }
+    api.guided_move = {"current_waypoint_index": 3, "action_id": "guid-a"}
+    node, ctx = _build_wait_node(api, [["a0", "a1"], ["b0", "b1"]], ["guid-a", "guid-b"])
 
     await node._report_progress(7)
-    await node._report_progress(7)  # same index again: still untrusted
+    api.guided_move = {"current_waypoint_index": 4, "action_id": "guid-a"}
+    await node._report_progress(7)
 
-    assert ctx.mission.completed == []
+    assert "b0" not in ctx.mission.completed and "b1" not in ctx.mission.completed
+    assert ctx.mission.in_progress == []  # unmatched run reports nothing mid-flight
+    assert sorted(set(ctx.mission.completed)) == ["a0", "a1"]
 
 
 @pytest.mark.asyncio

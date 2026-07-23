@@ -44,6 +44,9 @@
 #   - 2026-07-22 Tomás Badenes: warn on dropped intermediate route theta only when it is
 #     nonzero (dispatched waypoints virtually always carry theta, usually 0.0, so the
 #     warning was firing on every multi-leg route).
+#   - 2026-07-23 Tomás Badenes: treat a None waypoint theta as 0.0 (Pose.theta is optional
+#     and math.degrees(None) raised TypeError), and name the actual trajectory type in the
+#     non-straight-segment rejection message.
 
 """Mission translator that compiles consecutive InOrbit waypoint and
 nestable action steps into single native MiR missions.
@@ -220,7 +223,7 @@ class InOrbitToMirTranslator:
                     )
                 )
             wp = goal_step.waypoint
-            orientation_deg = (math.degrees(wp.theta) + 180) % 360 - 180
+            orientation_deg = (math.degrees(wp.theta or 0.0) + 180) % 360 - 180
             n_route_steps = len(pending_route_steps)
             label = goal_step.label or f"Route ({n_route_steps} waypoints)"
             pending_actions.append(
@@ -295,8 +298,9 @@ class InOrbitToMirTranslator:
                 if route_segment is not None:
                     if route_segment.trajectory is not None:
                         raise ValueError(
-                            f"Route step {step.label!r}: NURBS trajectories are not supported "
-                            f"by the MiR connector (v1 supports straight-line segments only)"
+                            f"Route step {step.label!r}: trajectory type "
+                            f"{route_segment.trajectory.type!r} is not supported by the MiR "
+                            f"connector (v1 supports straight-line segments only)"
                         )
                     if route_segment.properties:
                         logger.warning(
@@ -308,7 +312,7 @@ class InOrbitToMirTranslator:
                 flush_route_run()
 
                 wp = step.waypoint
-                x, y, theta = wp.x, wp.y, wp.theta
+                x, y, theta = wp.x, wp.y, wp.theta or 0.0
 
                 # MiR expects orientation in degrees, wrapped to [-180, 180]:
                 # move_to_position rejects anything outside that range with HTTP 400

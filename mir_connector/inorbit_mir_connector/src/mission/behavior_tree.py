@@ -37,9 +37,9 @@
 #   - 2026-07-22 Tomás Badenes: build MiR guided_move actions from MirGuidedMove entries and
 #     track their per-waypoint tasks via GET /guided_move (spec routes-guided-move.md).
 #     Action type string and parameter ids are UNVERIFIED against a live 3.8+ robot.
-#   - 2026-07-22 Tomás Badenes: gate guided-move per-waypoint completion on an action identity
-#     match or an observed index change (GET /guided_move reports current-or-latest, so the
-#     first poll after a handoff can be stale).
+#   - 2026-07-23 Tomás Badenes: apply a GET /guided_move status only when its action_id matches
+#     the tracked action guid (the endpoint reports current-or-latest, so an unmatched status
+#     may belong to a previous or concurrent guided move); otherwise degrade to mark-at-end.
 
 """Custom behavior tree nodes for executing compiled native MiR missions.
 
@@ -347,13 +347,6 @@ class WaitForMirMissionCompletionNode(BehaviorTree):
         self._detail_cache: dict = {}
         # warn once if our guids never match any queued action_id (fail-safe degradation).
         self._warned_no_match = False
-        # guid -> current_waypoint_index observed on the first untrusted poll for that guid.
-        # Not serialized: re-derives on resume.
-        self._guided_first_index: dict = {}
-        # guids whose GET /guided_move status is trusted to belong to that guid's action
-        # (identity confirmed, or an index change was observed since the first poll).
-        # Not serialized: re-derives on resume.
-        self._guided_trusted: set = set()
 
     def _tracking_tasks(self) -> bool:
         """True when this group has at least one task to report and the tracking
@@ -456,46 +449,31 @@ class WaitForMirMissionCompletionNode(BehaviorTree):
         """Granular tracking for a RUNNING guided_move action.
 
         ``entry`` is the task-id list parallel to the run's [*waypoints, goal]
-        steps. ``GET /guided_move`` reports current_waypoint_index over
-        [start, *waypoints, goal] (0 = start). Conservative mapping until
-        robot-verified (UNVERIFIED, spec routes-guided-move.md): run step i is
-        completed when index >= i + 2; the first pending task is in_progress.
-        Best-effort: poll failures degrade to mark-at-end.
-
-        Staleness guard: the endpoint reports the current-or-latest guided move with
-        no confirmed identity link to the action we're tracking, so when two guided
-        moves run in one mission the first poll(s) after a handoff can still report the
-        previous move's (already-finished) status. Completions are only applied once
-        identity is confirmed: either ``action_id`` matches our ``guid``, or the index
-        has been observed to change since the first poll for this guid (a stale,
-        already-finished status would report the same index every time).
+        steps. ``GET /guided_move`` reports the current-or-latest guided move
+        with current_waypoint_index over [start, *waypoints, goal] (0 = start),
+        so the status is applied only when its ``action_id`` matches ``guid``
+        (any other status may belong to a previous or concurrent guided move).
+        Whether the index means "reached" or "heading to" is unverified
+        (UNVERIFIED, spec routes-guided-move.md), so run step i is completed
+        only when index >= i + 2 (never early under either reading); the first
+        pending task is in_progress. Best-effort: poll failures and unmatched
+        statuses degrade to mark-at-end.
         """
         try:
             status = await self._mir_api.get_guided_move()
         except Exception as e:
             logger.warning(f"Failed to poll guided move status: {e}")
             return False
-        status = status or {}
+        if not status or status.get("action_id") != guid:
+            return False
         index = status.get("current_waypoint_index")
-
-        if status.get("action_id") == guid:
-            trusted = True
-        elif guid not in self._guided_first_index:
-            # First poll for this guid: may still be reporting a previous guided
-            # move. Record a baseline index and withhold completions this cycle.
-            self._guided_first_index[guid] = index
-            trusted = False
-        else:
-            if index != self._guided_first_index[guid]:
-                self._guided_trusted.add(guid)
-            trusted = guid in self._guided_trusted
 
         changed = False
         marked_in_progress = False
         for i, task_id in enumerate(entry):
             if task_id is None:
                 continue
-            if trusted and isinstance(index, int) and index >= i + 2:
+            if isinstance(index, int) and index >= i + 2:
                 changed |= self._mark_one(task_id, "c")
             elif not marked_in_progress and self._reported.get(task_id) != "c":
                 changed |= self._mark_one(task_id, "p")

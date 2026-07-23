@@ -13,8 +13,8 @@
 #     step per task. No alias (it is built internally, not parsed from InOrbit JSON), so it
 #     round-trips under every dump convention. Default empty for back-compat.
 #   - 2026-07-22 Tomás Badenes: add GuidedMoveWaypoint + MirGuidedMove (InOrbit routes ->
-#     MiR guided_move, spec routes-guided-move.md); widen actions and action_task_ids (a
-#     nested list entry carries a guided move's per-waypoint task ids).
+#     MiR guided_move); widen actions and action_task_ids (a nested list entry carries a
+#     guided move's per-waypoint task ids).
 
 """MiR-specific mission datatypes for mission translation.
 

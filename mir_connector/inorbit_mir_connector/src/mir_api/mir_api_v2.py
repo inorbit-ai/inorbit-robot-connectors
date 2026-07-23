@@ -243,8 +243,7 @@ class MirApiV2(MirApiBaseClass):
         empty) and pass a plain object through as-is.
 
         UNVERIFIED on a live 3.8+ robot: array vs object shape, and whether
-        the endpoint is populated when node resource handling is disabled
-        (spec routes-guided-move.md, verify checklist).
+        the endpoint is populated when node resource handling is disabled.
         """
         guided_move_api_url = f"/{GUIDED_MOVE_ENDPOINT_V2}"
         response = await self._get(guided_move_api_url)

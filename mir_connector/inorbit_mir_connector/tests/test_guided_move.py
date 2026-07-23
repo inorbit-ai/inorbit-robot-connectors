@@ -2,10 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Tests for InOrbit routes -> MiR guided_move translation and datatypes.
-
-Spec: specs/routes-guided-move.md
-"""
+"""Tests for InOrbit routes -> MiR guided_move translation and datatypes."""
 
 from __future__ import annotations
 

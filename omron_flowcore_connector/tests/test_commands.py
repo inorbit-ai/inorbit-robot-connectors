@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 import pytest
-from inorbit_connector.connector import CommandFailure
+from inorbit_connector.commands import CommandFailure
 from inorbit_omron_connector.src.commands import parse_custom_command_args
 
 def test_parse_custom_command_args_dict():

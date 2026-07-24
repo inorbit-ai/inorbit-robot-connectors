@@ -12,7 +12,7 @@ import logging
 from typing import Any
 
 # InOrbit
-from inorbit_connector.connector import CommandFailure, CommandResultCode
+from inorbit_connector.commands import CommandFailure, CommandResultCode
 from inorbit_edge_executor.datatypes import MissionRuntimeOptions
 from inorbit_edge_executor.db import get_db
 from inorbit_edge_executor.exceptions import (

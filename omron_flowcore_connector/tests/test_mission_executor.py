@@ -4,7 +4,7 @@
 
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
-from inorbit_connector.connector import CommandResultCode
+from inorbit_connector.commands import CommandResultCode
 from inorbit_omron_connector.src.mission.executor import OmronMissionExecutor, CustomScripts
 
 @pytest.fixture

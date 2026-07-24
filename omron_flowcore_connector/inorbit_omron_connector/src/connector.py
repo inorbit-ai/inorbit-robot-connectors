@@ -12,11 +12,8 @@ from typing_extensions import override
 # Third Party
 
 # InOrbit
-from inorbit_connector.connector import (
-    CommandFailure,
-    CommandResultCode,
-    FleetConnector,
-)
+from inorbit_connector.commands import CommandFailure, CommandResultCode
+from inorbit_connector.connector import FleetConnector
 from inorbit_edge_executor.inorbit import InOrbitAPI
 
 # Local
@@ -47,8 +44,7 @@ class OmronConnector(FleetConnector):
         """
         super().__init__(config)
 
-        # HACK: get the API url from one of the RobotSessions. This value should be expected in the config.
-        api_url = self._get_robot_session(self.robot_ids[0]).inorbit_rest_api_endpoint
+        api_url = str(config.api_url)
 
         # Initialize InOrbit API client
         self.inorbit_api = InOrbitAPI(

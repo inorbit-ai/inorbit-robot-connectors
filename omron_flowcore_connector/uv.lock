@@ -430,7 +430,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = "~=2.14.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = "~=8.4" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = "~=1.2" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14.7" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = "~=0.15.0" },
     { name = "tox", marker = "extra == 'dev'", specifier = "~=4.32" },
     { name = "tox-uv", marker = "extra == 'dev'", specifier = "~=1.29" },
     { name = "typing-extensions", specifier = "~=4.15.0" },

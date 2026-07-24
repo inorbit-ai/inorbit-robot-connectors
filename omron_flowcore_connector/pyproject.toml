@@ -48,7 +48,7 @@ dev = [
     "tox~=4.32",
     "tox-uv~=1.29",
     "colorlog~=6.10.1",
-    "ruff>=0.14.7",
+    "ruff~=0.15.0",
     "bump-my-version~=1.2.4",
 ]
 

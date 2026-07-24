@@ -21,6 +21,7 @@ from inorbit_omron_connector.src.omron.robot_manager import RobotManager
 def mock_config():
     """Create a mock configuration."""
     return FlowCoreConnectorConfig(
+        api_key="test_key",
         connector_type="flowcore",
         update_freq=1.0,
         connector_config=FlowCoreConfig(

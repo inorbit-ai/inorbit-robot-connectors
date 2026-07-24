@@ -8,21 +8,19 @@
 from typing import Optional
 
 # Third Party
-from pydantic import (
-    field_validator,
-    model_validator,
-)
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import model_validator
 
 # InOrbit
-from inorbit_connector.models import ConnectorConfig, RobotConfig
+from inorbit_connector.models import (
+    ConnectorRootConfig,
+    ConnectorSpecificConfig,
+    RobotConfig,
+)
 
-
+# Connector identity. The framework derives the env-var prefix
+# (``INORBIT_FLOWCORE_``) from this value and enforces that the YAML's
+# ``connector_type`` matches it.
 CONNECTOR_TYPE = "flowcore"
-
-# Default environment file, relative to the directory the connector is executed from. If using a
-# different .env file, make sure to source it before running the connector.
-DEFAULT_ENV_FILE = "config/.env"
 
 
 class FlowCoreRobotConfig(RobotConfig):
@@ -50,29 +48,15 @@ class FlowCoreRobotConfig(RobotConfig):
         return self
 
 
-class FlowCoreConfig(BaseSettings):
-    """Custom configuration fields for FlowCore connector.
+class FlowCoreConfig(ConnectorSpecificConfig):
+    """Fleet-wide FlowCore settings shared by all robots.
 
-    These are fleet-wide settings shared by all robots.
-
-    Attributes:
-        url (str): Base URL of the FlowCore API
-        username (str): Username for FlowCore API
-        password (str): Password for FlowCore API
-        verify_ssl (bool): Verify SSL certificates (set to False for self-signed)
-
-    If any field is missing, the initializer will attempt to replace it by reading from the
-    environment. Values are set in the environment with the prefix INORBIT_FLOWCORE_
-        (e.g. url -> INORBIT_FLOWCORE_URL)
+    Any field can be supplied via ``INORBIT_FLOWCORE_<FIELD>`` env vars
+    (prefix derived from CONNECTOR_TYPE by the framework), e.g.
+    ``INORBIT_FLOWCORE_PASSWORD``.
     """
 
-    model_config = SettingsConfigDict(
-        env_prefix="INORBIT_FLOWCORE_",
-        env_ignore_empty=True,
-        case_sensitive=False,
-        env_file=DEFAULT_ENV_FILE,
-        extra="allow",
-    )
+    CONNECTOR_TYPE = CONNECTOR_TYPE
 
     url: str
     username: str = "toolkitadmin"
@@ -84,47 +68,18 @@ class FlowCoreConfig(BaseSettings):
     use_mock: bool = False
 
 
+class FlowCoreConnectorConfig(ConnectorRootConfig[FlowCoreConfig]):
+    """Top-level FlowCore connector configuration (the whole YAML file).
 
-class FlowCoreConnectorConfig(ConnectorConfig):
-    """Configuration for FlowCore connector.
-
-    Inherits from ConnectorConfig and adds FlowCore-specific fields.
-
-    Attributes:
-        connector_config (FlowCoreConfig): FlowCore-specific configuration
-        fleet (list[FlowCoreRobotConfig]): List of robot configurations
+    ``connector_type`` identity ("flowcore") is enforced by the framework.
+    ``fleet`` is narrowed to :class:`FlowCoreRobotConfig`.
     """
 
-    connector_config: FlowCoreConfig  # type: ignore[assignment]
-    fleet: list[FlowCoreRobotConfig]  # type: ignore[assignment]
-
-    @field_validator("connector_type")
-    def check_connector_type(cls, connector_type: str) -> str:
-        """Validate the connector type.
-
-        Args:
-            connector_type (str): The connector type from config
-
-        Returns:
-            str: The validated connector type
-
-        Raises:
-            ValueError: If connector type doesn't match expected value
-        """
-        if connector_type != CONNECTOR_TYPE:
-            raise ValueError(f"Expected connector type '{CONNECTOR_TYPE}' not '{connector_type}'")
-        return connector_type
+    fleet: list[FlowCoreRobotConfig]
 
     @model_validator(mode="after")
     def validate_unique_fleet_robot_ids(self) -> "FlowCoreConnectorConfig":
-        """Validate that fleet_robot_id values are unique across the fleet.
-
-        Returns:
-            FlowCoreConnectorConfig: The validated configuration
-
-        Raises:
-            ValueError: If fleet_robot_id values are not unique
-        """
+        """Validate that fleet_robot_id values are unique across the fleet."""
         fleet_ids = [robot.fleet_robot_id for robot in self.fleet]
         if len(fleet_ids) != len(set(fleet_ids)):
             raise ValueError("fleet_robot_id values must be unique")

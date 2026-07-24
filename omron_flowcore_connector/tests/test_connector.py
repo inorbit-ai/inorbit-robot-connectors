@@ -39,8 +39,6 @@ def connector_config():
     return FlowCoreConnectorConfig(
         connector_type="flowcore",
         connector_config=omron_config,
-        account_id="test_account",
-        location_id="test_location",
         api_key="test_key",
         fleet=[{"robot_id": "Robot1", "fleet_robot_id": "Robot1_FlowCore"}]
     )

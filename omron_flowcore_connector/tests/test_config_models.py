@@ -25,6 +25,7 @@ REQUIRED_CONNECTOR_CONFIG = {
 def base_config_data() -> dict:
     """Return a minimal, valid FlowCoreConnectorConfig payload."""
     return {
+        "api_key": "test_key",
         "connector_type": "flowcore",
         "connector_config": {
             "url": "https://flowcore.example.com",
@@ -45,7 +46,7 @@ def test_invalid_connector_type_raises(base_config_data: dict) -> None:
     data = copy.deepcopy(base_config_data)
     data["connector_type"] = "not-flowcore"
 
-    with pytest.raises(ValueError, match="Expected connector type 'flowcore'"):
+    with pytest.raises(ValueError, match="does not match CONNECTOR_TYPE 'flowcore'"):
         FlowCoreConnectorConfig(**data)
 
 def test_unique_fleet_robot_ids_are_required(base_config_data: dict) -> None:

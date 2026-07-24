@@ -80,6 +80,24 @@ The Connector can be run as a containerized application using Docker Compose:
 
 The Docker Compose setup supports environment variable configuration via `config/.env` and allows running multiple connector instances. See `docker/docker-compose.example.yaml` for detailed configuration options.
 
+## Metrics (optional)
+
+The connector can expose Prometheus-format metrics so fleet operators can monitor connector health. Metrics are off by default and add no overhead until enabled.
+
+Enable via the top-level `metrics:` block in your fleet YAML (connector-wide, not per-robot):
+
+```yaml
+metrics:
+  enabled: true
+  bind_host: 0.0.0.0
+  bind_port: 9090
+  discovery_dir: null   # set to a writable dir to use Prometheus file_sd
+```
+
+Then scrape with `curl http://localhost:9090/metrics`.
+
+Exported metrics include connector liveness (`inorbit_connector_up`), per-robot InOrbit session status (`inorbit_connector_session_connected`), execution loop ticks/errors, and the upstream FlowCore API request/error/latency family (`inorbit_connector_upstream_http_*` with `vendor="flowcore"`). All metrics share the `inorbit_connector` wire prefix; the connector type rides on every series as a resource attribute rather than in the metric name.
+
 ## Contributing
 
 Any contribution that you make to this repository will be under the MIT license, as dictated by that [license](https://opensource.org/licenses/MIT).

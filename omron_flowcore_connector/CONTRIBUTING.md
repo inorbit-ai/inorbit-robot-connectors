@@ -113,7 +113,7 @@ To release a new version:
    ```
 
 1. > [!IMPORTANT]
-> The message of the last commit must match the configured pattern, e.g. "Bump inorbit-omron-connector version: 0.1.0 → 0.1.1", for the publish job to run.
+> The message of the commit that lands on `main` must match the configured pattern, e.g. "Bump omron_flowcore_connector version: 0.1.0 → 0.1.1", for the publish job to run. If the bump goes through a squash-merged PR, the squash commit message comes from the PR title, so the PR title must carry that pattern (the local commit message and tag are discarded by the squash).
 
 New releases are built and published to the Docker repository automatically by GitHub Actions when a new version bump commit is pushed.
 
@@ -123,9 +123,4 @@ To manually build and push the Docker image, run:
 ./docker/build.sh --push
 ```
 
-CI automatically publishes to PyPI when either:
-
-- A tag is pushed, or
-- A commit message contains "Bump version"
-
-After publishing to PyPI, CI also signs the artifacts and creates/updates the GitHub Release.
+After pushing the image, CI creates a GitHub Release tagged `omron_flowcore_connector-v<version>`. This connector is not published to PyPI.

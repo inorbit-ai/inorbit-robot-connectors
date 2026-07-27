@@ -25,8 +25,8 @@ bump:
 	uv version --bump $$PART; \
 	new_version=$$(uv version --short); \
 	git add pyproject.toml uv.lock; \
-	git commit -m "Bump inorbit-omron-connector version: $${old_version} → $${new_version}"; \
-	git tag -a "inorbit-omron-connector-v$${new_version}" -m "Bump inorbit-omron-connector version: $${old_version} → $${new_version}"; \
+	git commit -m "Bump omron_flowcore_connector version: $${old_version} → $${new_version}"; \
+	git tag -a "omron_flowcore_connector-v$${new_version}" -m "Bump omron_flowcore_connector version: $${old_version} → $${new_version}"; \
 	echo "Bumped version $$old_version → $$new_version"
 
 bump-patch:

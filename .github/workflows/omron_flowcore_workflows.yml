@@ -57,7 +57,7 @@ jobs:
 
 
   publish-docker:
-    if: ${{ contains(github.event.head_commit.message, 'Bump inorbit-omron-connector version') }}
+    if: ${{ contains(github.event.head_commit.message, 'Bump omron_flowcore_connector version') }}
     needs: [lint-and-test, reuse]
     runs-on: ubuntu-latest
     environment: release
@@ -104,11 +104,11 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ env.FLOWCORE_CONNECTOR_VERSION }}
-          name: Release v${{ env.FLOWCORE_CONNECTOR_VERSION }}
+          tag_name: omron_flowcore_connector-v${{ env.FLOWCORE_CONNECTOR_VERSION }}
+          name: Omron FLOW Core Connector v${{ env.FLOWCORE_CONNECTOR_VERSION }}
           body: |
-            Release v${{ env.FLOWCORE_CONNECTOR_VERSION }}
+            Omron FLOW Core Connector v${{ env.FLOWCORE_CONNECTOR_VERSION }}
 
-            Docker image: `us-central1-docker.pkg.dev/inorbit-integrations/inorbit-integrations/connectors/flowcore_connector:${{ env.FLOWCORE_CONNECTOR_VERSION }}`
+            Docker image: `us-central1-docker.pkg.dev/inorbit-integrations/connectors/flowcore_connector:${{ env.FLOWCORE_CONNECTOR_VERSION }}`
           draft: false
           prerelease: false

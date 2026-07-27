@@ -27,8 +27,6 @@ async def test_ip_override_priority():
     config = FlowCoreConnectorConfig(
         connector_type="flowcore",
         connector_config=omron_config,
-        account_id="acc",
-        location_id="loc",
         api_key="key",
         fleet=[robot_config]
     )

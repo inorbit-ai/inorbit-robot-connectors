@@ -17,10 +17,6 @@ connector_type: flowcore
 
 # Update frequency in Hz for the execution loop
 update_freq: 1.0
-
-# Account ID for the InOrbit account. Required to set the robot footprint and for annotation synchronization.
-# account_id:
-
 # FLOWCore-specific configuration
 # These fields are shared across all robots in the fleet
 # Please refer to the example.env file for storing these values in the environment instead,

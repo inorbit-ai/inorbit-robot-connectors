@@ -13,7 +13,7 @@ from collections.abc import Mapping, Sequence
 
 # InOrbit
 from inorbit_connector.commands import CommandModel, ExcludeUnsetMixin
-from inorbit_connector.connector import CommandFailure
+from inorbit_connector.commands import CommandFailure
 
 
 class CustomScripts(StrEnum):

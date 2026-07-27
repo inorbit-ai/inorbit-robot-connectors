@@ -5,9 +5,18 @@
 import httpx
 import logging
 import json
+import time
 from typing import List, Dict, Any, Optional, AsyncIterator
+
+from inorbit_connector.metrics.http import (
+    record_upstream_http_error,
+    record_upstream_http_request,
+)
+
+from ..config.models import CONNECTOR_TYPE
+from ..metrics import api_endpoint, error_kind
 from .models import (
-    DataStoreResponse, 
+    DataStoreResponse,
     RobotResponse
 )
 
@@ -41,15 +50,39 @@ class OmronApiClient:
             await self.client.aclose()
             self.client = None
 
-    async def get_fleet_state(self) -> List[RobotResponse]:
-        """Fetches fleet state from /Robot/UpdatedSince."""
+    async def _request(self, method: str, url: str, **kwargs) -> httpx.Response:
+        """Send one HTTP request and record canonical upstream-HTTP metrics.
+
+        Raises on any failure (transport error or non-2xx); callers keep
+        their existing try/except fallbacks.
+        """
         if not self.client:
             await self.connect()
-        
+        start = time.monotonic()
         try:
-            response = await self.client.get("/Robot/UpdatedSince?sinceTime=0")
-
+            response = await self.client.request(method, url, **kwargs)
             response.raise_for_status()
+        except Exception as e:
+            record_upstream_http_error(
+                vendor=CONNECTOR_TYPE,
+                method=method,
+                endpoint=api_endpoint(url),
+                error_kind=error_kind(e),
+                duration_seconds=time.monotonic() - start,
+            )
+            raise
+        record_upstream_http_request(
+            vendor=CONNECTOR_TYPE,
+            method=method,
+            endpoint=api_endpoint(url),
+            duration_seconds=time.monotonic() - start,
+        )
+        return response
+
+    async def get_fleet_state(self) -> List[RobotResponse]:
+        """Fetches fleet state from /Robot/UpdatedSince."""
+        try:
+            response = await self._request("GET", "/Robot/UpdatedSince?sinceTime=0")
             data = response.json()
             return [RobotResponse(**r) for r in data]
         except Exception as e:
@@ -58,9 +91,6 @@ class OmronApiClient:
 
     async def get_data_store_value(self, key: str, robot_id: str) -> List[DataStoreResponse]:
         """Fetches data store values for a specific key."""
-        if not self.client:
-            await self.connect()
-        
         mappedKey = {
             "StateOfCharge": "BatteryStateOfCharge",
             "PoseX": "RobotX",
@@ -72,9 +102,7 @@ class OmronApiClient:
         try:
             # The endpoint structure based on the curl: /DataStoreValueLatest/{key}
             url = f"/DataStoreValueLatest/{mappedKey[key]}:{robot_id}"
-            response = await self.client.get(url)
-
-            response.raise_for_status()
+            response = await self._request("GET", url)
             data = response.json()
             
             # If robot_id is not '*', we might need to filter the results
@@ -89,24 +117,16 @@ class OmronApiClient:
             return []
 
     async def create_job(self, job_request: Dict[str, Any]) -> bool:
-        if not self.client:
-            await self.connect()
-        
         try:
-            response = await self.client.post("/JobRequest", json=job_request)
-            response.raise_for_status()
+            await self._request("POST", "/JobRequest", json=job_request)
             return True
         except Exception as e:
             LOGGER.error(f"Error creating job: {e}")
             return False
 
     async def stop(self, job_cancel: Dict[str, Any]) -> bool:
-        if not self.client:
-            await self.connect()
-        
         try:
-            response = await self.client.post("/JobCancel", json=job_cancel)
-            response.raise_for_status()
+            await self._request("POST", "/JobCancel", json=job_cancel)
             return True
         except Exception as e:
             LOGGER.error(f"Error canceling job: {e}")
@@ -145,9 +165,23 @@ class OmronApiClient:
                         
         except httpx.HTTPStatusError as e:
             LOGGER.error(f"HTTP error in job stream: {e}")
+            record_upstream_http_error(
+                vendor=CONNECTOR_TYPE,
+                method="GET",
+                endpoint=api_endpoint("/Job/Stream"),
+                error_kind=error_kind(e),
+                duration_seconds=0.0,
+            )
             raise
         except Exception as e:
             LOGGER.error(f"Error in job stream: {e}")
+            record_upstream_http_error(
+                vendor=CONNECTOR_TYPE,
+                method="GET",
+                endpoint=api_endpoint("/Job/Stream"),
+                error_kind=error_kind(e),
+                duration_seconds=0.0,
+            )
             raise
 
     async def get_job_segment_stream(self) -> AsyncIterator[Dict[str, Any]]:
@@ -183,31 +217,37 @@ class OmronApiClient:
                         
         except httpx.HTTPStatusError as e:
             LOGGER.error(f"HTTP error in job segment stream: {e}")
+            record_upstream_http_error(
+                vendor=CONNECTOR_TYPE,
+                method="GET",
+                endpoint=api_endpoint("/JobSegment/Stream"),
+                error_kind=error_kind(e),
+                duration_seconds=0.0,
+            )
             raise
         except Exception as e:
             LOGGER.error(f"Error in job segment stream: {e}")
+            record_upstream_http_error(
+                vendor=CONNECTOR_TYPE,
+                method="GET",
+                endpoint=api_endpoint("/JobSegment/Stream"),
+                error_kind=error_kind(e),
+                duration_seconds=0.0,
+            )
             raise
 
     async def get_job_segment_list(self, job_namekey: str) -> List[Dict[str, Any]]:
-        if not self.client:
-            await self.connect()
-        
         try:
-            response = await self.client.get(f"/JobSegment/ByJob/{job_namekey}")
-            response.raise_for_status()
+            response = await self._request("GET", f"/JobSegment/ByJob/{job_namekey}")
             data = response.json()
             return data
         except Exception as e:
             LOGGER.error(f"Error fetching fleet state: {e}")
             return []
-    
+
     async def get_job_details_by_job_id(self, job_id: str) -> Optional[Dict[str, Any]]:
-        if not self.client:
-            await self.connect()
-        
         try:
-            response = await self.client.get(f"/Job/ByJobId/{job_id}")
-            response.raise_for_status()
+            response = await self._request("GET", f"/Job/ByJobId/{job_id}")
             data = response.json()
             return data[0] if data and len(data) > 0 else None
         except Exception as e:
@@ -215,12 +255,8 @@ class OmronApiClient:
             return None
 
     async def get_job_details_by_namekey(self, job_namekey: str) -> Optional[Dict[str, Any]]:
-        if not self.client:
-            await self.connect()
-        
         try:
-            response = await self.client.get(f"/Job/ByKey/{job_namekey}")
-            response.raise_for_status()
+            response = await self._request("GET", f"/Job/ByKey/{job_namekey}")
             data = response.json()
             return data
         except Exception as e:
@@ -228,12 +264,8 @@ class OmronApiClient:
             return None
 
     async def create_dropoff(self, dropoff_request: Dict[str, Any]) -> bool:
-        if not self.client:
-            await self.connect()
-        
         try:
-            response = await self.client.post("/Dropoff", json=dropoff_request)
-            response.raise_for_status()
+            await self._request("POST", "/Dropoff", json=dropoff_request)
             return True
         except Exception as e:
             LOGGER.error(f"Error creating dropoff job: {e}")

@@ -53,3 +53,15 @@ maps:
 # Optional: Environment variables for user scripts
 # env_vars:
 #   MY_VAR: value
+
+# Optional: Prometheus metrics endpoint (off by default). When enabled, the
+# connector serves /metrics for fleet operators to monitor connector health
+# (up, per-robot session status, execution loop ticks/errors and upstream
+# FlowCore API request/error/latency metrics).
+# metrics:
+#   enabled: true
+#   bind_host: 0.0.0.0
+#   bind_port: 9090
+#   # Optional: directory for the Prometheus file_sd discovery file. Set to
+#   # null when the scraper already knows the endpoint.
+#   discovery_dir: /var/run/inorbit-metrics

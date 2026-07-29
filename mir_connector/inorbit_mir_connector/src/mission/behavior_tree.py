@@ -37,8 +37,9 @@
 #   - 2026-07-29 Tomás Badenes: InOrbit routes support: build MiR guided_move actions from
 #     MirGuidedMove entries (verified on a 3.8.1 robot: the full schema parameter set is
 #     required, no server-side defaults; center-based deviation, as footprint mode rejects
-#     corridors narrower than the robot diagonal; guided_move_id carries a deterministic
-#     identity) and track their per-waypoint
+#     corridors narrower than the robot diagonal; no-corridor legs use line-following
+#     radiuses, edge 0 / node 0.3, so overlapping edges cannot cut the corner;
+#     guided_move_id carries a deterministic identity) and track their per-waypoint
 #     tasks via GET /guided_move, applying a status only when its guided_move_id matches the
 #     identity sent with the action (the endpoint reports current-or-latest); otherwise
 #     degrade to mark-at-end.
@@ -218,22 +219,22 @@ class CreateMirNativeMissionNode(BehaviorTree):
                         param_values["blocked_path_timeout"] = 60.0
                 elif isinstance(action, MirGuidedMove):
                     action_type = _MIR_GUIDED_MOVE_ACTION_TYPE
+                    # Legs without a corridor follow the line exactly: edge radius 0 keeps
+                    # adjacent edges from overlapping (an overlap lets the robot skip the
+                    # waypoint and cut the corner, per the guided-move guide), while node
+                    # radius 0.3 (MiR default) rounds the corner enough to keep cycle time.
                     waypoints_json = [
                         {
-                            k: v
-                            for k, v in {
-                                "x": w.x,
-                                "y": w.y,
-                                "node_radius": w.node_radius,
-                                "edge_radius": w.edge_radius,
-                            }.items()
-                            if v is not None
+                            "x": w.x,
+                            "y": w.y,
+                            "node_radius": w.node_radius if w.node_radius is not None else 0.3,
+                            "edge_radius": w.edge_radius if w.edge_radius is not None else 0.0,
                         }
                         for w in action.waypoints
                     ]
                     # Every schema parameter must be present: the robot rejects the action
                     # with input_required_argument_missing otherwise (verified on 3.8.1;
-                    # no server-side defaults). Unset radiuses get the schema defaults.
+                    # no server-side defaults).
                     param_values = {
                         "position": None,
                         "x": action.goal_x,
@@ -244,7 +245,7 @@ class CreateMirNativeMissionNode(BehaviorTree):
                             action.goal_node_radius if action.goal_node_radius is not None else 0.5
                         ),
                         "goal_edge_radius": (
-                            action.goal_edge_radius if action.goal_edge_radius is not None else 0.3
+                            action.goal_edge_radius if action.goal_edge_radius is not None else 0.0
                         ),
                         "blocked_path_timeout": 60.0,
                         "waypoints": json.dumps(waypoints_json),

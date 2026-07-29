@@ -332,7 +332,8 @@ async def test_guided_move_action_parameters():
     assert params["blocked_path_timeout"] == 60.0
     assert json.loads(params["waypoints"]) == [
         {"x": 1.0, "y": 2.0, "node_radius": 0.6, "edge_radius": 0.6},
-        {"x": 3.0, "y": 4.0},
+        # No corridor on the leg: line-following (edge 0) with the default node rounding.
+        {"x": 3.0, "y": 4.0, "node_radius": 0.3, "edge_radius": 0.0},
     ]
     # Center-based deviation always (footprint mode rejects narrow corridors);
     # identity is <mission guid>:<action index>.
@@ -354,10 +355,10 @@ async def test_guided_move_without_corridor_sends_schema_defaults():
     await node._execute()
 
     params = _params_by_id(api.actions[0])
-    # No corridor: schema-default radiuses and center-based deviation (all params must
-    # still be present or the robot rejects the action).
+    # No corridor: goal arrival keeps the schema-default node radius, but the edge is
+    # line-following (all params must still be present or the robot rejects the action).
     assert params["goal_node_radius"] == 0.5
-    assert params["goal_edge_radius"] == 0.3
+    assert params["goal_edge_radius"] == 0.0
     assert params["keep_footprint_within_inflation"] is False
     assert json.loads(params["waypoints"]) == []
 

@@ -237,10 +237,9 @@ class MirApiV2(MirApiBaseClass):
         """Status of the current or latest guided move (single light GET).
 
         ``GET /guided_move`` reports ``{guided_move_id, current_waypoint_index,
-        assigned_waypoint_index, node_resource_handling_enabled}`` (verified on
-        a MiR 3.8.1 robot, which returns a plain object; the REST API doc types
-        the 200 response as an array, so normalize to the first element, None
-        when empty).
+        assigned_waypoint_index, node_resource_handling_enabled}``. Robots
+        return a plain object while the REST API doc types the 200 response as
+        an array, so normalize to the first element (None when empty).
         """
         guided_move_api_url = f"/{GUIDED_MOVE_ENDPOINT_V2}"
         response = await self._get(guided_move_api_url)

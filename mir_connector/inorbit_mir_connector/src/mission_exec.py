@@ -7,6 +7,8 @@ import json
 from enum import Enum
 from typing import Optional
 
+from pydantic import ValidationError
+
 from inorbit_connector.commands import CommandResultCode
 from inorbit_edge_executor.datatypes import MissionRuntimeOptions
 from inorbit_edge_executor.mission import Mission
@@ -75,7 +77,16 @@ class MirWorkerPool(WorkerPool):
     def translate_mission(self, mission: Mission) -> MirInOrbitMission:
         """Compile an InOrbit mission into a native-MiR mission definition."""
         self.logger.debug(f"Translating mission {mission.id}")
-        return InOrbitToMirTranslator.translate(mission=mission)
+        try:
+            return InOrbitToMirTranslator.translate(mission=mission)
+        except ValidationError as e:
+            # The error string propagates to the InOrbit UI: log the full pydantic
+            # detail here but surface a short, readable summary.
+            self.logger.exception(f"Mission {mission.id} translation failed")
+            problems = "; ".join(
+                ".".join(str(part) for part in err["loc"]) + ": " + err["msg"] for err in e.errors()
+            )
+            raise ValueError(f"Mission cannot be translated for MiR ({problems})") from e
 
     # @override
     def deserialize_mission(self, serialized_mission: dict) -> MirInOrbitMission:

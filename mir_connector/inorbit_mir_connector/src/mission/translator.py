@@ -41,6 +41,8 @@
 #     one MirGuidedMove inside the native group; non-straight trajectories rejected at
 #     translate time; nonzero intermediate thetas and route properties (maxSpeed) dropped
 #     with a warning; None waypoint theta treated as 0.0.
+#   - 2026-07-29 Tomás Badenes: default missing step labels to "" (dispatched steps may
+#     omit label, and MissionStep.label rejects an explicit None).
 
 """Mission translator that compiles consecutive InOrbit waypoint and
 nestable action steps into single native MiR missions.
@@ -315,7 +317,7 @@ class InOrbitToMirTranslator:
                 orientation_deg = (math.degrees(theta) + 180) % 360 - 180
 
                 pending_actions.append(
-                    MirWaypoint(label=step.label, x=x, y=y, orientation=orientation_deg)
+                    MirWaypoint(label=step.label or "", x=x, y=y, orientation=orientation_deg)
                 )
                 pending_labels.append(step.label or "")
                 pending_timeouts.append(step.timeout_secs)
@@ -326,7 +328,7 @@ class InOrbitToMirTranslator:
                 flush_route_run()
                 pending_actions.append(
                     MirAction(
-                        label=step.label,
+                        label=step.label or "",
                         action_type="wait",
                         parameters={"time": _seconds_to_mir_duration(step.timeout_secs or 0)},
                     )
@@ -365,7 +367,7 @@ class InOrbitToMirTranslator:
                     flush_route_run()
                     pending_actions.append(
                         MirAction(
-                            label=step.label,
+                            label=step.label or "",
                             action_type=action_type,
                             parameters=parameters,
                         )

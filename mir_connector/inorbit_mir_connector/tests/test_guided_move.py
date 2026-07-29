@@ -337,10 +337,15 @@ async def test_guided_move_action_parameters():
     # Corridor set -> footprint compliance; identity is <mission guid>:<action index>.
     assert params["keep_footprint_within_inflation"] is True
     assert params["guided_move_id"] == f"{api.created[0]['guid']}:0"
+    # The robot rejects the action unless every schema parameter is present.
+    assert params["position"] is None
+    assert params["start_node_radius"] == 0.5
+    assert params["enable_node_resource_handling"] is False
+    assert params["assigned_waypoint_index"] is None
 
 
 @pytest.mark.asyncio
-async def test_guided_move_without_radiuses_omits_radius_params():
+async def test_guided_move_without_corridor_sends_schema_defaults():
     api = FakeMirApi()
     gm = MirGuidedMove(label="route", goal_x=1.0, goal_y=2.0, goal_orientation=0.0)
     node, ctx = _build_create_node(api, [gm])
@@ -348,9 +353,11 @@ async def test_guided_move_without_radiuses_omits_radius_params():
     await node._execute()
 
     params = _params_by_id(api.actions[0])
-    assert "goal_node_radius" not in params
-    assert "goal_edge_radius" not in params
-    assert "keep_footprint_within_inflation" not in params  # no corridor: robot default
+    # No corridor: schema-default radiuses and center-based deviation (all params must
+    # still be present or the robot rejects the action).
+    assert params["goal_node_radius"] == 0.5
+    assert params["goal_edge_radius"] == 0.3
+    assert params["keep_footprint_within_inflation"] is False
     assert json.loads(params["waypoints"]) == []
 
 

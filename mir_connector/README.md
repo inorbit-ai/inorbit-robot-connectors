@@ -820,8 +820,10 @@ Requirements:
 Corridor width maps to the guided-move radiuses: a symmetric corridor's total `width`
 becomes `width / 2` per side; an asymmetric corridor (`leftWidth`/`rightWidth`) uses the
 narrower side for both radiuses. Values that would exceed 5 m (corridor wider than 10 m)
-are clamped to MiR's 5 m radius maximum. A step without a corridor gets MiR's default
-radiuses (start/goal node 0.5 m, goal edge 0.3 m).
+are clamped to MiR's 5 m radius maximum. A step without a corridor follows the route
+line exactly (edge radius 0, so the robot cannot cut the corner through overlapping
+edges) with a 0.3 m node radius to round each waypoint without stopping; the goal keeps
+MiR's default 0.5 m arrival radius.
 
 Corridor compliance is center-based: the robot keeps its CENTER within the radiuses, so
 its footprint can momentarily exceed the corridor, for example to drive around an

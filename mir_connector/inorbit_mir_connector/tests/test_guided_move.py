@@ -334,6 +334,9 @@ async def test_guided_move_action_parameters():
         {"x": 1.0, "y": 2.0, "node_radius": 0.6, "edge_radius": 0.6},
         {"x": 3.0, "y": 4.0},
     ]
+    # Corridor set -> footprint compliance; identity is <mission guid>:<action index>.
+    assert params["keep_footprint_within_inflation"] is True
+    assert params["guided_move_id"] == f"{api.created[0]['guid']}:0"
 
 
 @pytest.mark.asyncio
@@ -347,6 +350,7 @@ async def test_guided_move_without_radiuses_omits_radius_params():
     params = _params_by_id(api.actions[0])
     assert "goal_node_radius" not in params
     assert "goal_edge_radius" not in params
+    assert "keep_footprint_within_inflation" not in params  # no corridor: robot default
     assert json.loads(params["waypoints"]) == []
 
 
@@ -436,6 +440,7 @@ def _build_wait_node(api, action_task_ids, action_guids):
     node = WaitForMirMissionCompletionNode(ctx, action_task_ids=action_task_ids)
     ctx.shared_memory.add(SharedMemoryKeys.MIR_ACTION_GUIDS, action_guids)
     ctx.shared_memory.add(SharedMemoryKeys.MIR_QUEUE_ID, 7)
+    ctx.shared_memory.add(SharedMemoryKeys.MIR_MISSION_GUID, "m-1")
     ctx.shared_memory.freeze()
     return node, ctx
 
@@ -444,13 +449,13 @@ def _build_wait_node(api, action_task_ids, action_guids):
 async def test_guided_running_marks_intermediates_by_index():
     api = FakeTrackingMirApi()
     api.queue_actions = {1: {"action_id": "guid-gm", "finished": None}}
-    # current_waypoint_index=3: run steps 0 and 1 completed (i <= k-2)
-    api.guided_move = {"current_waypoint_index": 3, "action_id": "guid-gm"}
+    # current_waypoint_index=3 (waypoint reached, index 0 = start): run steps 0..2 completed
+    api.guided_move = {"current_waypoint_index": 3, "guided_move_id": "m-1:0"}
     node, ctx = _build_wait_node(api, [["t0", "t1", "t2", "t-goal"]], ["guid-gm"])
 
     await node._report_progress(7)
 
-    assert ctx.mission.completed == ["t0", "t1"]
+    assert ctx.mission.completed == ["t0", "t1", "t2"]
     assert ctx.mt.reports == 1
 
 
@@ -458,7 +463,7 @@ async def test_guided_running_marks_intermediates_by_index():
 async def test_guided_running_low_index_marks_first_task_in_progress():
     api = FakeTrackingMirApi()
     api.queue_actions = {1: {"action_id": "guid-gm", "finished": None}}
-    api.guided_move = {"current_waypoint_index": 0, "action_id": "guid-gm"}
+    api.guided_move = {"current_waypoint_index": 0, "guided_move_id": "m-1:0"}
     node, ctx = _build_wait_node(api, [["t0", "t1"]], ["guid-gm"])
 
     await node._report_progress(7)
@@ -468,15 +473,15 @@ async def test_guided_running_low_index_marks_first_task_in_progress():
 
 
 @pytest.mark.asyncio
-async def test_guided_status_without_matching_action_id_is_ignored():
+async def test_guided_status_without_matching_id_is_ignored():
     api = FakeTrackingMirApi()
     api.queue_actions = {1: {"action_id": "guid-gm", "finished": None}}
-    # No action_id in the guided-move status: may belong to another guided move.
-    api.guided_move = {"current_waypoint_index": 3}
+    # Empty guided_move_id (as an idle robot reports): not our move, ignore it.
+    api.guided_move = {"current_waypoint_index": 3, "guided_move_id": ""}
     node, ctx = _build_wait_node(api, [["t0", "t1", "t2", "t-goal"]], ["guid-gm"])
 
     await node._report_progress(7)
-    api.guided_move = {"current_waypoint_index": 4}  # advancing index changes nothing
+    api.guided_move = {"current_waypoint_index": 4, "guided_move_id": ""}
     await node._report_progress(7)
 
     assert ctx.mission.completed == []
@@ -486,17 +491,17 @@ async def test_guided_status_without_matching_action_id_is_ignored():
 @pytest.mark.asyncio
 async def test_guided_second_move_ignores_first_moves_status():
     # Two guided moves queued in one mission: while the FIRST runs, the status
-    # carries its action_id and must not advance the SECOND run's tasks.
+    # carries its guided_move_id and must not advance the SECOND run's tasks.
     api = FakeTrackingMirApi()
     api.queue_actions = {
         1: {"action_id": "guid-a", "finished": None},
         2: {"action_id": "guid-b", "finished": None},
     }
-    api.guided_move = {"current_waypoint_index": 3, "action_id": "guid-a"}
+    api.guided_move = {"current_waypoint_index": 3, "guided_move_id": "m-1:0"}
     node, ctx = _build_wait_node(api, [["a0", "a1"], ["b0", "b1"]], ["guid-a", "guid-b"])
 
     await node._report_progress(7)
-    api.guided_move = {"current_waypoint_index": 4, "action_id": "guid-a"}
+    api.guided_move = {"current_waypoint_index": 4, "guided_move_id": "m-1:0"}
     await node._report_progress(7)
 
     assert "b0" not in ctx.mission.completed and "b1" not in ctx.mission.completed

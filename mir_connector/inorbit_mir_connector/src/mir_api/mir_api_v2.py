@@ -235,14 +235,11 @@ class MirApiV2(MirApiBaseClass):
     async def get_guided_move(self):
         """Status of the current or latest guided move (single light GET).
 
-        ``GET /guided_move`` reports the executing guided-move action:
-        ``{guided_move_id, current_waypoint_index, assigned_waypoint_index,
-        node_resource_handling_enabled, ...}``. The REST API doc types the
-        200 response as an array; normalize to the first element (None when
-        empty) and pass a plain object through as-is.
-
-        UNVERIFIED on a live 3.8+ robot: array vs object shape, and whether
-        the endpoint is populated when node resource handling is disabled.
+        ``GET /guided_move`` reports ``{guided_move_id, current_waypoint_index,
+        assigned_waypoint_index, node_resource_handling_enabled}`` (verified on
+        a MiR 3.8.1 robot, which returns a plain object; the REST API doc types
+        the 200 response as an array, so normalize to the first element, None
+        when empty).
         """
         guided_move_api_url = f"/{GUIDED_MOVE_ENDPOINT_V2}"
         response = await self._get(guided_move_api_url)

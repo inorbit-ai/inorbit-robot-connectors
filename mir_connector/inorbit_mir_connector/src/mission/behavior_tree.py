@@ -34,11 +34,12 @@
 #     `finished` timestamp. Matching by guid (not list length) ignores a load_mission's
 #     inlined sub-actions, whose guids are foreign to our set, so nested missions no longer
 #     over-complete. Best-effort: a tracking error never aborts the completion poll.
-#   - 2026-07-23 Tomás Badenes: InOrbit routes support: build MiR guided_move actions from
-#     MirGuidedMove entries and track their per-waypoint tasks via GET /guided_move, applying
-#     a status only when its action_id matches the tracked action guid (the endpoint reports
-#     current-or-latest); otherwise degrade to mark-at-end. Action type string and parameter
-#     ids are UNVERIFIED against a live 3.8+ robot.
+#   - 2026-07-29 Tomás Badenes: InOrbit routes support: build MiR guided_move actions from
+#     MirGuidedMove entries (schema verified on a 3.8.1 robot; keep_footprint_within_inflation
+#     set when a corridor is given; guided_move_id carries a deterministic identity) and track
+#     their per-waypoint tasks via GET /guided_move, applying a status only when its
+#     guided_move_id matches the identity sent with the action (the endpoint reports
+#     current-or-latest); otherwise degrade to mark-at-end.
 
 """Custom behavior tree nodes for executing compiled native MiR missions.
 
@@ -95,8 +96,7 @@ logger = logging.getLogger(__name__)
 # Distance threshold for MiR move missions (meters)
 _MIR_MOVE_DISTANCE_THRESHOLD = 0.1
 
-# UNVERIFIED on a live 3.8+ robot: action type string and parameter ids assumed from
-# MiR's "How to use Guided move 1.1" application guide; confirm via GET /actions.
+# Verified against GET /actions/guided_move on a MiR 3.8.1 robot (2026-07-29).
 _MIR_GUIDED_MOVE_ACTION_TYPE = "guided_move"
 
 # Polling interval for mission queue state checks
@@ -235,11 +235,22 @@ class CreateMirNativeMissionNode(BehaviorTree):
                         "orientation": action.goal_orientation,
                         "blocked_path_timeout": 60.0,
                         "waypoints": json.dumps(waypoints_json),
+                        # Identity echoed back by GET /guided_move; deterministic so the
+                        # completion node can recompute it (UNVERIFIED whether the robot
+                        # reports it with node resource handling disabled).
+                        "guided_move_id": _guided_move_identity(mission_guid, i),
                     }
                     if action.goal_node_radius is not None:
                         param_values["goal_node_radius"] = action.goal_node_radius
                     if action.goal_edge_radius is not None:
                         param_values["goal_edge_radius"] = action.goal_edge_radius
+                    radiuses = [action.goal_node_radius, action.goal_edge_radius] + [
+                        r for w in action.waypoints for r in (w.node_radius, w.edge_radius)
+                    ]
+                    if any(r is not None for r in radiuses):
+                        # A corridor means "the robot fits inside": keep the footprint (not
+                        # just the center) within the radiuses.
+                        param_values["keep_footprint_within_inflation"] = True
                 elif isinstance(action, MirAction):
                     action_type = action.action_type
                     param_values = dict(action.parameters)
@@ -304,6 +315,12 @@ class CreateMirNativeMissionNode(BehaviorTree):
         return CreateMirNativeMissionNode(context, step, **kwargs)
 
 
+def _guided_move_identity(mission_guid, action_index):
+    """Deterministic ``guided_move_id`` for the action at ``action_index``: sent as an
+    action parameter and matched against ``GET /guided_move`` while tracking."""
+    return f"{mission_guid}:{action_index}"
+
+
 def _iter_task_ids(entries):
     """Yield every task id in an ``action_task_ids`` list, one level flattened
     (a nested list entry carries a guided move's per-waypoint task ids; only
@@ -342,6 +359,8 @@ class WaitForMirMissionCompletionNode(BehaviorTree):
         # {our action guid -> InOrbit task id}, built lazily on first poll from
         # MIR_ACTION_GUIDS (shared memory) zipped with action_task_ids. None until built.
         self._guid_to_task: Optional[dict] = None
+        # {guided action guid -> expected guided_move_id}, built alongside _guid_to_task.
+        self._guid_to_gm_id: dict = {}
         # queue-action int id -> (action_id, finished_bool). Once finished, never re-fetched,
         # so steady state is ~1 detail GET/poll. Not serialized: re-derives on resume.
         self._detail_cache: dict = {}
@@ -364,6 +383,12 @@ class WaitForMirMissionCompletionNode(BehaviorTree):
         guids = self._shared_memory.get(SharedMemoryKeys.MIR_ACTION_GUIDS) or []
         self._guid_to_task = {
             g: t for g, t in zip(guids, self._action_task_ids) if g is not None and t is not None
+        }
+        mission_guid = self._shared_memory.get(SharedMemoryKeys.MIR_MISSION_GUID)
+        self._guid_to_gm_id = {
+            g: _guided_move_identity(mission_guid, i)
+            for i, (g, t) in enumerate(zip(guids, self._action_task_ids))
+            if g is not None and isinstance(t, list)
         }
 
     async def _report_progress(self, queue_id):
@@ -450,21 +475,19 @@ class WaitForMirMissionCompletionNode(BehaviorTree):
 
         ``entry`` is the task-id list parallel to the run's [*waypoints, goal]
         steps. ``GET /guided_move`` reports the current-or-latest guided move
-        with current_waypoint_index over [start, *waypoints, goal] (0 = start),
-        so the status is applied only when its ``action_id`` matches ``guid``
-        (any other status may belong to a previous or concurrent guided move).
-        Whether the index means "reached" or "heading to" is UNVERIFIED
-        against a live robot, so run step i is completed only when
-        index >= i + 2 (never early under either reading); the first
-        pending task is in_progress. Best-effort: poll failures and unmatched
-        statuses degrade to mark-at-end.
+        with current_waypoint_index over [start, *waypoints, goal] (0 = start,
+        so run step i is reached at index i + 1). The status is applied only
+        when its ``guided_move_id`` matches the identity we sent with the
+        action (any other status may belong to a previous or concurrent guided
+        move). Best-effort: poll failures and unmatched statuses degrade to
+        mark-at-end.
         """
         try:
             status = await self._mir_api.get_guided_move()
         except Exception as e:
             logger.warning(f"Failed to poll guided move status: {e}")
             return False
-        if not status or status.get("action_id") != guid:
+        if not status or status.get("guided_move_id") != self._guid_to_gm_id.get(guid):
             return False
         index = status.get("current_waypoint_index")
 
@@ -473,7 +496,7 @@ class WaitForMirMissionCompletionNode(BehaviorTree):
         for i, task_id in enumerate(entry):
             if task_id is None:
                 continue
-            if isinstance(index, int) and index >= i + 2:
+            if isinstance(index, int) and index >= i + 1:
                 changed |= self._mark_one(task_id, "c")
             elif not marked_in_progress and self._reported.get(task_id) != "c":
                 changed |= self._mark_one(task_id, "p")

@@ -170,3 +170,30 @@ mir_robot_wifi_access_point_frequency_hertz 0.0
     metrics = await mir_api.get_metrics()
 
     assert DeepDiff(expected_output, metrics) == {}
+
+
+@pytest.mark.asyncio
+async def test_get_guided_move_returns_first_of_array(mir_api, httpx_mock):
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{mir_api.mir_api_base_url}/guided_move",
+        json=[{"guided_move_id": "gm-1", "current_waypoint_index": 2}],
+    )
+    result = await mir_api.get_guided_move()
+    assert result == {"guided_move_id": "gm-1", "current_waypoint_index": 2}
+
+
+@pytest.mark.asyncio
+async def test_get_guided_move_none_when_empty(mir_api, httpx_mock):
+    httpx_mock.add_response(method="GET", url=f"{mir_api.mir_api_base_url}/guided_move", json=[])
+    assert await mir_api.get_guided_move() is None
+
+
+@pytest.mark.asyncio
+async def test_get_guided_move_passes_through_object(mir_api, httpx_mock):
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{mir_api.mir_api_base_url}/guided_move",
+        json={"guided_move_id": "gm-1"},
+    )
+    assert await mir_api.get_guided_move() == {"guided_move_id": "gm-1"}

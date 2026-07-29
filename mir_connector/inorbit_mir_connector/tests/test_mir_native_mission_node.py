@@ -22,7 +22,6 @@ from inorbit_edge_executor.datatypes import MissionRuntimeSharedMemory
 from inorbit_mir_connector.src.mir_api import MirApiV2
 from inorbit_mir_connector.src.mission.behavior_tree import (
     CleanupMirMissionNode,
-    CreateMirNativeMissionNode,
     MirBehaviorTreeBuilderContext,
     MirMissionAbortedNode,
     SharedMemoryKeys,
@@ -30,75 +29,15 @@ from inorbit_mir_connector.src.mission.behavior_tree import (
 from inorbit_mir_connector.src.mission.datatypes import (
     MirAction,
     MirWaypoint,
-    MissionStepExecuteMirNativeMission,
+)
+
+from inorbit_mir_connector.tests.conftest import (
+    FakeMirApi,
+    build_create_node as _build_node,
 )
 
 _MARKER = "00000000-0000-0000-0000-00000000aaaa"
 _OFFSET = "00000000-0000-0000-0000-00000000bbbb"
-
-
-class FakeMirApi:
-    """Records the native-mission calls CreateMirNativeMissionNode makes."""
-
-    def __init__(self, offsets_by_marker=None, queue_id=42):
-        self.created: list[dict] = []
-        self.actions: list[dict] = []
-        self.queued: list[str] = []
-        self.aborted_entries: list = []
-        self.abort_all_count: int = 0
-        self._offsets_by_marker = offsets_by_marker or {}
-        self._queue_id = queue_id
-
-    async def abort_mission(self, mission_queue_id):
-        self.aborted_entries.append(mission_queue_id)
-
-    async def abort_all_missions(self):
-        self.abort_all_count += 1
-
-    async def create_mission(self, group_id, name, guid, description):
-        self.created.append(
-            {"group_id": group_id, "name": name, "guid": guid, "description": description}
-        )
-
-    async def add_action_to_mission(self, action_type, mission_id, parameters, priority):
-        self.actions.append(
-            {
-                "action_type": action_type,
-                "mission_id": mission_id,
-                "parameters": parameters,
-                "priority": priority,
-            }
-        )
-        return {"guid": f"action-guid-{priority}"}
-
-    async def queue_mission(self, mission_guid):
-        self.queued.append(mission_guid)
-        return {"id": self._queue_id}
-
-    async def get_position_docking_offsets(self, position_guid):
-        return self._offsets_by_marker.get(position_guid, [])
-
-
-def _build_node(api, actions, missions_group_id="grp-1", firmware_version="v3"):
-    """Build a CreateMirNativeMissionNode and its (frozen) context.
-
-    Mirrors the real submit_work flow: the node's __init__ registers shared
-    memory keys via add(), then the memory is frozen before _execute() runs
-    (set() requires a frozen memory).
-    """
-    ctx = MirBehaviorTreeBuilderContext(
-        mir_api=api,
-        missions_group_id=missions_group_id,
-        firmware_version=firmware_version,
-        connector_type="mir",
-    )
-    ctx.shared_memory = MissionRuntimeSharedMemory()
-    step = MissionStepExecuteMirNativeMission(
-        label="Native mission", actions=actions, robot_id="mir-1"
-    )
-    node = CreateMirNativeMissionNode(ctx, step)
-    ctx.shared_memory.freeze()
-    return node, ctx
 
 
 def _action_param_ids(action):

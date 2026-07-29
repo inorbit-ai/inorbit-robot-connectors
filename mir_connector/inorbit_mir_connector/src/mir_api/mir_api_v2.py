@@ -32,6 +32,7 @@ MISSIONS_ENDPOINT_V2 = "missions"
 STATUS_ENDPOINT_V2 = "status"
 DIAGNOSTICS_ENDPOINT_V2 = "experimental/diagnostics"
 POSITIONS_ENDPOINT_V2 = "positions"
+GUIDED_MOVE_ENDPOINT_V2 = "guided_move"
 
 
 class SetStateId(int, Enum):
@@ -230,6 +231,21 @@ class MirApiV2(MirApiBaseClass):
         action_api_url = f"/{MISSION_QUEUE_ENDPOINT_V2}/{queue_id}/actions/{action_int_id}"
         response = await self._get(action_api_url)
         return response.json()
+
+    async def get_guided_move(self):
+        """Status of the current or latest guided move (single light GET).
+
+        ``GET /guided_move`` reports ``{guided_move_id, current_waypoint_index,
+        assigned_waypoint_index, node_resource_handling_enabled}``. Robots
+        return a plain object while the REST API doc types the 200 response as
+        an array, so normalize to the first element (None when empty).
+        """
+        guided_move_api_url = f"/{GUIDED_MOVE_ENDPOINT_V2}"
+        response = await self._get(guided_move_api_url)
+        data = response.json()
+        if isinstance(data, list):
+            return data[0] if data else None
+        return data
 
     async def get_executing_mission_id(self):
         """Returns the id of the mission being currently executed by the robot"""

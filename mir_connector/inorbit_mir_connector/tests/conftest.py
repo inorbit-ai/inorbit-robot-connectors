@@ -892,3 +892,190 @@ def sample_mir_diagnostics_agg_data():
         },
         "op": "publish",
     }
+
+
+# --- Shared native-mission test harness (create node + completion tracking) ---
+
+
+class FakeMirApi:
+    """Records the native-mission calls CreateMirNativeMissionNode makes."""
+
+    def __init__(self, offsets_by_marker=None, queue_id=42):
+        self.created: list[dict] = []
+        self.actions: list[dict] = []
+        self.queued: list[str] = []
+        self.aborted_entries: list = []
+        self.abort_all_count: int = 0
+        self.deleted_missions: list[str] = []
+        self._offsets_by_marker = offsets_by_marker or {}
+        self._queue_id = queue_id
+
+    async def abort_mission(self, mission_queue_id):
+        self.aborted_entries.append(mission_queue_id)
+
+    async def abort_all_missions(self):
+        self.abort_all_count += 1
+
+    async def create_mission(self, group_id, name, guid, description):
+        self.created.append(
+            {"group_id": group_id, "name": name, "guid": guid, "description": description}
+        )
+
+    async def add_action_to_mission(self, action_type, mission_id, parameters, priority):
+        self.actions.append(
+            {
+                "action_type": action_type,
+                "mission_id": mission_id,
+                "parameters": parameters,
+                "priority": priority,
+            }
+        )
+        return {"guid": f"action-guid-{priority}"}
+
+    async def queue_mission(self, mission_guid):
+        self.queued.append(mission_guid)
+        return {"id": self._queue_id}
+
+    async def delete_mission_definition(self, mission_id):
+        self.deleted_missions.append(mission_id)
+
+    async def get_position_docking_offsets(self, position_guid):
+        return self._offsets_by_marker.get(position_guid, [])
+
+
+def build_create_node(
+    api, actions, action_task_ids=None, missions_group_id="grp-1", firmware_version="v3"
+):
+    """Build a CreateMirNativeMissionNode and its (frozen) context.
+
+    Mirrors the real submit_work flow: the node's __init__ registers shared
+    memory keys via add(), then the memory is frozen before _execute() runs
+    (set() requires a frozen memory).
+    """
+    from inorbit_edge_executor.datatypes import MissionRuntimeSharedMemory
+
+    from inorbit_mir_connector.src.mission.behavior_tree import (
+        CreateMirNativeMissionNode,
+        MirBehaviorTreeBuilderContext,
+    )
+    from inorbit_mir_connector.src.mission.datatypes import MissionStepExecuteMirNativeMission
+
+    ctx = MirBehaviorTreeBuilderContext(
+        mir_api=api,
+        missions_group_id=missions_group_id,
+        firmware_version=firmware_version,
+        connector_type="mir",
+    )
+    ctx.shared_memory = MissionRuntimeSharedMemory()
+    step = MissionStepExecuteMirNativeMission(
+        label="Native mission",
+        actions=actions,
+        robot_id="mir-1",
+        action_task_ids=action_task_ids or [],
+    )
+    node = CreateMirNativeMissionNode(ctx, step)
+    ctx.shared_memory.freeze()
+    return node, ctx
+
+
+def queue_entry(int_id, action_id, finished=False, started=True):
+    """One mission-queue action, as the detail endpoint reports it."""
+    return {
+        "id": int_id,
+        "action_id": action_id,
+        "finished": "ts" if finished else None,
+        "started": "ts" if (started or finished) else None,
+    }
+
+
+class ProgressMirApi:
+    """Models the queue LIST (``[{id, url}]``) + DETAIL (``{action_id, started,
+    finished}``) endpoints, the queue-entry state, and ``GET /guided_move``,
+    driven by an ``executed`` list the test advances."""
+
+    def __init__(self, executed=None, state="Executing", guided_move=None):
+        self.executed = executed or []
+        self.state = state
+        self.guided_move = guided_move
+        self.list_polls = 0
+        self.detail_polls = 0
+        self.guided_move_calls = 0
+
+    async def get_mission_queue_entry(self, queue_id):
+        return {"state": self.state}
+
+    async def get_mission_queue_actions(self, queue_id):
+        self.list_polls += 1
+        return [
+            {"id": e["id"], "url": f"/mission_queue/{queue_id}/actions/{e['id']}"}
+            for e in self.executed
+        ]
+
+    async def get_mission_queue_action(self, queue_id, action_int_id):
+        self.detail_polls += 1
+        for e in self.executed:
+            if e["id"] == action_int_id:
+                return e
+        raise KeyError(action_int_id)
+
+    async def get_guided_move(self):
+        self.guided_move_calls += 1
+        return self.guided_move
+
+
+def mission_with_tasks(task_ids):
+    from inorbit_edge_executor.datatypes import (
+        MissionDefinition,
+        MissionStepPoseWaypoint,
+        MissionTask,
+        Pose,
+    )
+    from inorbit_edge_executor.mission import Mission
+
+    tasks = [MissionTask(taskId=t, label=t) for t in task_ids if t is not None]
+    return Mission(
+        id="m1",
+        robot_id="mir-1",
+        definition=MissionDefinition(
+            label="t",
+            steps=[MissionStepPoseWaypoint(waypoint=Pose(x=0, y=0, theta=0), label="wp")],
+        ),
+        tasks_list=tasks,
+    )
+
+
+def wait_node(api, action_task_ids, mission, action_guids, queue_id=42, mission_guid="m-1"):
+    from unittest.mock import AsyncMock
+
+    from inorbit_edge_executor.datatypes import MissionRuntimeSharedMemory
+
+    from inorbit_mir_connector.src.mission.behavior_tree import (
+        MirBehaviorTreeBuilderContext,
+        SharedMemoryKeys,
+        WaitForMirMissionCompletionNode,
+    )
+
+    sm = MissionRuntimeSharedMemory()
+    sm.add(SharedMemoryKeys.MIR_QUEUE_ID, None)
+    sm.add(SharedMemoryKeys.MIR_MISSION_GUID, None)
+    sm.add(SharedMemoryKeys.MIR_ERROR_MESSAGE, None)
+    sm.add(SharedMemoryKeys.MIR_ACTION_GUIDS, None)
+    sm.freeze()
+    sm.set(SharedMemoryKeys.MIR_QUEUE_ID, queue_id)
+    sm.set(SharedMemoryKeys.MIR_MISSION_GUID, mission_guid)
+    sm.set(SharedMemoryKeys.MIR_ACTION_GUIDS, action_guids)
+    ctx = MirBehaviorTreeBuilderContext(
+        mir_api=api,
+        missions_group_id="grp",
+        firmware_version="v3",
+        connector_type="mir",
+        mission=mission,
+        mt=AsyncMock(),
+    )
+    ctx.shared_memory = sm
+    return WaitForMirMissionCompletionNode(ctx, action_task_ids=action_task_ids), ctx
+
+
+def task_status(mission, task_id):
+    task = mission.find_task(task_id)
+    return (task.in_progress, task.completed)

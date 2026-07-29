@@ -802,6 +802,40 @@ to that mission's GUID.
   is created on the robot; nothing runs.
 - A failure identifies the mission, not which step within it failed.
 
+## 🛣️ Routes
+
+InOrbit routes (CaC `SpatialAnnotation` of `type: route`) are dispatched as consecutive
+waypoint mission steps carrying a resolved `routeSegment` per leg. The connector collapses
+each run of consecutive route steps (same route) into a single MiR `guided_move` action,
+so the robot drives through the waypoints without stopping at each one.
+
+Requirements:
+
+- MiR software 3.8+ (guided move was introduced in that release).
+- `graph` must be included in the account's MissionExecution `planner.allowed` so routes
+  are resolved server-side before dispatch.
+- Straight-line segments only: a route segment with a NURBS trajectory is rejected at
+  translation time, before any mission is created on the robot.
+
+Corridor width maps to the guided-move edge radiuses: a symmetric corridor's total
+`width` becomes `width / 2` per side; an asymmetric corridor (`leftWidth`/`rightWidth`)
+uses the narrower side. Values that would exceed 5 m (corridor wider than 10 m) are
+clamped to MiR's 5 m radius maximum. Each waypoint's node radius is the min of its two
+adjacent legs' radiuses, so a narrow leg is honored on both sides of the turn. A leg
+without a corridor follows the route line exactly (edge radius 0, so the robot cannot
+cut the corner through overlapping edges) with a 0.3 m node radius to round each
+waypoint without stopping. The goal always uses MiR's default 0.5 m arrival radius;
+the corridor shapes the lane, never the arrival tolerance.
+
+Corridor compliance is center-based: the robot keeps its CENTER within the radiuses, so
+its footprint can momentarily exceed the corridor, for example to drive around an
+obstacle. MiR's footprint mode (`keep_footprint_within_inflation`) is not used: it
+requires every radius, including the fixed start-node radius, to contain the whole
+footprint, so it rejects corridors narrower than the robot's diagonal (a 1 m corridor
+fails on a MiR100 with "Start node radius is too low"). Note that InOrbit's planner
+validates robot-vs-corridor fit at dispatch time with its own criteria, which differ
+from MiR's.
+
 ## Next steps
 
 Now that all of your MiR robots are InOrbit connected, visit the [config as code examples](cac_examples/README.md)

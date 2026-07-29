@@ -334,8 +334,9 @@ async def test_guided_move_action_parameters():
         {"x": 1.0, "y": 2.0, "node_radius": 0.6, "edge_radius": 0.6},
         {"x": 3.0, "y": 4.0},
     ]
-    # Corridor set -> footprint compliance; identity is <mission guid>:<action index>.
-    assert params["keep_footprint_within_inflation"] is True
+    # Center-based deviation always (footprint mode rejects narrow corridors);
+    # identity is <mission guid>:<action index>.
+    assert params["keep_footprint_within_inflation"] is False
     assert params["guided_move_id"] == f"{api.created[0]['guid']}:0"
     # The robot rejects the action unless every schema parameter is present.
     assert params["position"] is None

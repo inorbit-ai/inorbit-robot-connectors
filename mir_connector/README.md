@@ -820,10 +820,17 @@ Requirements:
 Corridor width maps to the guided-move radiuses: a symmetric corridor's total `width`
 becomes `width / 2` per side; an asymmetric corridor (`leftWidth`/`rightWidth`) uses the
 narrower side for both radiuses. Values that would exceed 5 m (corridor wider than 10 m)
-are clamped to MiR's 5 m radius maximum. When any corridor is specified, the robot is told
-to keep its whole footprint (not just its center) within the radiuses
-(`keep_footprint_within_inflation`). A step without a corridor gets MiR's default
-radiuses (start/goal node 0.5 m, goal edge 0.3 m) and center-based deviation.
+are clamped to MiR's 5 m radius maximum. A step without a corridor gets MiR's default
+radiuses (start/goal node 0.5 m, goal edge 0.3 m).
+
+Corridor compliance is center-based: the robot keeps its CENTER within the radiuses, so
+its footprint can momentarily exceed the corridor, for example to drive around an
+obstacle. MiR's footprint mode (`keep_footprint_within_inflation`) is not used: it
+requires every radius, including the fixed start-node radius, to contain the whole
+footprint, so it rejects corridors narrower than the robot's diagonal (a 1 m corridor
+fails on a MiR100 with "Start node radius is too low"). Note that InOrbit's planner
+validates robot-vs-corridor fit at dispatch time with its own criteria, which differ
+from MiR's.
 
 ## Next steps
 

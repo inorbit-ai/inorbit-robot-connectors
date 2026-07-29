@@ -36,8 +36,9 @@
 #     over-complete. Best-effort: a tracking error never aborts the completion poll.
 #   - 2026-07-29 Tomás Badenes: InOrbit routes support: build MiR guided_move actions from
 #     MirGuidedMove entries (verified on a 3.8.1 robot: the full schema parameter set is
-#     required, no server-side defaults; keep_footprint_within_inflation set when a corridor
-#     is given; guided_move_id carries a deterministic identity) and track their per-waypoint
+#     required, no server-side defaults; center-based deviation, as footprint mode rejects
+#     corridors narrower than the robot diagonal; guided_move_id carries a deterministic
+#     identity) and track their per-waypoint
 #     tasks via GET /guided_move, applying a status only when its guided_move_id matches the
 #     identity sent with the action (the endpoint reports current-or-latest); otherwise
 #     degrade to mark-at-end.
@@ -230,10 +231,6 @@ class CreateMirNativeMissionNode(BehaviorTree):
                         }
                         for w in action.waypoints
                     ]
-                    radiuses = [action.goal_node_radius, action.goal_edge_radius] + [
-                        r for w in action.waypoints for r in (w.node_radius, w.edge_radius)
-                    ]
-                    has_corridor = any(r is not None for r in radiuses)
                     # Every schema parameter must be present: the robot rejects the action
                     # with input_required_argument_missing otherwise (verified on 3.8.1;
                     # no server-side defaults). Unset radiuses get the schema defaults.
@@ -251,9 +248,12 @@ class CreateMirNativeMissionNode(BehaviorTree):
                         ),
                         "blocked_path_timeout": 60.0,
                         "waypoints": json.dumps(waypoints_json),
-                        # A corridor means "the robot fits inside": keep the footprint
-                        # (not just the center) within the radiuses.
-                        "keep_footprint_within_inflation": has_corridor,
+                        # Center-based deviation (MiR default): the footprint may exceed
+                        # the corridor, e.g. to skirt an obstacle. Footprint mode requires
+                        # every radius (incl. the fixed start node) to contain the whole
+                        # footprint and rejects corridors narrower than the robot diagonal
+                        # ("Start node radius is too low"), so the MVP does not use it.
+                        "keep_footprint_within_inflation": False,
                         "enable_node_resource_handling": False,
                         # Identity echoed back by GET /guided_move; deterministic so the
                         # completion node can recompute it (UNVERIFIED whether the robot

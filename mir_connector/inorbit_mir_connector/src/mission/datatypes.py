@@ -62,8 +62,8 @@ class MirAction(MissionStep):
 class GuidedMoveWaypoint(BaseModel):
     """One intermediate guided-move waypoint (MiR waypoints JSON entry).
 
-    Radiuses are meters; None means the robot default applies (the entry is
-    serialized without the key).
+    Radiuses are meters; None means the connector fills its line-following
+    defaults at action build (node 0.3, edge 0.0).
     """
 
     x: float
@@ -76,7 +76,9 @@ class MirGuidedMove(MissionStep):
     """A collapsed run of route steps, executed as one MiR guided_move action.
 
     Goal is the run's last waypoint; ``waypoints`` are the intermediates in
-    order. Radiuses come from the InOrbit route corridor (width/2, clamped).
+    order. Edge radiuses come from the InOrbit route corridor (width/2,
+    clamped); goal_node_radius is an arrival tolerance, not corridor-derived
+    (None means the connector default 0.5 at action build).
     """
 
     goal_x: float

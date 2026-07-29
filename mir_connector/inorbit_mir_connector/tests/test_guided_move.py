@@ -9,11 +9,11 @@ from __future__ import annotations
 import json
 import logging
 import math
+from types import SimpleNamespace
 
 import pytest
 from inorbit_edge_executor.datatypes import (
     MissionDefinition,
-    MissionRuntimeSharedMemory,
     MissionStepPoseWaypoint,
     MissionStepWait,
     Pose,
@@ -24,12 +24,6 @@ from inorbit_edge_executor.datatypes import (
 )
 from inorbit_edge_executor.mission import Mission
 
-from inorbit_mir_connector.src.mission.behavior_tree import (
-    CreateMirNativeMissionNode,
-    MirBehaviorTreeBuilderContext,
-    SharedMemoryKeys,
-    WaitForMirMissionCompletionNode,
-)
 from inorbit_mir_connector.src.mission.datatypes import (
     GuidedMoveWaypoint,
     MirAction,
@@ -42,12 +36,23 @@ from inorbit_mir_connector.src.mission.translator import (
     InOrbitToMirTranslator,
     _corridor_to_radius,
 )
+from inorbit_mir_connector.tests.conftest import (
+    FakeMirApi,
+    ProgressMirApi,
+    build_create_node as _build_create_node,
+    mission_with_tasks,
+    queue_entry,
+    task_status,
+    wait_node,
+)
 
 ROBOT_ID = "test-robot-01"
 
 
-def _route_wp(x, y, theta=0.0, width=None, label="rwp", complete_task=None, timeout=None):
-    seg_kwargs = {"routeId": "route-1"}
+def _route_wp(
+    x, y, theta=0.0, width=None, label="rwp", complete_task=None, timeout=None, route="route-1"
+):
+    seg_kwargs = {"routeId": route}
     if width is not None:
         seg_kwargs["corridor"] = {"width": width}
     kwargs = {
@@ -147,15 +152,16 @@ class TestRouteRunGrouping:
         assert len(step.actions) == 1
         gm = step.actions[0]
         assert isinstance(gm, MirGuidedMove)
-        # goal = last run step, its corridor maps to goal radiuses
+        # goal = last run step; its corridor maps to the goal EDGE radius only
+        # (arrival tolerance is not corridor-derived)
         assert (gm.goal_x, gm.goal_y) == (3.0, 3.0)
         assert gm.goal_orientation == pytest.approx(90.0)
-        assert gm.goal_node_radius == 0.5
+        assert gm.goal_node_radius is None
         assert gm.goal_edge_radius == 0.5
-        # intermediates carry their own leg radius (edge INTO the waypoint)
+        # edge = incoming leg; node = min of the adjacent legs
         assert [(w.x, w.y, w.node_radius, w.edge_radius) for w in gm.waypoints] == [
             (1.0, 1.0, 0.5, 0.5),
-            (2.0, 2.0, 1.0, 1.0),
+            (2.0, 2.0, 0.5, 1.0),
         ]
         # nested task-id entry parallel to [*waypoints, goal]
         assert step.action_task_ids == [["t1", "t2", "t3"]]
@@ -165,6 +171,29 @@ class TestRouteRunGrouping:
         gm = InOrbitToMirTranslator.translate(m).definition.steps[0].actions[0]
         assert gm.waypoints[0].node_radius is None
         assert gm.goal_node_radius is None
+
+    def test_node_radius_none_when_either_adjacent_leg_has_no_corridor(self):
+        m = _mission([_route_wp(1, 1, width=4.0), _route_wp(2, 2), _route_wp(3, 3, width=4.0)])
+        gm = InOrbitToMirTranslator.translate(m).definition.steps[0].actions[0]
+        assert [(w.node_radius, w.edge_radius) for w in gm.waypoints] == [
+            (None, 2.0),  # outgoing leg has no corridor
+            (None, None),  # incoming leg has no corridor
+        ]
+
+    def test_route_id_change_breaks_run(self):
+        m = _mission(
+            [
+                _route_wp(1, 1, route="r1", complete_task="a1"),
+                _route_wp(2, 2, route="r1", complete_task="a2"),
+                _route_wp(3, 3, route="r2", complete_task="b1"),
+                _route_wp(4, 4, route="r2", complete_task="b2"),
+            ]
+        )
+        step = InOrbitToMirTranslator.translate(m).definition.steps[0]
+        assert [type(a) for a in step.actions] == [MirGuidedMove, MirGuidedMove]
+        # Each route keeps its own goal (oriented arrival at r1's destination).
+        assert (step.actions[0].goal_x, step.actions[1].goal_x) == (2.0, 4.0)
+        assert step.action_task_ids == [["a1", "a2"], ["b1", "b2"]]
 
     def test_single_leg_run_has_empty_waypoints(self):
         m = _mission([_route_wp(4, 5, width=1.0)])
@@ -217,6 +246,12 @@ class TestRouteRunGrouping:
         with pytest.raises(ValueError, match="(?i)nurbs"):
             InOrbitToMirTranslator.translate(_mission([step]))
 
+    def test_empty_trajectory_object_is_treated_as_straight_line(self):
+        step = _route_wp(1, 1, width=1.0)
+        step.routeSegment.trajectory = RouteSegmentTrajectory()
+        gm = InOrbitToMirTranslator.translate(_mission([step])).definition.steps[0].actions[0]
+        assert isinstance(gm, MirGuidedMove)
+
     def test_intermediate_theta_dropped_with_warning(self, caplog):
         m = _mission(
             [
@@ -243,10 +278,12 @@ class TestRouteRunGrouping:
         gm = InOrbitToMirTranslator.translate(m).definition.steps[0].actions[0]
         assert gm.goal_orientation == 0.0
 
-    def test_plain_waypoint_none_theta_defaults_to_zero_orientation(self):
+    def test_plain_waypoint_none_theta_defaults_to_zero_with_warning(self, caplog):
         m = _mission([_plain_wp(1, 1, theta=None)])
-        wp = InOrbitToMirTranslator.translate(m).definition.steps[0].actions[0]
+        with caplog.at_level(logging.WARNING):
+            wp = InOrbitToMirTranslator.translate(m).definition.steps[0].actions[0]
         assert wp.orientation == 0.0
+        assert any("theta" in r.message.lower() for r in caplog.records)
 
     def test_route_properties_dropped_with_warning(self, caplog):
         step = _route_wp(1, 1, width=1.0)
@@ -254,49 +291,6 @@ class TestRouteRunGrouping:
         with caplog.at_level(logging.WARNING):
             InOrbitToMirTranslator.translate(_mission([step, _route_wp(2, 2)]))
         assert any("properties" in r.message.lower() for r in caplog.records)
-
-
-class FakeMirApi:
-    def __init__(self, queue_id=42):
-        self.created = []
-        self.actions = []
-        self.queued = []
-        self._queue_id = queue_id
-
-    async def create_mission(self, group_id, name, guid, description):
-        self.created.append({"group_id": group_id, "guid": guid})
-
-    async def add_action_to_mission(self, action_type, mission_id, parameters, priority):
-        self.actions.append(
-            {"action_type": action_type, "parameters": parameters, "priority": priority}
-        )
-        return {"guid": f"action-guid-{priority}"}
-
-    async def queue_mission(self, mission_guid):
-        self.queued.append(mission_guid)
-        return {"id": self._queue_id}
-
-    async def get_position_docking_offsets(self, position_guid):
-        return []
-
-
-def _build_create_node(api, actions, action_task_ids=None):
-    ctx = MirBehaviorTreeBuilderContext(
-        mir_api=api,
-        missions_group_id="grp-1",
-        firmware_version="v3",
-        connector_type="mir",
-    )
-    ctx.shared_memory = MissionRuntimeSharedMemory()
-    step = MissionStepExecuteMirNativeMission(
-        label="native",
-        actions=actions,
-        robot_id="mir-1",
-        action_task_ids=action_task_ids or [],
-    )
-    node = CreateMirNativeMissionNode(ctx, step)
-    ctx.shared_memory.freeze()
-    return node, ctx
 
 
 def _params_by_id(recorded_action):
@@ -381,11 +375,19 @@ async def test_guided_move_mixes_with_other_actions_in_order():
     assert [a["priority"] for a in api.actions] == [1, 2]
 
 
+class _Http400Error(Exception):
+    """Mimics httpx.HTTPStatusError just enough: carries .response.status_code."""
+
+    def __init__(self, message):
+        super().__init__(message)
+        self.response = SimpleNamespace(status_code=400)
+
+
 @pytest.mark.asyncio
-async def test_guided_move_failure_names_firmware_requirement():
+async def test_guided_move_400_failure_names_firmware_requirement():
     class FailingApi(FakeMirApi):
         async def add_action_to_mission(self, action_type, mission_id, parameters, priority):
-            raise RuntimeError("invalid action type")
+            raise _Http400Error("invalid action type")
 
     api = FailingApi()
     gm = MirGuidedMove(label="route", goal_x=1.0, goal_y=2.0, goal_orientation=0.0)
@@ -395,164 +397,212 @@ async def test_guided_move_failure_names_firmware_requirement():
         await node._execute()
 
 
-class FakeTrackingMirApi:
-    """Drives WaitForMirMissionCompletionNode._report_progress: queue actions +
-    per-action detail + guided move status."""
+@pytest.mark.asyncio
+async def test_non_400_guided_failure_keeps_error_undecorated():
+    class FailingApi(FakeMirApi):
+        async def add_action_to_mission(self, action_type, mission_id, parameters, priority):
+            raise RuntimeError("Connection refused")
 
-    def __init__(self):
-        # queue action int id -> {"action_id": guid, "finished": ts_or_None}
-        self.queue_actions: dict = {}
-        self.guided_move: dict | None = None
-        self.guided_move_calls = 0
+    api = FailingApi()
+    gm = MirGuidedMove(label="route", goal_x=1.0, goal_y=2.0, goal_orientation=0.0)
+    node, ctx = _build_create_node(api, [gm])
 
-    async def get_mission_queue_actions(self, queue_id):
-        return [{"id": i} for i in self.queue_actions]
-
-    async def get_mission_queue_action(self, queue_id, action_int_id):
-        return {"id": action_int_id, **self.queue_actions[action_int_id]}
-
-    async def get_guided_move(self):
-        self.guided_move_calls += 1
-        return self.guided_move
+    with pytest.raises(RuntimeError) as excinfo:
+        await node._execute()
+    assert "3.8.0" not in str(excinfo.value)
 
 
-class FakeMission:
-    def __init__(self):
-        self.completed: list[str] = []
-        self.in_progress: list[str] = []
+@pytest.mark.asyncio
+async def test_guided_move_rejected_on_v2_firmware_before_create():
+    api = FakeMirApi()
+    gm = MirGuidedMove(label="route", goal_x=1.0, goal_y=2.0, goal_orientation=0.0)
+    node, ctx = _build_create_node(api, [gm], firmware_version="v2")
 
-    def mark_task_completed(self, task_id):
-        self.completed.append(task_id)
+    with pytest.raises(RuntimeError, match="3.8.0"):
+        await node._execute()
 
-    def mark_task_in_progress(self, task_id):
-        self.in_progress.append(task_id)
-
-
-class FakeMT:
-    def __init__(self):
-        self.reports = 0
-
-    async def report_tasks(self):
-        self.reports += 1
+    assert api.created == []  # rejected before any robot call
 
 
-def _build_wait_node(api, action_task_ids, action_guids):
-    ctx = MirBehaviorTreeBuilderContext(
-        mir_api=api,
-        missions_group_id="grp-1",
-        firmware_version="v3",
-        connector_type="mir",
-    )
-    ctx.shared_memory = MissionRuntimeSharedMemory()
-    ctx.mission = FakeMission()
-    ctx.mt = FakeMT()
-    node = WaitForMirMissionCompletionNode(ctx, action_task_ids=action_task_ids)
-    ctx.shared_memory.add(SharedMemoryKeys.MIR_ACTION_GUIDS, action_guids)
-    ctx.shared_memory.add(SharedMemoryKeys.MIR_QUEUE_ID, 7)
-    ctx.shared_memory.add(SharedMemoryKeys.MIR_MISSION_GUID, "m-1")
-    ctx.shared_memory.freeze()
-    return node, ctx
+@pytest.mark.asyncio
+async def test_failed_create_deletes_orphan_mission():
+    class FailingApi(FakeMirApi):
+        async def add_action_to_mission(self, action_type, mission_id, parameters, priority):
+            raise RuntimeError("boom")
+
+    api = FailingApi()
+    node, ctx = _build_create_node(api, [MirWaypoint(label="wp", x=1.0, y=1.0, orientation=0.0)])
+
+    with pytest.raises(RuntimeError):
+        await node._execute()
+
+    assert api.deleted_missions == [api.created[0]["guid"]]
+
+
+def _guided_wait(api, action_task_ids, action_guids):
+    """Wait node over a real Mission holding every non-None task id."""
+    flat = [
+        t for e in action_task_ids for t in (e if isinstance(e, list) else [e]) if t is not None
+    ]
+    mission = mission_with_tasks(flat)
+    node, ctx = wait_node(api, action_task_ids, mission, action_guids, queue_id=7)
+    return node, ctx, mission
 
 
 @pytest.mark.asyncio
 async def test_guided_running_marks_intermediates_by_index():
-    api = FakeTrackingMirApi()
-    api.queue_actions = {1: {"action_id": "guid-gm", "finished": None}}
-    # current_waypoint_index=3 (waypoint reached, index 0 = start): run steps 0..2 completed
-    api.guided_move = {"current_waypoint_index": 3, "guided_move_id": "m-1:0"}
-    node, ctx = _build_wait_node(api, [["t0", "t1", "t2", "t-goal"]], ["guid-gm"])
+    # current_waypoint_index=3 (waypoint reached, index 0 = start): run steps 0..2
+    # completed; the goal task only progresses (it completes with the action).
+    api = ProgressMirApi(
+        executed=[queue_entry(1, "guid-gm")],
+        guided_move={"current_waypoint_index": 3, "guided_move_id": "m-1:0"},
+    )
+    node, ctx, mission = _guided_wait(api, [["t0", "t1", "t2", "t-goal"]], ["guid-gm"])
 
     await node._report_progress(7)
 
-    assert ctx.mission.completed == ["t0", "t1", "t2"]
-    assert ctx.mt.reports == 1
+    assert [task_status(mission, t) for t in ["t0", "t1", "t2"]] == [(False, True)] * 3
+    assert task_status(mission, "t-goal") == (True, False)
+    assert ctx.mt.report_tasks.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_goal_task_not_completed_from_index_while_running():
+    # Index at the goal (N+1) but the action has not finished: settling/blocked-path
+    # can still abort the move, so the goal task must not be completed positionally.
+    api = ProgressMirApi(
+        executed=[queue_entry(1, "guid-gm")],
+        guided_move={"current_waypoint_index": 2, "guided_move_id": "m-1:0"},
+    )
+    node, ctx, mission = _guided_wait(api, [["t0", "t-goal"]], ["guid-gm"])
+
+    await node._report_progress(7)
+
+    assert task_status(mission, "t0") == (False, True)
+    assert task_status(mission, "t-goal") == (True, False)
 
 
 @pytest.mark.asyncio
 async def test_guided_running_low_index_marks_first_task_in_progress():
-    api = FakeTrackingMirApi()
-    api.queue_actions = {1: {"action_id": "guid-gm", "finished": None}}
-    api.guided_move = {"current_waypoint_index": 0, "guided_move_id": "m-1:0"}
-    node, ctx = _build_wait_node(api, [["t0", "t1"]], ["guid-gm"])
+    api = ProgressMirApi(
+        executed=[queue_entry(1, "guid-gm")],
+        guided_move={"current_waypoint_index": 0, "guided_move_id": "m-1:0"},
+    )
+    node, ctx, mission = _guided_wait(api, [["t0", "t1"]], ["guid-gm"])
 
     await node._report_progress(7)
 
-    assert ctx.mission.completed == []
-    assert ctx.mission.in_progress == ["t0"]
+    assert task_status(mission, "t0") == (True, False)
+    assert task_status(mission, "t1") == (False, False)
 
 
 @pytest.mark.asyncio
-async def test_guided_status_without_matching_id_is_ignored():
-    api = FakeTrackingMirApi()
-    api.queue_actions = {1: {"action_id": "guid-gm", "finished": None}}
-    # Empty guided_move_id (as an idle robot reports): not our move, ignore it.
-    api.guided_move = {"current_waypoint_index": 3, "guided_move_id": ""}
-    node, ctx = _build_wait_node(api, [["t0", "t1", "t2", "t-goal"]], ["guid-gm"])
+async def test_guided_status_without_matching_id_still_marks_progress(caplog):
+    # Empty guided_move_id (a robot that does not echo the parameter): completions are
+    # withheld, but the running action still reports the first task in progress, and
+    # the degradation is logged once.
+    api = ProgressMirApi(
+        executed=[queue_entry(1, "guid-gm")],
+        guided_move={"current_waypoint_index": 3, "guided_move_id": ""},
+    )
+    node, ctx, mission = _guided_wait(api, [["t0", "t1", "t2", "t-goal"]], ["guid-gm"])
 
-    await node._report_progress(7)
-    api.guided_move = {"current_waypoint_index": 4, "guided_move_id": ""}
-    await node._report_progress(7)
+    with caplog.at_level(logging.WARNING):
+        await node._report_progress(7)
+        api.guided_move = {"current_waypoint_index": 4, "guided_move_id": ""}
+        await node._report_progress(7)
 
-    assert ctx.mission.completed == []
-    assert ctx.mission.in_progress == []
+    assert [task_status(mission, t) for t in ["t1", "t2", "t-goal"]] == [(False, False)] * 3
+    assert task_status(mission, "t0") == (True, False)
+    assert sum("guided_move_id" in r.message for r in caplog.records) == 1
 
 
 @pytest.mark.asyncio
 async def test_guided_second_move_ignores_first_moves_status():
-    # Two guided moves queued in one mission: while the FIRST runs, the status
-    # carries its guided_move_id and must not advance the SECOND run's tasks.
-    api = FakeTrackingMirApi()
-    api.queue_actions = {
-        1: {"action_id": "guid-a", "finished": None},
-        2: {"action_id": "guid-b", "finished": None},
-    }
-    api.guided_move = {"current_waypoint_index": 3, "guided_move_id": "m-1:0"}
-    node, ctx = _build_wait_node(api, [["a0", "a1"], ["b0", "b1"]], ["guid-a", "guid-b"])
+    # Two guided moves in one mission: while the FIRST executes, the status carries its
+    # guided_move_id and must not advance the SECOND (queued, not started) run's tasks.
+    api = ProgressMirApi(
+        executed=[
+            queue_entry(1, "guid-a"),
+            queue_entry(2, "guid-b", started=False),
+        ],
+        guided_move={"current_waypoint_index": 3, "guided_move_id": "m-1:0"},
+    )
+    node, ctx, mission = _guided_wait(
+        api, [["a0", "a-goal"], ["b0", "b-goal"]], ["guid-a", "guid-b"]
+    )
 
     await node._report_progress(7)
-    api.guided_move = {"current_waypoint_index": 4, "guided_move_id": "m-1:0"}
     await node._report_progress(7)
 
-    assert "b0" not in ctx.mission.completed and "b1" not in ctx.mission.completed
-    assert ctx.mission.in_progress == []  # unmatched run reports nothing mid-flight
-    assert sorted(set(ctx.mission.completed)) == ["a0", "a1"]
+    assert task_status(mission, "a0") == (False, True)
+    assert task_status(mission, "a-goal") == (True, False)
+    assert task_status(mission, "b0") == (False, False)
+    assert task_status(mission, "b-goal") == (False, False)
+    assert api.guided_move_calls == 2  # one GET per poll, not per guided entry
 
 
 @pytest.mark.asyncio
 async def test_guided_finished_completes_all_its_tasks():
-    api = FakeTrackingMirApi()
-    api.queue_actions = {1: {"action_id": "guid-gm", "finished": "2026-07-22T10:00:00"}}
-    node, ctx = _build_wait_node(api, [[None, "t1", "t-goal"]], ["guid-gm"])
+    api = ProgressMirApi(executed=[queue_entry(1, "guid-gm", finished=True)])
+    node, ctx, mission = _guided_wait(api, [[None, "t1", "t-goal"]], ["guid-gm"])
 
     await node._report_progress(7)
 
-    assert sorted(ctx.mission.completed) == ["t-goal", "t1"]
+    assert task_status(mission, "t1") == (False, True)
+    assert task_status(mission, "t-goal") == (False, True)
     assert api.guided_move_calls == 0  # finished action: no guided-move poll needed
 
 
 @pytest.mark.asyncio
-async def test_guided_poll_failure_degrades_to_mark_at_end():
-    class Boom(FakeTrackingMirApi):
+async def test_guided_not_polled_while_queued():
+    api = ProgressMirApi(executed=[queue_entry(1, "guid-gm", started=False)])
+    node, ctx, mission = _guided_wait(api, [["t0", "t1"]], ["guid-gm"])
+
+    await node._report_progress(7)
+
+    assert api.guided_move_calls == 0
+    assert task_status(mission, "t0") == (False, False)
+
+
+@pytest.mark.asyncio
+async def test_untracked_guided_run_not_polled():
+    api = ProgressMirApi(executed=[queue_entry(1, "guid-gm"), queue_entry(2, "guid-2")])
+    node, ctx, mission = _guided_wait(api, [[None, None], "t2"], ["guid-gm", "guid-2"])
+
+    await node._report_progress(7)
+
+    assert api.guided_move_calls == 0
+    assert task_status(mission, "t2") == (True, False)
+
+
+@pytest.mark.asyncio
+async def test_guided_poll_failure_degrades_to_mark_at_end(caplog):
+    class Boom(ProgressMirApi):
         async def get_guided_move(self):
             raise RuntimeError("boom")
 
-    api = Boom()
-    api.queue_actions = {1: {"action_id": "guid-gm", "finished": None}}
-    node, ctx = _build_wait_node(api, [["t0", "t1"]], ["guid-gm"])
+    api = Boom(executed=[queue_entry(1, "guid-gm")])
+    node, ctx, mission = _guided_wait(api, [["t0", "t1"]], ["guid-gm"])
 
-    await node._report_progress(7)  # must not raise
+    with caplog.at_level(logging.WARNING):
+        await node._report_progress(7)  # must not raise
+        await node._report_progress(7)
 
-    assert ctx.mission.completed == []
+    assert task_status(mission, "t0") == (True, False)  # still in progress, not completed
+    assert task_status(mission, "t1") == (False, False)
+    # warned once, not once per poll
+    assert sum("guided move status" in r.message for r in caplog.records) == 1
 
 
 @pytest.mark.asyncio
 async def test_finish_tasks_flattens_nested_entries():
-    api = FakeTrackingMirApi()
-    node, ctx = _build_wait_node(api, [["t0", None, "t1"], "t2"], ["guid-gm", "guid-2"])
+    api = ProgressMirApi()
+    node, ctx, mission = _guided_wait(api, [["t0", None, "t1"], "t2"], ["guid-gm", "guid-2"])
 
     await node._finish_tasks()
 
-    assert sorted(ctx.mission.completed) == ["t0", "t1", "t2"]
+    assert all(task_status(mission, t) == (False, True) for t in ["t0", "t1", "t2"])
 
 
 @pytest.mark.asyncio
@@ -580,8 +630,8 @@ async def test_translated_route_run_posts_one_guided_move_action():
     assert params["orientation"] == pytest.approx(90.0)
     assert json.loads(params["waypoints"]) == [
         {"x": 1.0, "y": 1.0, "node_radius": 0.5, "edge_radius": 0.5},
-        {"x": 2.0, "y": 2.0, "node_radius": 1.0, "edge_radius": 1.0},
+        {"x": 2.0, "y": 2.0, "node_radius": 0.5, "edge_radius": 1.0},
     ]
-    assert params["goal_node_radius"] == 0.5
+    assert params["goal_node_radius"] == 0.5  # fixed arrival tolerance, not corridor
     assert params["goal_edge_radius"] == 0.5
     assert step.action_task_ids == [["t1", "t2", "t3"]]

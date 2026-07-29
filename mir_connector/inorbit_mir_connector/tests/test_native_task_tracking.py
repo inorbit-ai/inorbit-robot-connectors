@@ -16,98 +16,17 @@ that marking.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
-
 import pytest
-from inorbit_edge_executor.datatypes import (
-    MissionDefinition,
-    MissionRuntimeSharedMemory,
-    MissionStepPoseWaypoint,
-    MissionTask,
-    Pose,
-)
-from inorbit_edge_executor.mission import Mission
 
-from inorbit_mir_connector.src.mission.behavior_tree import (
-    MirBehaviorTreeBuilderContext,
-    SharedMemoryKeys,
-    WaitForMirMissionCompletionNode,
+from inorbit_mir_connector.tests.conftest import (
+    ProgressMirApi as _ProgressMirApi,
+    mission_with_tasks as _mission_with_tasks,
+    queue_entry as _entry,
+    task_status as _status,
+    wait_node as _wait_node,
 )
 
-ROBOT_ID = "mir-1"
 QUEUE_ID = 42
-
-
-def _entry(int_id, action_id, finished=False):
-    """One executed mission-queue action, as the detail endpoint reports it."""
-    return {"id": int_id, "action_id": action_id, "finished": "ts" if finished else None}
-
-
-class _ProgressMirApi:
-    """Models the queue LIST (``[{id, url}]``) + DETAIL (``{action_id, finished}``)
-    endpoints plus the queue-entry state, driven by an ``executed`` list the test advances."""
-
-    def __init__(self, executed=None, state="Executing"):
-        self.executed = executed or []
-        self.state = state
-        self.list_polls = 0
-        self.detail_polls = 0
-
-    async def get_mission_queue_entry(self, queue_id):
-        return {"state": self.state}
-
-    async def get_mission_queue_actions(self, queue_id):
-        self.list_polls += 1
-        return [
-            {"id": e["id"], "url": f"/mission_queue/{queue_id}/actions/{e['id']}"}
-            for e in self.executed
-        ]
-
-    async def get_mission_queue_action(self, queue_id, action_int_id):
-        self.detail_polls += 1
-        for e in self.executed:
-            if e["id"] == action_int_id:
-                return {"id": e["id"], "action_id": e["action_id"], "finished": e["finished"]}
-        raise KeyError(action_int_id)
-
-
-def _mission_with_tasks(task_ids):
-    tasks = [MissionTask(taskId=t, label=t) for t in task_ids if t is not None]
-    return Mission(
-        id="m1",
-        robot_id=ROBOT_ID,
-        definition=MissionDefinition(
-            label="t",
-            steps=[MissionStepPoseWaypoint(waypoint=Pose(x=0, y=0, theta=0), label="wp")],
-        ),
-        tasks_list=tasks,
-    )
-
-
-def _wait_node(api, action_task_ids, mission, action_guids):
-    sm = MissionRuntimeSharedMemory()
-    sm.add(SharedMemoryKeys.MIR_QUEUE_ID, None)
-    sm.add(SharedMemoryKeys.MIR_MISSION_GUID, None)
-    sm.add(SharedMemoryKeys.MIR_ERROR_MESSAGE, None)
-    sm.add(SharedMemoryKeys.MIR_ACTION_GUIDS, None)
-    sm.freeze()
-    sm.set(SharedMemoryKeys.MIR_QUEUE_ID, QUEUE_ID)
-    sm.set(SharedMemoryKeys.MIR_ACTION_GUIDS, action_guids)
-    ctx = MirBehaviorTreeBuilderContext(
-        mir_api=api,
-        missions_group_id="grp",
-        firmware_version="v3",
-        connector_type="mir",
-        mission=mission,
-        mt=AsyncMock(),
-    )
-    ctx.shared_memory = sm
-    return WaitForMirMissionCompletionNode(ctx, action_task_ids=action_task_ids), ctx
-
-
-def _status(mission, task_id):
-    task = mission.find_task(task_id)
-    return (task.in_progress, task.completed)
 
 
 @pytest.mark.asyncio

@@ -35,8 +35,8 @@
 #     inlined sub-actions, whose guids are foreign to our set, so nested missions no longer
 #     over-complete. Best-effort: a tracking error never aborts the completion poll.
 #   - 2026-07-29 Tomás Badenes: InOrbit routes support: build MiR guided_move actions from
-#     MirGuidedMove entries (verified on a 3.8.1 robot: the full schema parameter set is
-#     required, no server-side defaults; center-based deviation, as footprint mode rejects
+#     MirGuidedMove entries (the full schema parameter set is required, the robot applies
+#     no server-side defaults; center-based deviation, as footprint mode rejects
 #     corridors narrower than the robot diagonal; no-corridor legs use line-following
 #     radiuses, edge 0 / node 0.3, so overlapping edges cannot cut the corner;
 #     guided_move_id carries a deterministic identity) and track their per-waypoint
@@ -99,7 +99,6 @@ logger = logging.getLogger(__name__)
 # Distance threshold for MiR move missions (meters)
 _MIR_MOVE_DISTANCE_THRESHOLD = 0.1
 
-# Verified against GET /actions/guided_move on a MiR 3.8.1 robot (2026-07-29).
 _MIR_GUIDED_MOVE_ACTION_TYPE = "guided_move"
 
 # Polling interval for mission queue state checks
@@ -221,8 +220,8 @@ class CreateMirNativeMissionNode(BehaviorTree):
                     action_type = _MIR_GUIDED_MOVE_ACTION_TYPE
                     # Legs without a corridor follow the line exactly: edge radius 0 keeps
                     # adjacent edges from overlapping (an overlap lets the robot skip the
-                    # waypoint and cut the corner, per the guided-move guide), while node
-                    # radius 0.3 (MiR default) rounds the corner enough to keep cycle time.
+                    # waypoint and cut the corner), while node radius 0.3 rounds the corner
+                    # enough to keep cycle time.
                     waypoints_json = [
                         {
                             "x": w.x,
@@ -232,9 +231,9 @@ class CreateMirNativeMissionNode(BehaviorTree):
                         }
                         for w in action.waypoints
                     ]
-                    # Every schema parameter must be present: the robot rejects the action
-                    # with input_required_argument_missing otherwise (verified on 3.8.1;
-                    # no server-side defaults).
+                    # Every schema parameter must be present: the robot applies no
+                    # server-side defaults and rejects the action with
+                    # input_required_argument_missing otherwise.
                     param_values = {
                         "position": None,
                         "x": action.goal_x,

@@ -141,7 +141,7 @@ def _seconds_to_mir_duration(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:09.6f}"
 
 
-# MiR guided_move radius fields accept [0.0, 5.0] m (MiR's "How to use Guided move" guide).
+# MiR guided_move radius fields accept [0.0, 5.0] m.
 GUIDED_MOVE_MAX_RADIUS = 5.0
 
 

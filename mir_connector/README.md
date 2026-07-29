@@ -806,8 +806,8 @@ to that mission's GUID.
 
 InOrbit routes (CaC `SpatialAnnotation` of `type: route`) are dispatched as consecutive
 waypoint mission steps carrying a resolved `routeSegment` per leg. The connector collapses
-each run of consecutive route steps into a single MiR `guided_move` action, so the robot
-drives through the waypoints without stopping at each one.
+each run of consecutive route steps (same route) into a single MiR `guided_move` action,
+so the robot drives through the waypoints without stopping at each one.
 
 Requirements:
 
@@ -817,13 +817,15 @@ Requirements:
 - Straight-line segments only: a route segment with a NURBS trajectory is rejected at
   translation time, before any mission is created on the robot.
 
-Corridor width maps to the guided-move radiuses: a symmetric corridor's total `width`
-becomes `width / 2` per side; an asymmetric corridor (`leftWidth`/`rightWidth`) uses the
-narrower side for both radiuses. Values that would exceed 5 m (corridor wider than 10 m)
-are clamped to MiR's 5 m radius maximum. A step without a corridor follows the route
-line exactly (edge radius 0, so the robot cannot cut the corner through overlapping
-edges) with a 0.3 m node radius to round each waypoint without stopping; the goal keeps
-MiR's default 0.5 m arrival radius.
+Corridor width maps to the guided-move edge radiuses: a symmetric corridor's total
+`width` becomes `width / 2` per side; an asymmetric corridor (`leftWidth`/`rightWidth`)
+uses the narrower side. Values that would exceed 5 m (corridor wider than 10 m) are
+clamped to MiR's 5 m radius maximum. Each waypoint's node radius is the min of its two
+adjacent legs' radiuses, so a narrow leg is honored on both sides of the turn. A leg
+without a corridor follows the route line exactly (edge radius 0, so the robot cannot
+cut the corner through overlapping edges) with a 0.3 m node radius to round each
+waypoint without stopping. The goal always uses MiR's default 0.5 m arrival radius;
+the corridor shapes the lane, never the arrival tolerance.
 
 Corridor compliance is center-based: the robot keeps its CENTER within the radiuses, so
 its footprint can momentarily exceed the corridor, for example to drive around an

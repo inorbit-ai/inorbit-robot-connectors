@@ -32,6 +32,7 @@ MISSIONS_ENDPOINT_V2 = "missions"
 STATUS_ENDPOINT_V2 = "status"
 DIAGNOSTICS_ENDPOINT_V2 = "experimental/diagnostics"
 POSITIONS_ENDPOINT_V2 = "positions"
+SOFTWARE_STATUS_ENDPOINT_V2 = "software/system_status"
 
 
 class SetStateId(int, Enum):
@@ -377,6 +378,10 @@ class MirApiV2(MirApiBaseClass):
 
     async def get_diagnostics(self):
         response = await self._get(DIAGNOSTICS_ENDPOINT_V2)
+        return response.json()
+
+    async def get_software_status(self):
+        response = await self._get(f"/{SOFTWARE_STATUS_ENDPOINT_V2}")
         return response.json()
 
     async def get_map(self, map_id: str):

@@ -25,6 +25,8 @@ from inorbit_mir_connector.src.metrics import api_endpoint, error_kind
         ("/api/v2.0.0/mission_groups/abc-123/missions", "mission_groups"),
         ("/api/v2.0.0/missions/71e63050-7b7a-11ed", "missions"),
         ("/api/v2.0.0/maps/20f762ff-5e0a-11ee", "maps"),
+        ("/api/v2.0.0/software/system_status", "software_status"),
+        ("/software/system_status", "software_status"),
         # Callers may pass relative paths (httpx base_url joins them).
         ("status", "status"),
         ("mission_queue/14026", "mission_queue"),

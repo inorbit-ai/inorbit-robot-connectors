@@ -65,6 +65,7 @@ _api_endpoint_mapper = EndpointMapper(
         ("api/v2.0.0/mission_groups", "mission_groups"),
         ("api/v2.0.0/missions", "missions"),
         ("api/v2.0.0/maps", "maps"),
+        ("api/v2.0.0/software/system_status", "software_status"),
         # Bare-prefix variants (callers may pass relative paths)
         ("status", "status"),
         ("metrics", "metrics"),
@@ -73,6 +74,7 @@ _api_endpoint_mapper = EndpointMapper(
         ("mission_groups", "mission_groups"),
         ("missions", "missions"),
         ("maps", "maps"),
+        ("software/system_status", "software_status"),
     ]
 )
 

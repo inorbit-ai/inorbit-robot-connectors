@@ -394,6 +394,24 @@ class MirApiBaseClass(ABC):
         pass
 
     @abstractmethod
+    async def get_software_status(self):
+        """Queries /software/system_status endpoint
+
+        Not available on v2 firmware. Returns an object, even though the API
+        docs declare an array e.g.
+            {
+                "platform_version": "3.9.1",
+                "application_version": "3.9.1",
+                "last_sw_update_type": "ROBOT_APPLICATION",
+                "last_sw_update_status": "Success",
+                "last_sw_update_date": "2026-07-29T04:18:26+00:00",
+                "free_disk_space": "34.6",
+                "used_disk_space": "4.19"
+            }
+        """
+        pass
+
+    @abstractmethod
     async def get_map(self, map_id: str):
         """Queries /maps/{map_id} endpoint.
 

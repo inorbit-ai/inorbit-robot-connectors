@@ -71,6 +71,23 @@ async def test_get_executing_mission_id(mir_api, httpx_mock):
 
 
 @pytest.mark.asyncio
+async def test_get_software_status(mir_api, httpx_mock):
+    software = {
+        "platform_version": "3.9.1",
+        "application_version": "3.9.1",
+        "last_sw_update_type": "ROBOT_APPLICATION",
+        "last_sw_update_status": "Success",
+        "last_sw_update_date": "2026-07-29T04:18:26+00:00",
+        "free_disk_space": "34.6",
+        "used_disk_space": "4.19",
+    }
+    httpx_mock.add_response(
+        method="GET", url=f"{mir_api.mir_api_base_url}/software/system_status", json=software
+    )
+    assert await mir_api.get_software_status() == software
+
+
+@pytest.mark.asyncio
 async def test_abort_all_missions(mir_api, httpx_mock):
     httpx_mock.add_response(
         method="DELETE", url=f"{mir_api.mir_api_base_url}/mission_queue", status_code=204

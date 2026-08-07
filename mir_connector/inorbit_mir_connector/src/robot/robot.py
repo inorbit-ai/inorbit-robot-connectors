@@ -10,6 +10,8 @@ from typing import Coroutine
 
 from inorbit_mir_connector.src.mir_api.mir_api_base import MirApiBaseClass
 
+SOFTWARE_STATUS_UPDATE_FREQ = 1 / 300
+
 
 class Robot:
     """
@@ -23,6 +25,7 @@ class Robot:
         mir_api: MirApiBaseClass,
         default_update_freq: float,
         enable_diagnostics: bool = True,
+        enable_software_status: bool = True,
     ):
         self.logger = logging.getLogger(name=self.__class__.__name__)
         self._mir_api = mir_api
@@ -30,10 +33,12 @@ class Robot:
         self._status: dict = {}
         self._metrics: dict = {}
         self._diagnostics: dict = {}
+        self._software: dict = {}
         self._default_update_freq = default_update_freq
         self._running_tasks: list[asyncio.Task] = []
         self._last_call_successful: bool = True
         self._enable_diagnostics = enable_diagnostics
+        self._enable_software_status = enable_software_status
 
         # Circuit breaker pattern for error handling
         self._consecutive_errors = 0
@@ -54,6 +59,8 @@ class Robot:
         # Note: diagnostics endpoint does not exist on v2 firmware
         if self._enable_diagnostics:
             self._run_in_loop(self._update_diagnostics, frequency=0.5)
+        if self._enable_software_status:
+            self._run_in_loop(self._update_software_status, frequency=SOFTWARE_STATUS_UPDATE_FREQ)
 
         self.logger.debug(f"Started {len(self._running_tasks)} polling tasks")
 
@@ -119,6 +126,16 @@ class Robot:
             self._handle_error(e, "robot diagnostics fetch")
             # Keep the last known diagnostics on error
 
+    async def _update_software_status(self) -> None:
+        """Fetch the robot software status from the API asynchronously."""
+        try:
+            software = await self._mir_api.get_software_status()
+            self._software = software
+            self._handle_success()
+        except Exception as e:
+            self._handle_error(e, "robot software status fetch")
+            # Keep the last known software status on error
+
     @property
     def status(self) -> dict:
         """Return the latest robot status"""
@@ -133,6 +150,11 @@ class Robot:
     def diagnostics(self) -> dict:
         """Return the latest robot diagnostics"""
         return self._diagnostics
+
+    @property
+    def software(self) -> dict:
+        """Return the latest robot software status"""
+        return self._software
 
     @property
     def api_connected(self) -> bool:

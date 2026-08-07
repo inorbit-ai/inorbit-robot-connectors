@@ -87,12 +87,13 @@ class MirConnector(Connector):
         )
 
         # Async robot wrapper managing polling
-        # Note: diagnostics endpoint does not exist on v2 firmware
-        enable_diagnostics = self._robot_config.mir_firmware_version != "v2"
+        # Note: diagnostics and software status endpoints do not exist on v2 firmware
+        is_v3 = self._robot_config.mir_firmware_version != "v2"
         self.robot = Robot(
             mir_api=self.mir_api,
             default_update_freq=1.0,  # 1 Hz status by default
-            enable_diagnostics=enable_diagnostics,
+            enable_diagnostics=is_v3,
+            enable_software_status=is_v3,
         )
 
         # Configure the timezone
@@ -436,6 +437,12 @@ class MirConnector(Connector):
             "waiting_for": self.mission_tracking.waiting_for_text,
             "api_connected": self.robot.api_connected,
         }
+
+        software = self.robot.software or {}
+        if (v := software.get("application_version")) is not None:
+            key_values["software_version"] = v
+        if (v := software.get("platform_version")) is not None:
+            key_values["platform_version"] = v
 
         # Add vitals from diagnostics (preferred) or status (fallback)
         # Keep localization_score from metrics only

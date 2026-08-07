@@ -577,6 +577,55 @@ async def test_safety_decomposition_publishes_active_states(
 
 
 @pytest.mark.asyncio
+async def test_software_versions_published_when_available(
+    connector_with_mission_tracking, monkeypatch
+):
+    """Both versions are published from /software/system_status, and neither key
+    appears when the endpoint never answered (v2 firmware)."""
+    connector = connector_with_mission_tracking
+    connector.mission_tracking.report_mission = AsyncMock()
+
+    status_data = {
+        "robot_name": "Miriam",
+        "map_id": "m",
+        "position": {"x": 0.0, "y": 0.0, "orientation": 0.0},
+        "velocity": {"linear": 0.0, "angular": 0.0},
+    }
+    connector.robot._status = status_data
+    connector.mir_api.get_status.return_value = status_data
+    connector.publish_map = MagicMock()
+    connector.robot._metrics = {}
+    connector.mir_api.get_metrics.return_value = {}
+
+    mock_session = connector._get_session()
+    connector._get_session = MagicMock(return_value=mock_session)
+    connector._get_robot_session = MagicMock(return_value=mock_session)
+
+    # Versions differ: application and platform upgrade independently
+    connector.robot._software = {
+        "application_version": "3.9.1",
+        "platform_version": "3.8.1",
+        "used_disk_space": "4.19",
+    }
+    await connector._execution_loop()
+
+    key_values_call = mock_session.publish_key_values.call_args[0][0]
+    assert key_values_call["software_version"] == "3.9.1"
+    assert key_values_call["platform_version"] == "3.8.1"
+    # Unused fields from the same payload are not published
+    assert "used_disk_space" not in key_values_call
+
+    # v2 firmware never populates the cache → no null-valued keys
+    connector.robot._software = {}
+    mock_session.reset_mock()
+    await connector._execution_loop()
+
+    key_values_call = mock_session.publish_key_values.call_args[0][0]
+    assert "software_version" not in key_values_call
+    assert "platform_version" not in key_values_call
+
+
+@pytest.mark.asyncio
 async def test_connector_loop_publishes_system_stats(connector_with_mission_tracking, monkeypatch):
     """Test that system stats (CPU, RAM, disk) are published separately from key values."""
     connector = connector_with_mission_tracking

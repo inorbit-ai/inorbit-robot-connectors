@@ -21,7 +21,7 @@ The [InOrbit](https://inorbit.ai/) Robot Connector for [MiR Motors](https://dire
 - **Real-time Monitoring**: Robot pose, system status, battery levels, and error states
 - **Mission Control**: Dispatch, pause, cancel missions via [Actions](https://developer.inorbit.ai/docs#configuring-action-definitions), including [running MiR robot actions as mission steps](#-running-mir-actions-in-missions)
 - **Custom Scripts**: Execute custom shell scripts on the connector via Custom Actions
-- **Mission Tracking**: Full [Mission Tracking](https://developer.inorbit.ai/docs#configuring-mission-tracking) support
+- **Mission Tracking**: Full [Mission Tracking](https://developer.inorbit.ai/docs#configuring-mission-tracking) support, including robot-triggered (native) missions reported with per-action tasks labeled from the robot's action and position names
 - **SSL Support**: Secure connections with full certificate validation
 - **Multi-Robot Fleet Management**: Simplified configuration for managing multiple robots
 - **Docker Support**: Production-ready containerized deployment with Docker Compose

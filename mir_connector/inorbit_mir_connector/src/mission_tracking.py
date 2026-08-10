@@ -253,9 +253,7 @@ class MirInorbitMissionTracking:
             "label": mission["definition"]["name"],
             "startTs": self._safe_localize_timestamp(mission["started"]) * 1000,
             "data": {
-                "Total Distance (m)": metrics.get(
-                    "mir_robot_distance_moved_meters_total", "N/A"
-                ),
+                "Total Distance (m)": metrics.get("mir_robot_distance_moved_meters_total", "N/A"),
                 "Mission Steps": len(mission["definition"]["actions"]),
                 "Total Missions": mission["id"],
                 "Robot Model": status["robot_model"],
@@ -269,9 +267,7 @@ class MirInorbitMissionTracking:
         if mission.get("finished") is not None:
             mission_values["endTs"] = self._safe_localize_timestamp(mission["finished"]) * 1000
             mission_values["completedPercent"] = 1
-            mission_values["status"] = (
-                "OK" if mission["state"] == MISSION_STATE_DONE else "error"
-            )
+            mission_values["status"] = "OK" if mission["state"] == MISSION_STATE_DONE else "error"
         else:
             mission_values["completedPercent"] = completed_percent
 

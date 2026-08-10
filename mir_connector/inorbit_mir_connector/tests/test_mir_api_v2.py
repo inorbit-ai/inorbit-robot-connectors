@@ -187,3 +187,22 @@ mir_robot_wifi_access_point_frequency_hertz 0.0
     metrics = await mir_api.get_metrics()
 
     assert DeepDiff(expected_output, metrics) == {}
+
+
+@pytest.mark.asyncio
+async def test_get_action_definitions(mir_api, httpx_mock):
+    defs = [
+        {"action_type": "move", "name": "Move", "description": "Move to a position"},
+        {"action_type": "docking", "name": "Docking", "description": "Dock to a marker"},
+    ]
+    httpx_mock.add_response(method="GET", url=f"{mir_api.mir_api_base_url}/actions", json=defs)
+    assert await mir_api.get_action_definitions() == defs
+
+
+@pytest.mark.asyncio
+async def test_get_position(mir_api, httpx_mock):
+    position = {"guid": "pos-guid-1", "name": "Warehouse-1", "type_id": 0}
+    httpx_mock.add_response(
+        method="GET", url=f"{mir_api.mir_api_base_url}/positions/pos-guid-1", json=position
+    )
+    assert await mir_api.get_position("pos-guid-1") == position

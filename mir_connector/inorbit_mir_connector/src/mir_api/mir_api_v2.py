@@ -26,6 +26,7 @@ API_V2_CONTEXT_URL = "/api/v2.0.0"
 
 # Endpoints
 METRICS_ENDPOINT_V2 = "metrics"
+ACTIONS_ENDPOINT_V2 = "actions"
 MISSION_QUEUE_ENDPOINT_V2 = "mission_queue"
 MISSION_GROUPS_ENDPOINT_V2 = "mission_groups"
 MISSIONS_ENDPOINT_V2 = "missions"
@@ -404,6 +405,17 @@ class MirApiV2(MirApiBaseClass):
         """
         offsets_api_url = f"/{POSITIONS_ENDPOINT_V2}/{position_guid}/docking_offsets"
         response = await self._get(offsets_api_url)
+        return response.json()
+
+    async def get_action_definitions(self):
+        """Action-type display metadata (``GET /actions``): one entry per
+        action_type with a localized ``name`` (Accept-Language is en_US)."""
+        response = await self._get(f"/{ACTIONS_ENDPOINT_V2}")
+        return response.json()
+
+    async def get_position(self, position_guid: str):
+        """Full position record (``GET /positions/{guid}``), including ``name``."""
+        response = await self._get(f"/{POSITIONS_ENDPOINT_V2}/{position_guid}")
         return response.json()
 
 

@@ -226,3 +226,102 @@ async def test_action_definitions_failure_uses_raw_types_and_retries():
     tracking.mir_api.get_action_definitions = AsyncMock(return_value=ACTION_DEFS)
     tasks = await tracking._build_tasks([def_action("g2", "move")])
     assert tasks["g2"]["label"] == "Move"
+
+
+def wire_mission(tracking, def_actions, entry_state="Executing", finished=None):
+    """Wire mir_api mocks for one native mission (queue id 7)."""
+    entry = {
+        "state": entry_state,
+        "id": 7,
+        "mission_id": "def-guid",
+        "started": "2026-08-10T10:00:00",
+        "finished": finished,
+    }
+    tracking.mir_api.get_executing_mission_id = AsyncMock(return_value=7)
+    tracking.mir_api.get_mission_queue_entry = AsyncMock(return_value=dict(entry))
+    tracking.mir_api.get_mission_definition = AsyncMock(
+        return_value={"guid": "def-guid", "name": "Patrol"}
+    )
+    tracking.mir_api.get_mission_actions = AsyncMock(return_value=def_actions)
+    tracking.mir_api.get_mission_queue_actions = AsyncMock(return_value=[])
+    tracking.mir_api.get_mission_queue_action = AsyncMock()
+
+
+def published(tracking):
+    calls = tracking.inorbit_sess.publish_key_values.call_args_list
+    return [c.kwargs["key_values"]["mission_tracking"] for c in calls]
+
+
+STATUS = {"robot_model": "MiR250", "uptime": 10, "serial_number": "s1"}
+
+
+@pytest.mark.asyncio
+async def test_report_mission_publishes_tasks_and_current_task():
+    tracking = make_tracking()
+    wire_mission(tracking, [def_action("g1"), def_action("g2")])
+    tracking.mir_api.get_mission_queue_actions = AsyncMock(return_value=[{"id": 1, "url": "u"}])
+    tracking.mir_api.get_mission_queue_action = AsyncMock(
+        return_value={"id": 1, "action_id": "g1", "finished": None}
+    )
+    await tracking.report_mission(STATUS, {})
+    report = published(tracking)[-1]
+    assert report["currentTaskId"] == "g1"
+    assert [t["taskId"] for t in report["tasks"]] == ["g1", "g2"]
+    assert report["tasks"][0]["inProgress"] is True
+    assert report["completedPercent"] == 0
+    assert report["inProgress"] is True and report["state"] == "Executing"
+    assert report["label"] == "Patrol"
+
+
+@pytest.mark.asyncio
+async def test_report_mission_percent_counts_completed_tasks():
+    tracking = make_tracking()
+    wire_mission(tracking, [def_action("g1"), def_action("g2")])
+    tracking.mir_api.get_mission_queue_actions = AsyncMock(return_value=[{"id": 1, "url": "u"}])
+    tracking.mir_api.get_mission_queue_action = AsyncMock(
+        return_value={"id": 1, "action_id": "g1", "finished": "2026-08-10T10:01:00"}
+    )
+    await tracking.report_mission(STATUS, {})
+    assert published(tracking)[-1]["completedPercent"] == 0.5
+
+
+@pytest.mark.asyncio
+async def test_report_mission_dedupes_until_task_state_changes():
+    tracking = make_tracking()
+    wire_mission(tracking, [def_action("g1"), def_action("g2")])
+    await tracking.report_mission(STATUS, {})
+    await tracking.report_mission(STATUS, {})
+    assert len(published(tracking)) == 1  # no change, no republish
+
+    # g1 starts: task transition must republish even though percent is still 0.
+    tracking.mir_api.get_mission_queue_actions = AsyncMock(return_value=[{"id": 1, "url": "u"}])
+    tracking.mir_api.get_mission_queue_action = AsyncMock(
+        return_value={"id": 1, "action_id": "g1", "finished": None}
+    )
+    await tracking.report_mission(STATUS, {})
+    assert len(published(tracking)) == 2
+    assert published(tracking)[-1]["currentTaskId"] == "g1"
+
+
+@pytest.mark.asyncio
+async def test_report_mission_done_completes_observed_only():
+    # Mission with an untaken if-branch action (g2 never appears in queue actions).
+    tracking = make_tracking()
+    wire_mission(
+        tracking,
+        [def_action("g1"), def_action("g2")],
+        entry_state="Done",
+        finished="2026-08-10T10:05:00",
+    )
+    tracking.mir_api.get_mission_queue_actions = AsyncMock(return_value=[{"id": 1, "url": "u"}])
+    tracking.mir_api.get_mission_queue_action = AsyncMock(
+        return_value={"id": 1, "action_id": "g1", "finished": "2026-08-10T10:04:00"}
+    )
+    await tracking.report_mission(STATUS, {})
+    report = published(tracking)[-1]
+    by_id = {t["taskId"]: t for t in report["tasks"]}
+    assert by_id["g1"]["completed"] is True
+    assert by_id["g2"]["completed"] is False  # untaken branch stays incomplete
+    assert report["completedPercent"] == 1  # finished missions keep the existing contract
+    assert report["status"] == "OK"
+    assert "endTs" in report

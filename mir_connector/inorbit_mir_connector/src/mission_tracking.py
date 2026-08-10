@@ -111,6 +111,7 @@ class MirInorbitMissionTracking:
         self._position_names = {}  # {position guid: name}, kept for life
         self._mission_definition = None  # definition of the tracked mission, one fetch per entry
         self._tasks_tracker = None  # MirNativeMissionTasks for the tracked queue entry
+        self.last_reported_tasks_signature = None
 
     async def _get_action_names(self):
         """Action-type display names, fetched once and cached; {} (and a retry on the
@@ -219,49 +220,65 @@ class MirInorbitMissionTracking:
         if await self.mission_executor.has_active_mission():
             return
         mission = await self.get_current_mission()
-        if mission:
-            completed_percent = len(mission["actions"]) / len(mission["definition"]["actions"])
-            # Merge 'Abort' and 'Aborted' values into a single state
-            if mission["state"] == MISSION_STATE_ABORT:
-                mission["state"] = MISSION_STATE_ABORTED
-            if (
-                mission["id"] == self.last_reported_mission_id
-                and mission["state"] == MISSION_STATE_EXECUTING
-                and completed_percent == self.last_reported_mission_progress
-            ):
-                # Avoid flooding mission reports when nothing important has changed
-                return
-            mission_values = {
-                "missionId": mission["id"],
-                "inProgress": mission["state"] == MISSION_STATE_EXECUTING,
-                "state": mission["state"],
-                "label": mission["definition"]["name"],
-                "startTs": self._safe_localize_timestamp(mission["started"]) * 1000,
-                "data": {
-                    "Total Distance (m)": metrics.get(
-                        "mir_robot_distance_moved_meters_total", "N/A"
-                    ),
-                    "Mission Steps": len(mission["definition"]["actions"]),
-                    "Total Missions": mission["id"],
-                    "Robot Model": status["robot_model"],
-                    "Uptime (s)": status["uptime"],
-                    "Serial Number": status.get("serial_number", "N/A"),
-                    "Battery Time Remaning (s)": status.get("battery_time_remaining", "N/A"),
-                    "WiFi RSSI (dbm)": metrics.get("mir_robot_wifi_access_point_rssi_dbm", "N/A"),
-                },
-            }
-            if mission.get("finished") is not None:
-                mission_values["endTs"] = self._safe_localize_timestamp(mission["finished"]) * 1000
-                mission_values["completedPercent"] = 1
-                mission_values["status"] = (
-                    "OK" if mission["state"] == MISSION_STATE_DONE else "error"
-                )
-            else:
-                mission_values["completedPercent"] = completed_percent
-
-            self.logger.debug(f"Reporting mission: {mission_values}")
-            self.inorbit_sess.publish_key_values(
-                key_values={"mission_tracking": mission_values}, is_event=True
+        if not mission:
+            return
+        tracker = self._tasks_tracker
+        task_fields = {}
+        if tracker is not None:
+            await tracker.poll()
+            task_fields = tracker.report_fields()
+            completed_percent = task_fields.pop("completedPercent")
+        else:
+            # No tracker (mocked or degraded paths): count-based estimate as before.
+            completed_percent = min(
+                1.0,
+                len(mission.get("actions", [])) / max(1, len(mission["definition"]["actions"])),
             )
-            self.last_reported_mission_progress = completed_percent
-            self.last_reported_mission_id = mission["id"]
+        # Merge 'Abort' and 'Aborted' values into a single state
+        if mission["state"] == MISSION_STATE_ABORT:
+            mission["state"] = MISSION_STATE_ABORTED
+        tasks_signature = tracker.signature() if tracker is not None else None
+        if (
+            mission["id"] == self.last_reported_mission_id
+            and mission["state"] == MISSION_STATE_EXECUTING
+            and completed_percent == self.last_reported_mission_progress
+            and tasks_signature == self.last_reported_tasks_signature
+        ):
+            # Avoid flooding mission reports when nothing important has changed
+            return
+        mission_values = {
+            "missionId": mission["id"],
+            "inProgress": mission["state"] == MISSION_STATE_EXECUTING,
+            "state": mission["state"],
+            "label": mission["definition"]["name"],
+            "startTs": self._safe_localize_timestamp(mission["started"]) * 1000,
+            "data": {
+                "Total Distance (m)": metrics.get(
+                    "mir_robot_distance_moved_meters_total", "N/A"
+                ),
+                "Mission Steps": len(mission["definition"]["actions"]),
+                "Total Missions": mission["id"],
+                "Robot Model": status["robot_model"],
+                "Uptime (s)": status["uptime"],
+                "Serial Number": status.get("serial_number", "N/A"),
+                "Battery Time Remaning (s)": status.get("battery_time_remaining", "N/A"),
+                "WiFi RSSI (dbm)": metrics.get("mir_robot_wifi_access_point_rssi_dbm", "N/A"),
+            },
+            **task_fields,
+        }
+        if mission.get("finished") is not None:
+            mission_values["endTs"] = self._safe_localize_timestamp(mission["finished"]) * 1000
+            mission_values["completedPercent"] = 1
+            mission_values["status"] = (
+                "OK" if mission["state"] == MISSION_STATE_DONE else "error"
+            )
+        else:
+            mission_values["completedPercent"] = completed_percent
+
+        self.logger.debug(f"Reporting mission: {mission_values}")
+        self.inorbit_sess.publish_key_values(
+            key_values={"mission_tracking": mission_values}, is_event=True
+        )
+        self.last_reported_mission_progress = completed_percent
+        self.last_reported_mission_id = mission["id"]
+        self.last_reported_tasks_signature = tasks_signature

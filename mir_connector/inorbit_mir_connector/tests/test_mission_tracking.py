@@ -27,19 +27,46 @@ def mission_tracking():
 
 @pytest.mark.asyncio
 async def test_get_current_mission(mission_tracking):
-    # Only missions with "Executing" state should be stored in executing_mission_id
     assert mission_tracking.executing_mission_id is None
-    dummy_data = {"state": "Executing"}
-    id = 1
-    mission_tracking.mir_api.get_executing_mission_id = AsyncMock(return_value=id)
-    mission_tracking.mir_api.get_mission = AsyncMock(return_value=dummy_data)
-    assert await mission_tracking.get_current_mission() == dummy_data
-    assert mission_tracking.executing_mission_id == 1
+    entry = {"state": "Executing", "id": 1, "mission_id": "def-guid", "finished": None}
+    definition = {"guid": "def-guid", "name": "Charge"}
+    def_actions = [
+        {"guid": "a1", "action_type": "charging", "parameters": [], "mission_id": "def-guid"}
+    ]
+    mission_tracking.mir_api.get_executing_mission_id = AsyncMock(return_value=1)
+    mission_tracking.mir_api.get_mission_queue_entry = AsyncMock(return_value=dict(entry))
+    mission_tracking.mir_api.get_mission_definition = AsyncMock(return_value=dict(definition))
+    mission_tracking.mir_api.get_mission_actions = AsyncMock(return_value=def_actions)
+    mission_tracking.mir_api.get_action_definitions = AsyncMock(
+        return_value=[{"action_type": "charging", "name": "Charging"}]
+    )
 
-    dummy_data = {"state": "Completed"}
-    mission_tracking.mir_api.get_mission = AsyncMock(return_value=dummy_data)
-    assert await mission_tracking.get_current_mission() == dummy_data
+    mission = await mission_tracking.get_current_mission()
+    assert mission["id"] == 1
+    assert mission["definition"]["name"] == "Charge"
+    assert mission["definition"]["actions"] == def_actions
+    assert mission_tracking.executing_mission_id == 1
+    assert mission_tracking._tasks_tracker is not None
+
+    # The definition is cached per queue entry: a second tick refetches only the entry.
+    await mission_tracking.get_current_mission()
+    assert mission_tracking.mir_api.get_mission_definition.await_count == 1
+    assert mission_tracking.mir_api.get_mission_actions.await_count == 1
+    assert mission_tracking.mir_api.get_mission_queue_entry.await_count == 2
+
+    # A non-executing state clears executing_mission_id but still returns the mission
+    # (the just-finished mission is reported exactly once).
+    mission_tracking.mir_api.get_mission_queue_entry = AsyncMock(
+        return_value={**entry, "state": "Done", "finished": "2026-08-10T10:00:00"}
+    )
+    mission = await mission_tracking.get_current_mission()
+    assert mission["state"] == "Done"
     assert mission_tracking.executing_mission_id is None
+
+    # With no next executing mission, the next tick returns None and drops the tracker.
+    mission_tracking.mir_api.get_executing_mission_id = AsyncMock(return_value=None)
+    assert await mission_tracking.get_current_mission() is None
+    assert mission_tracking._tasks_tracker is None
 
 
 @pytest.mark.asyncio

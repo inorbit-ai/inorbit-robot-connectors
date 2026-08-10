@@ -109,6 +109,8 @@ class MirInorbitMissionTracking:
         self.mission_executor = mission_executor
         self._action_names = None  # {action_type: display name}, fetched once, kept for life
         self._position_names = {}  # {position guid: name}, kept for life
+        self._mission_definition = None  # definition of the tracked mission, one fetch per entry
+        self._tasks_tracker = None  # MirNativeMissionTasks for the tracked queue entry
 
     async def _get_action_names(self):
         """Action-type display names, fetched once and cached; {} (and a retry on the
@@ -183,17 +185,32 @@ class MirInorbitMissionTracking:
             return datetime.now().timestamp()
 
     async def get_current_mission(self):
-        """Return the current mission, it's either executing or just ended"""
-        mission = None
+        """Return the current mission, it's either executing or just ended.
+
+        The queue entry is fetched every tick; the definition (with actions) once per
+        queue entry, when the per-action task tracker is also (re)built.
+        """
         if self.executing_mission_id is None:
             self.executing_mission_id = await self.mir_api.get_executing_mission_id()
-        if self.executing_mission_id:
-            mission = await self.mir_api.get_mission(self.executing_mission_id)
-            if mission["state"] != MISSION_STATE_EXECUTING:
-                # Update executing_mission_id so the next call to this method returns the next
-                # executing mission or None.
-                # Note that the current call in this case returns the just finished mission
-                self.executing_mission_id = None
+            self._mission_definition = None
+            self._tasks_tracker = None
+        if not self.executing_mission_id:
+            return None
+        queue_id = self.executing_mission_id
+        mission = await self.mir_api.get_mission_queue_entry(queue_id)
+        if self._mission_definition is None:
+            definition = await self.mir_api.get_mission_definition(mission["mission_id"])
+            definition["actions"] = await self.mir_api.get_mission_actions(mission["mission_id"])
+            self._mission_definition = definition
+            self._tasks_tracker = MirNativeMissionTasks(
+                self.mir_api, queue_id, await self._build_tasks(definition["actions"])
+            )
+        mission["definition"] = self._mission_definition
+        if mission["state"] != MISSION_STATE_EXECUTING:
+            # Update executing_mission_id so the next call to this method returns the next
+            # executing mission or None.
+            # Note that the current call in this case returns the just finished mission
+            self.executing_mission_id = None
         return mission
 
     async def report_mission(self, status, metrics):

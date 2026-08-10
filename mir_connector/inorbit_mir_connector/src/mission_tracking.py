@@ -11,6 +11,80 @@ MISSION_STATE_DONE = "Done"
 MISSION_STATE_ABORT = "Abort"
 
 
+class MirNativeMissionTasks:
+    """Per-action InOrbit task progress for one native (robot-triggered) mission.
+
+    Tasks are the mission definition's actions. Progress comes from the mission
+    queue actions endpoints: each executed queue action's ``action_id`` equals a
+    definition action guid. Completed tasks never downgrade; poll failures keep
+    the previous states.
+    """
+
+    def __init__(self, mir_api, queue_id, tasks):
+        self.logger = logging.getLogger(name=self.__class__.__name__)
+        self._mir_api = mir_api
+        self._queue_id = queue_id
+        # Ordered {definition action guid: task dict}, mutated in place as progress arrives.
+        self._tasks = tasks
+        self._current_task_id = None
+        # queue-action int id -> (action_id guid, finished bool). Finished entries are
+        # never re-fetched, so steady state costs one shallow GET per poll.
+        self._detail_cache = {}
+
+    async def poll(self):
+        """Refresh task states from the mission queue actions. Never raises."""
+        try:
+            entries = await self._mir_api.get_mission_queue_actions(self._queue_id)
+            for entry in entries:
+                int_id = entry.get("id")
+                cached = self._detail_cache.get(int_id)
+                if cached is not None and cached[1]:
+                    continue
+                detail = await self._mir_api.get_mission_queue_action(self._queue_id, int_id)
+                self._detail_cache[int_id] = (
+                    detail.get("action_id"),
+                    detail.get("finished") is not None,
+                )
+        except Exception as e:
+            self.logger.warning(f"Failed to poll actions of mission queue {self._queue_id}: {e}")
+            return
+        self._apply()
+
+    def _apply(self):
+        """Fold the detail cache (in execution order) into task states."""
+        current = None
+        for guid, finished in self._detail_cache.values():
+            task = self._tasks.get(guid)
+            if task is None:  # foreign guid, e.g. a load_mission inlined sub-action
+                continue
+            if finished:
+                task["completed"] = True
+                task["inProgress"] = False
+            elif not task["completed"]:
+                task["inProgress"] = True
+                current = guid
+        self._current_task_id = current
+
+    def report_fields(self):
+        """``tasks``/``completedPercent``/``currentTaskId`` fields for the report payload."""
+        tasks = list(self._tasks.values())
+        completed = sum(1 for t in tasks if t["completed"])
+        fields = {
+            "tasks": [dict(t) for t in tasks],
+            "completedPercent": completed / len(tasks) if tasks else 0,
+        }
+        if self._current_task_id:
+            fields["currentTaskId"] = self._current_task_id
+        return fields
+
+    def signature(self):
+        """Hashable snapshot of task states, for report deduplication."""
+        return (
+            self._current_task_id,
+            tuple((t["inProgress"], t["completed"]) for t in self._tasks.values()),
+        )
+
+
 class MirInorbitMissionTracking:
 
     def __init__(

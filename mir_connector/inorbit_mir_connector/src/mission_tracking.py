@@ -14,6 +14,9 @@ MISSION_STATE_ABORT = "Abort"
 # used to join the resolved position name ("Move to X", "Docking at X").
 POSITION_PARAM_PHRASES = {"position": "to", "marker": "at"}
 
+# Max detail GETs issued in a single poll tick.
+_MAX_DETAIL_FETCHES_PER_POLL = 25
+
 
 class MirNativeMissionTasks:
     """Per-action InOrbit task progress for one native (robot-triggered) mission.
@@ -39,16 +42,22 @@ class MirNativeMissionTasks:
         """Refresh task states from the mission queue actions. Never raises."""
         try:
             entries = await self._mir_api.get_mission_queue_actions(self._queue_id)
+            fetched = 0
             for entry in entries:
                 int_id = entry.get("id")
                 cached = self._detail_cache.get(int_id)
                 if cached is not None and cached[1]:
                     continue
+                if fetched >= _MAX_DETAIL_FETCHES_PER_POLL:
+                    # ponytail: caps the catch-up burst when attaching mid-mission; later
+                    # ticks converge.
+                    break
                 detail = await self._mir_api.get_mission_queue_action(self._queue_id, int_id)
                 self._detail_cache[int_id] = (
                     detail.get("action_id"),
                     detail.get("finished") is not None,
                 )
+                fetched += 1
         except Exception as e:
             self.logger.warning(f"Failed to poll actions of mission queue {self._queue_id}: {e}")
             return
@@ -229,7 +238,7 @@ class MirInorbitMissionTracking:
             task_fields = tracker.report_fields()
             completed_percent = task_fields.pop("completedPercent")
         else:
-            # No tracker (mocked or degraded paths): count-based estimate as before.
+            # No tracker (test-mocked paths): count-based estimate as before.
             completed_percent = min(
                 1.0,
                 len(mission.get("actions", [])) / max(1, len(mission["definition"]["actions"])),

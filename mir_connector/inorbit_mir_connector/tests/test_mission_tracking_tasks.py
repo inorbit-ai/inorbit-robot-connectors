@@ -126,6 +126,28 @@ async def test_signature_changes_only_on_state_change():
 
 
 @pytest.mark.asyncio
+async def test_detail_fetches_capped_per_poll_and_converge_over_ticks():
+    # Long queue-action history (e.g. attaching mid-patrol): entry 1 is already finished,
+    # entries 2-30 are still unfinished.
+    guids = [f"g{i}" for i in range(1, 31)]
+    details = {1: ("g1", "2026-08-10T10:00:00")}
+    details.update({i: (f"g{i}", None) for i in range(2, 31)})
+    api = make_api(
+        queue_actions=[{"id": i, "url": "u"} for i in range(1, 31)],
+        details=details,
+    )
+    tracker = MirNativeMissionTasks(api, 99, make_tasks(*guids))
+
+    await tracker.poll()
+    assert api.get_mission_queue_action.await_count == 25
+    by_id = {t["taskId"]: t for t in tracker.report_fields()["tasks"]}
+    assert by_id["g1"]["completed"] is True  # fetched-and-finished entry still applies
+
+    await tracker.poll()
+    assert api.get_mission_queue_action.await_count > 25  # cache-missing ones refetched
+
+
+@pytest.mark.asyncio
 async def test_empty_task_list_reports_zero_percent():
     api = make_api(queue_actions=[])
     tracker = MirNativeMissionTasks(api, 99, {})
@@ -325,3 +347,28 @@ async def test_report_mission_done_completes_observed_only():
     assert report["completedPercent"] == 1  # finished missions keep the existing contract
     assert report["status"] == "OK"
     assert "endTs" in report
+
+
+@pytest.mark.asyncio
+async def test_report_mission_abort_completes_observed_only():
+    # Mission aborted with an untaken if-branch action (g2 never appears in queue actions).
+    tracking = make_tracking()
+    wire_mission(
+        tracking,
+        [def_action("g1"), def_action("g2")],
+        entry_state="Abort",
+        finished="2026-08-10T10:05:00",
+    )
+    tracking.mir_api.get_mission_queue_actions = AsyncMock(return_value=[{"id": 1, "url": "u"}])
+    tracking.mir_api.get_mission_queue_action = AsyncMock(
+        return_value={"id": 1, "action_id": "g1", "finished": "2026-08-10T10:04:00"}
+    )
+    await tracking.report_mission(STATUS, {})
+    report = published(tracking)[-1]
+    by_id = {t["taskId"]: t for t in report["tasks"]}
+    assert report["state"] == "Aborted"  # merged from 'Abort'
+    assert report["status"] == "error"
+    assert by_id["g1"]["completed"] is True
+    assert by_id["g2"]["completed"] is False  # untaken branch stays incomplete
+    assert "endTs" in report
+    assert report["completedPercent"] == 1

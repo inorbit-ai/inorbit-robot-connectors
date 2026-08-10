@@ -10,6 +10,10 @@ from inorbit_edge.missions import MISSION_STATE_EXECUTING, MISSION_STATE_ABORTED
 MISSION_STATE_DONE = "Done"
 MISSION_STATE_ABORT = "Abort"
 
+# Definition action parameter ids whose value is a position guid, with the label phrase
+# used to join the resolved position name ("Move to X", "Docking at X").
+POSITION_PARAM_PHRASES = {"position": "to", "marker": "at"}
+
 
 class MirNativeMissionTasks:
     """Per-action InOrbit task progress for one native (robot-triggered) mission.
@@ -103,6 +107,61 @@ class MirInorbitMissionTracking:
         self.inorbit_sess = inorbit_sess
         self.robot_tz_info = robot_tz_info
         self.mission_executor = mission_executor
+        self._action_names = None  # {action_type: display name}, fetched once, kept for life
+        self._position_names = {}  # {position guid: name}, kept for life
+
+    async def _get_action_names(self):
+        """Action-type display names, fetched once and cached; {} (and a retry on the
+        next mission) when the fetch fails."""
+        if self._action_names is None:
+            try:
+                defs = await self.mir_api.get_action_definitions()
+                self._action_names = {
+                    d["action_type"]: d.get("name") for d in defs if d.get("action_type")
+                }
+            except Exception as e:
+                self.logger.warning(f"Failed to fetch MiR action definitions: {e}")
+                return {}
+        return self._action_names
+
+    async def _build_label(self, action, action_names):
+        """Operator-facing task label: action display name, plus the resolved position
+        name when the action targets one ("Move to Warehouse-1"). Best-effort."""
+        label = action_names.get(action["action_type"]) or action["action_type"]
+        for param in action.get("parameters") or []:
+            phrase = POSITION_PARAM_PHRASES.get(param.get("id"))
+            value = param.get("value")
+            if not phrase or not isinstance(value, str) or not value:
+                continue
+            name = self._position_names.get(value)
+            if name is None:
+                try:
+                    name = (await self.mir_api.get_position(value)).get("name")
+                    if name:
+                        self._position_names[value] = name
+                except Exception as e:
+                    self.logger.debug(f"Could not resolve position {value} for label: {e}")
+            if name:
+                label = f"{label} {phrase} {name}"
+            break
+        return label
+
+    async def _build_tasks(self, actions):
+        """Ordered {guid: task dict} from the mission definition actions (flat list,
+        including actions nested in scopes)."""
+        action_names = await self._get_action_names()
+        tasks = {}
+        for action in actions:
+            guid = action.get("guid")
+            if not guid:
+                continue
+            tasks[guid] = {
+                "taskId": guid,
+                "label": await self._build_label(action, action_names),
+                "inProgress": False,
+                "completed": False,
+            }
+        return tasks
 
     def _safe_localize_timestamp(self, timestamp_str: str) -> float:
         """Convert ISO timestamp string to Unix timestamp, handling timezone conversion.

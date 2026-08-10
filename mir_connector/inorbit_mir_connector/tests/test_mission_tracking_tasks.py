@@ -3,9 +3,15 @@
 # SPDX-License-Identifier: MIT
 
 import pytest
+import pytz
 from unittest.mock import AsyncMock, MagicMock
 
-from inorbit_mir_connector.src.mission_tracking import MirNativeMissionTasks
+from inorbit_edge.robot import RobotSession
+from inorbit_mir_connector.src.mir_api import MirApiV2
+from inorbit_mir_connector.src.mission_tracking import (
+    MirInorbitMissionTracking,
+    MirNativeMissionTasks,
+)
 
 
 def make_tasks(*guids):
@@ -126,3 +132,97 @@ async def test_empty_task_list_reports_zero_percent():
     await tracker.poll()
     fields = tracker.report_fields()
     assert fields["tasks"] == [] and fields["completedPercent"] == 0
+
+
+ACTION_DEFS = [
+    {"action_type": "move", "name": "Move"},
+    {"action_type": "docking", "name": "Docking"},
+    {"action_type": "charging", "name": "Charging"},
+]
+
+
+def make_tracking():
+    tracking = MirInorbitMissionTracking(
+        mir_api=MagicMock(autospec=MirApiV2),
+        inorbit_sess=MagicMock(autospec=RobotSession),
+        robot_tz_info=pytz.timezone("UTC"),
+        mission_executor=MagicMock(),
+    )
+    tracking.mission_executor.has_active_mission = AsyncMock(return_value=False)
+    tracking.mir_api.get_action_definitions = AsyncMock(return_value=ACTION_DEFS)
+    tracking.mir_api.get_position = AsyncMock(return_value={"name": "Warehouse-1"})
+    return tracking
+
+
+def def_action(guid, action_type="move", parameters=None):
+    return {
+        "guid": guid,
+        "action_type": action_type,
+        "parameters": parameters or [],
+        "priority": 1,
+        "mission_id": "def-guid",
+    }
+
+
+@pytest.mark.asyncio
+async def test_build_tasks_labels_and_order():
+    tracking = make_tracking()
+    actions = [
+        def_action("g1", "move", [{"id": "position", "value": "pos-guid"}]),
+        def_action("g2", "docking", [{"id": "marker", "value": "pos-guid"}]),
+        def_action("g3", "charging"),
+        def_action("g4", "unknown_type"),
+    ]
+    tasks = await tracking._build_tasks(actions)
+    assert list(tasks) == ["g1", "g2", "g3", "g4"]
+    assert tasks["g1"]["label"] == "Move to Warehouse-1"
+    assert tasks["g2"]["label"] == "Docking at Warehouse-1"
+    assert tasks["g3"]["label"] == "Charging"
+    assert tasks["g4"]["label"] == "unknown_type"
+    assert tasks["g1"] == {
+        "taskId": "g1",
+        "label": "Move to Warehouse-1",
+        "inProgress": False,
+        "completed": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_build_tasks_variable_position_falls_back_to_action_name():
+    # Parameterized missions carry input_name and a null value in the definition.
+    tracking = make_tracking()
+    actions = [def_action("g1", "move", [{"id": "position", "value": None, "input_name": "p"}])]
+    tasks = await tracking._build_tasks(actions)
+    assert tasks["g1"]["label"] == "Move"
+
+
+@pytest.mark.asyncio
+async def test_build_tasks_position_lookup_failure_falls_back():
+    tracking = make_tracking()
+    tracking.mir_api.get_position = AsyncMock(side_effect=RuntimeError("404"))
+    actions = [def_action("g1", "move", [{"id": "position", "value": "pos-guid"}])]
+    tasks = await tracking._build_tasks(actions)
+    assert tasks["g1"]["label"] == "Move"
+
+
+@pytest.mark.asyncio
+async def test_position_names_cached_across_actions():
+    tracking = make_tracking()
+    actions = [
+        def_action("g1", "move", [{"id": "position", "value": "pos-guid"}]),
+        def_action("g2", "move", [{"id": "position", "value": "pos-guid"}]),
+    ]
+    await tracking._build_tasks(actions)
+    assert tracking.mir_api.get_position.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_action_definitions_failure_uses_raw_types_and_retries():
+    tracking = make_tracking()
+    tracking.mir_api.get_action_definitions = AsyncMock(side_effect=RuntimeError("boom"))
+    tasks = await tracking._build_tasks([def_action("g1", "move")])
+    assert tasks["g1"]["label"] == "move"
+    # A later mission retries the fetch instead of caching the failure.
+    tracking.mir_api.get_action_definitions = AsyncMock(return_value=ACTION_DEFS)
+    tasks = await tracking._build_tasks([def_action("g2", "move")])
+    assert tasks["g2"]["label"] == "Move"

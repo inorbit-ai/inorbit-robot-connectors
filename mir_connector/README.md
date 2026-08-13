@@ -809,9 +809,23 @@ missions, with one task per mission step. Steps appear in execution order and ar
 MiR labels them, for example `Move to Dock charger 285` or `Wait for 10 sec.`.
 
 Progress comes from the mission queue: each executed queue action names the definition action it
-came from, so a step is marked complete only when that action finished without failing. While the
-mission runs it reports status `OK`, or `warning` if the robot is paused, emergency-stopped or in
-an error state, which is what a stalled mission looks like from outside.
+came from, so a step is marked complete only when that action finished without failing.
+
+### Mission states
+
+MiR keeps a queue entry in `Executing` whether the robot is driving, paused or emergency-stopped,
+so the robot's own state supplies the rest. Each state maps to exactly one status:
+
+| Mission state    | Status    | When |
+| ---------------- | --------- | ---- |
+| `Executing`      | `OK`      | Running normally |
+| `Paused`         | `warning` | Robot paused; the mission is still open |
+| `Emergency stop` | `warning` | Emergency stop pressed mid-mission |
+| `Error`          | `error`   | Robot in an error state mid-mission |
+| `Done`           | `OK`      | Finished |
+| `Aborted`        | `error`   | Cancelled or failed |
+
+A blocked mission stays `inProgress`, so it is not closed out and resumes cleanly.
 
 ### Limitations
 

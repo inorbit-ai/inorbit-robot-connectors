@@ -11,7 +11,9 @@ from inorbit_mir_connector.src.mir_api import MirApiV2
 from inorbit_mir_connector.src.mission_tracking import (
     MirInorbitMissionTracking,
     MirNativeMissionTasks,
+    _STATUS_BY_STATE,
     _execution_order,
+    _reported_state,
 )
 
 # Real GET /missions/{id}/actions?whitelist=...,scope_reference payloads, trimmed to the
@@ -515,24 +517,50 @@ async def test_report_mission_sends_status_while_executing():
     assert report["status"] == "OK"
 
 
+def test_state_maps_to_exactly_one_status():
+    # The point of the mapping: a state name means one thing. "Executing" is always OK; if
+    # the robot is blocked the state itself changes, rather than one state carrying two
+    # different statuses.
+    assert _STATUS_BY_STATE == {
+        "Executing": "OK",
+        "Done": "OK",
+        "Paused": "warning",
+        "Emergency stop": "warning",
+        "Error": "error",
+        "Aborted": "error",
+    }
+
+
+def test_reported_state_refines_only_a_running_mission():
+    assert _reported_state("Executing", {"state_id": 3}) == "Executing"
+    assert _reported_state("Executing", {"state_id": 4}) == "Paused"
+    assert _reported_state("Executing", {}) == "Executing"
+    # A finished entry is the whole story; the robot being idle afterwards says nothing.
+    assert _reported_state("Done", {"state_id": 4}) == "Done"
+    assert _reported_state("Aborted", {"state_id": 4}) == "Aborted"
+
+
 @pytest.mark.asyncio
-async def test_report_mission_warns_while_robot_is_blocked():
-    # Paused (4), emergency stop (10) and error (12) all stop the mission progressing. The
-    # mission has not failed, so it is a warning rather than an error.
-    for state_id in (4, 10, 12):
+async def test_report_mission_state_changes_when_robot_is_blocked():
+    # MiR leaves the queue entry "Executing" while the robot is paused, so the state has to
+    # come from the robot. The mission stays in progress: reporting inProgress false would
+    # make the platform stamp an end time and close it.
+    blocked = ((4, "Paused", "warning"), (10, "Emergency stop", "warning"), (12, "Error", "error"))
+    for state_id, state, expected_status in blocked:
         tracking = make_tracking()
         wire_mission(tracking, [def_action("g1")])
         tracking.mir_api.get_mission_queue_actions = AsyncMock(return_value=[])
         await tracking.report_mission({**STATUS, "state_id": state_id}, {})
         report = published(tracking)[-1]
-        assert report["status"] == "warning", state_id
-        assert report["inProgress"] is True
+        assert report["state"] == state, state_id
+        assert report["status"] == expected_status, state_id
+        assert report["inProgress"] is True, state_id
 
 
 @pytest.mark.asyncio
-async def test_report_mission_republishes_when_status_changes():
-    # Nothing else changes when the robot pauses, so without status in the dedup key the
-    # warning would never reach the platform.
+async def test_report_mission_republishes_when_state_changes():
+    # Nothing MiR reports changes when the robot pauses, so without the reported state in
+    # the dedup key the pause would never reach the platform.
     tracking = make_tracking()
     wire_mission(tracking, [def_action("g1")])
     tracking.mir_api.get_mission_queue_actions = AsyncMock(return_value=[])
@@ -540,7 +568,9 @@ async def test_report_mission_republishes_when_status_changes():
     await tracking.report_mission(STATUS, {})
     assert len(published(tracking)) == 1  # unchanged, deduplicated
     await tracking.report_mission({**STATUS, "state_id": 4}, {})
-    assert [r["status"] for r in published(tracking)] == ["OK", "warning"]
+    await tracking.report_mission(STATUS, {})  # resumed
+    assert [r["state"] for r in published(tracking)] == ["Executing", "Paused", "Executing"]
+    assert [r["status"] for r in published(tracking)] == ["OK", "warning", "OK"]
 
 
 @pytest.mark.asyncio

@@ -21,25 +21,42 @@ MISSION_STATUS_OK = "OK"
 MISSION_STATUS_WARNING = "warning"
 MISSION_STATUS_ERROR = "error"
 
-# Robot state ids that stop a running mission making progress.
-_BLOCKED_STATE_IDS = frozenset({4, 10, 12})  # Pause, EmergencyStop, Error
+# States we report on top of MiR's own. MiR leaves the queue entry "Executing" whether the
+# robot is driving, paused or e-stopped, so a stalled mission is invisible in the queue
+# state alone and the robot state has to supply it.
+MISSION_STATE_PAUSED = "Paused"
+MISSION_STATE_EMERGENCY_STOP = "Emergency stop"
+MISSION_STATE_ERROR = "Error"
+
+# Robot state_id -> the mission state it implies while the queue entry is still executing.
+# Only 4 is corroborated (it is MirApiV2.SetStateId.PAUSE); the other two are unobserved so
+# far, and an unknown id simply leaves the mission executing.
+_STATE_BY_ROBOT_STATE_ID = {
+    4: MISSION_STATE_PAUSED,
+    10: MISSION_STATE_EMERGENCY_STOP,
+    12: MISSION_STATE_ERROR,
+}
+
+# Every reported state maps to exactly one status. Unlisted MiR states are reported as OK.
+_STATUS_BY_STATE = {
+    MISSION_STATE_EXECUTING: MISSION_STATUS_OK,
+    MISSION_STATE_DONE: MISSION_STATUS_OK,
+    MISSION_STATE_PAUSED: MISSION_STATUS_WARNING,
+    MISSION_STATE_EMERGENCY_STOP: MISSION_STATUS_WARNING,
+    MISSION_STATE_ERROR: MISSION_STATUS_ERROR,
+    MISSION_STATE_ABORTED: MISSION_STATUS_ERROR,
+}
 
 
-def _mission_status(mission, robot_status):
-    """InOrbit status for a MiR queue entry: OK, warning or error.
+def _reported_state(mir_state, robot_status):
+    """Mission state to report: MiR's queue state, refined by the robot's own state.
 
-    MiR's own state names go out verbatim in ``state``, and the platform can only infer a
-    status from its own canonical names, so leaving this unset renders the mission grey
-    for its entire run. It is always sent explicitly.
-
-    A running mission is never an error: it has not failed, and if the robot is paused,
-    e-stopped or faulted it is stuck, which is a warning.
+    Only a still-executing entry can be refined; once the entry reaches a final state that
+    is the whole story.
     """
-    if mission.get("finished") is not None:
-        return MISSION_STATUS_OK if mission["state"] == MISSION_STATE_DONE else MISSION_STATUS_ERROR
-    if robot_status.get("state_id") in _BLOCKED_STATE_IDS:
-        return MISSION_STATUS_WARNING
-    return MISSION_STATUS_OK
+    if mir_state != MISSION_STATE_EXECUTING:
+        return mir_state
+    return _STATE_BY_ROBOT_STATE_ID.get(robot_status.get("state_id"), MISSION_STATE_EXECUTING)
 
 
 # A substitution in a MiR action description, e.g. "%(position)s" or "%(register)d".
@@ -271,7 +288,7 @@ class MirInorbitMissionTracking:
         self._mission_definition = None  # definition of the tracked mission, one fetch per entry
         self._tasks_tracker = None  # MirNativeMissionTasks for the tracked queue entry
         self.last_reported_tasks_signature = None
-        self.last_reported_status = None
+        self.last_reported_state = None
         self._finished_mission_id = None  # last queue entry seen through to a final state
 
     async def _get_action_definitions(self):
@@ -397,22 +414,27 @@ class MirInorbitMissionTracking:
         # Merge 'Abort' and 'Aborted' values into a single state
         if mission["state"] == MISSION_STATE_ABORT:
             mission["state"] = MISSION_STATE_ABORTED
-        mission_status = _mission_status(mission, status)
+        # A paused mission is still open, so inProgress follows MiR's queue state, not the
+        # reported one. Reporting it false would make the platform stamp an end time and
+        # close the mission.
+        in_progress = mission["state"] == MISSION_STATE_EXECUTING
+        reported_state = _reported_state(mission["state"], status)
+        mission_status = _STATUS_BY_STATE.get(reported_state, MISSION_STATUS_OK)
         tasks_signature = tracker.signature() if tracker is not None else None
         if (
             mission["id"] == self.last_reported_mission_id
-            and mission["state"] == MISSION_STATE_EXECUTING
+            and in_progress
             and completed_percent == self.last_reported_mission_progress
             and tasks_signature == self.last_reported_tasks_signature
-            and mission_status == self.last_reported_status
+            and reported_state == self.last_reported_state
         ):
             # Avoid flooding mission reports when nothing important has changed
             return
         definition = mission["definition"]
         mission_values = {
             "missionId": mission["id"],
-            "inProgress": mission["state"] == MISSION_STATE_EXECUTING,
-            "state": mission["state"],
+            "inProgress": in_progress,
+            "state": reported_state,
             "startTs": self._safe_localize_timestamp(mission["started"]) * 1000,
             "status": mission_status,
             "data": {
@@ -445,4 +467,4 @@ class MirInorbitMissionTracking:
         self.last_reported_mission_progress = completed_percent
         self.last_reported_mission_id = mission["id"]
         self.last_reported_tasks_signature = tasks_signature
-        self.last_reported_status = mission_status
+        self.last_reported_state = reported_state

@@ -21,14 +21,19 @@ def make_tasks(*guids):
     }
 
 
-def make_api(queue_actions=None, details=None):
-    """details: {int_id: (action_id, finished_or_None)}"""
+def make_api(queue_actions=None, details=None, states=None):
+    """details: {int_id: (action_id, finished_or_None)}; states: {int_id: state} (default "").
+
+    MiR reports a successful action with an empty state and a failed one with "Failed" or
+    "Aborted"; both carry a `finished` timestamp.
+    """
     api = MagicMock()
     api.get_mission_queue_actions = AsyncMock(return_value=queue_actions or [])
 
     async def get_detail(queue_id, int_id):
         action_id, finished = details[int_id]
-        return {"id": int_id, "action_id": action_id, "finished": finished, "state": ""}
+        state = (states or {}).get(int_id, "")
+        return {"id": int_id, "action_id": action_id, "finished": finished, "state": state}
 
     api.get_mission_queue_action = AsyncMock(side_effect=get_detail)
     return api
@@ -54,6 +59,41 @@ async def test_progresses_tasks_from_queue_actions():
     assert by_id["g3"]["inProgress"] is False and by_id["g3"]["completed"] is False
     assert fields["currentTaskId"] == "g2"
     assert fields["completedPercent"] == pytest.approx(1 / 3)
+
+
+@pytest.mark.asyncio
+async def test_failed_action_is_not_reported_completed():
+    # A failed action carries a `finished` timestamp just like a successful one; only the
+    # non-empty state distinguishes them. Reporting it completed put a green checkmark on the
+    # step that broke the mission.
+    api = make_api(
+        queue_actions=[{"id": 1, "url": "u"}, {"id": 2, "url": "u"}],
+        details={1: ("g1", "2026-08-10T10:00:00"), 2: ("g2", "2026-08-10T10:00:05")},
+        states={2: "Failed"},
+    )
+    tracker = MirNativeMissionTasks(api, 99, make_tasks("g1", "g2"))
+    await tracker.poll()
+    fields = tracker.report_fields()
+    by_id = {t["taskId"]: t for t in fields["tasks"]}
+    assert by_id["g1"]["completed"] is True
+    # A failed action is neither completed nor still running, and is not the current task.
+    assert by_id["g2"]["completed"] is False
+    assert by_id["g2"]["inProgress"] is False
+    assert "currentTaskId" not in fields
+    assert fields["completedPercent"] == pytest.approx(0.5)
+
+
+@pytest.mark.asyncio
+async def test_aborted_action_is_not_reported_completed():
+    api = make_api(
+        queue_actions=[{"id": 1, "url": "u"}],
+        details={1: ("g1", "2026-08-10T10:00:00")},
+        states={1: "Aborted"},
+    )
+    tracker = MirNativeMissionTasks(api, 99, make_tasks("g1"))
+    await tracker.poll()
+    task = tracker.report_fields()["tasks"][0]
+    assert task["completed"] is False and task["inProgress"] is False
 
 
 @pytest.mark.asyncio

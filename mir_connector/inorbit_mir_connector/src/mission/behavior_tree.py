@@ -34,6 +34,9 @@
 #     `finished` timestamp. Matching by guid (not list length) ignores a load_mission's
 #     inlined sub-actions, whose guids are foreign to our set, so nested missions no longer
 #     over-complete. Best-effort: a tracking error never aborts the completion poll.
+#   - 2026-08-13: a queue action's `finished` timestamp is set on failures too, so completion
+#     now also requires an empty `state` ("Failed"/"Aborted" mean it did not succeed);
+#     previously a failed action marked its paired InOrbit task completed
 
 """Custom behavior tree nodes for executing compiled native MiR missions.
 
@@ -338,7 +341,8 @@ class WaitForMirMissionCompletionNode(BehaviorTree):
                 detail = await self._mir_api.get_mission_queue_action(queue_id, int_id)
                 self._detail_cache[int_id] = (
                     detail.get("action_id"),
-                    detail.get("finished") is not None,
+                    # `finished` is set on failures too; an empty `state` is what marks success.
+                    detail.get("finished") is not None and not detail.get("state"),
                 )
         except Exception as e:
             logger.warning(f"Failed to poll per-action progress for {queue_id}: {e}")

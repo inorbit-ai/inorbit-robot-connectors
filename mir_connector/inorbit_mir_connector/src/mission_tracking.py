@@ -18,6 +18,18 @@ POSITION_PARAM_PHRASES = {"position": "to", "marker": "at"}
 _MAX_DETAIL_FETCHES_PER_POLL = 25
 
 
+def _action_outcome(detail):
+    """``(finished, succeeded)`` for a queue action detail.
+
+    ``finished`` is a timestamp on failures too, so it alone does not mean success: a
+    successful action reports an empty ``state``, a failed one "Failed" or "Aborted".
+    The two flags are kept apart because a failed action is neither still running nor
+    completed, and InOrbit tasks express that as both booleans false.
+    """
+    finished = detail.get("finished") is not None
+    return finished, finished and not detail.get("state")
+
+
 class MirNativeMissionTasks:
     """Per-action InOrbit task progress for one native (robot-triggered) mission.
 
@@ -34,8 +46,8 @@ class MirNativeMissionTasks:
         # Ordered {definition action guid: task dict}, mutated in place as progress arrives.
         self._tasks = tasks
         self._current_task_id = None
-        # queue-action int id -> (action_id guid, finished bool). Finished entries are
-        # never re-fetched, so steady state costs one shallow GET per poll.
+        # queue-action int id -> (action_id guid, finished bool, succeeded bool). Finished
+        # entries are never re-fetched, so steady state costs one shallow GET per poll.
         self._detail_cache = {}
 
     async def poll(self):
@@ -53,10 +65,7 @@ class MirNativeMissionTasks:
                     # ticks converge.
                     break
                 detail = await self._mir_api.get_mission_queue_action(self._queue_id, int_id)
-                self._detail_cache[int_id] = (
-                    detail.get("action_id"),
-                    detail.get("finished") is not None,
-                )
+                self._detail_cache[int_id] = (detail.get("action_id"), *_action_outcome(detail))
                 fetched += 1
         except Exception as e:
             self.logger.warning(f"Failed to poll actions of mission queue {self._queue_id}: {e}")
@@ -66,12 +75,15 @@ class MirNativeMissionTasks:
     def _apply(self):
         """Fold the detail cache (in execution order) into task states."""
         current = None
-        for guid, finished in self._detail_cache.values():
+        for guid, finished, succeeded in self._detail_cache.values():
             task = self._tasks.get(guid)
             if task is None:  # foreign guid, e.g. a load_mission inlined sub-action
                 continue
-            if finished:
+            if succeeded:
                 task["completed"] = True
+                task["inProgress"] = False
+            elif finished:
+                # Ran and failed: not completed, and no longer running either.
                 task["inProgress"] = False
             elif not task["completed"]:
                 task["inProgress"] = True

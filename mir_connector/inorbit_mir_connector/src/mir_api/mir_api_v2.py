@@ -35,6 +35,10 @@ DIAGNOSTICS_ENDPOINT_V2 = "experimental/diagnostics"
 POSITIONS_ENDPOINT_V2 = "positions"
 SOFTWARE_STATUS_ENDPOINT_V2 = "software/system_status"
 
+# Fields requested for mission definition actions. Everything but scope_reference is in the
+# default response; asking for it is what exposes the nesting between actions.
+MISSION_ACTION_FIELDS = "guid,action_type,priority,scope_reference,parameters"
+
 
 class SetStateId(int, Enum):
     """Defined states for the set_state method"""
@@ -181,9 +185,17 @@ class MirApiV2(MirApiBaseClass):
 
     async def get_mission_actions(self, mission_id):
         """Queries a list of actions a mission executes using
-        the missions/{mission_id}/actions endpoint"""
+        the missions/{mission_id}/actions endpoint.
+
+        ``scope_reference`` is not in the default response and has to be whitelisted
+        (the default fields are action_type, guid, mission_id, parameters, priority, url).
+        It is what makes the list a tree: it holds the guid of a *parameter* of the action
+        that contains this one, or null at the top level. Without it, the response order
+        is meaningless and ``priority`` alone cannot be used, since it only orders siblings
+        inside a single scope. See ``mission_tracking._execution_order``.
+        """
         actions_api_url = f"/{MISSIONS_ENDPOINT_V2}/{mission_id}/actions"
-        response = await self._get(actions_api_url)
+        response = await self._get(actions_api_url, params={"whitelist": MISSION_ACTION_FIELDS})
         actions = response.json()
         return actions
 

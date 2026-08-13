@@ -200,6 +200,28 @@ async def test_get_action_definitions(mir_api, httpx_mock):
 
 
 @pytest.mark.asyncio
+async def test_get_mission_actions_requests_scope_reference(mir_api, httpx_mock):
+    """scope_reference is not in the default response and must be whitelisted.
+
+    Without it every action looks top-level, the nesting is invisible and the task list
+    silently falls back to the API's (meaningless) response order. Nothing else would fail
+    loudly, so the query string itself is the assertion.
+    """
+    actions = [
+        {"guid": "g1", "action_type": "wait", "priority": 12, "scope_reference": None},
+    ]
+    httpx_mock.add_response(
+        method="GET",
+        url=(
+            f"{mir_api.mir_api_base_url}/missions/m1/actions"
+            "?whitelist=guid%2Caction_type%2Cpriority%2Cscope_reference%2Cparameters"
+        ),
+        json=actions,
+    )
+    assert await mir_api.get_mission_actions("m1") == actions
+
+
+@pytest.mark.asyncio
 async def test_get_position(mir_api, httpx_mock):
     position = {"guid": "pos-guid-1", "name": "Warehouse-1", "type_id": 0}
     httpx_mock.add_response(

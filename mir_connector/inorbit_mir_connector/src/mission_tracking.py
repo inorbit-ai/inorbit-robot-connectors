@@ -6,6 +6,8 @@ import logging
 from datetime import datetime
 from inorbit_edge.missions import MISSION_STATE_EXECUTING, MISSION_STATE_ABORTED
 
+from .mission.translator import _SCOPE_BEARING_DENIED
+
 # Mission states
 MISSION_STATE_DONE = "Done"
 MISSION_STATE_ABORT = "Abort"
@@ -16,6 +18,46 @@ POSITION_PARAM_PHRASES = {"position": "to", "marker": "at"}
 
 # Max detail GETs issued in a single poll tick.
 _MAX_DETAIL_FETCHES_PER_POLL = 25
+
+
+def _execution_order(actions):
+    """Mission definition actions in the order the robot runs them.
+
+    ``GET /missions/{id}/actions`` returns them in no useful order, and ``priority`` is
+    not a global rank: it orders siblings within one scope only, and each scope numbers
+    its own children (two actions in different scopes routinely share a priority). The
+    list is a tree, linked by ``scope_reference`` -> the guid of a *parameter* of the
+    containing action, null at the top level. So this is a DFS pre-order, which is also
+    what an operator reads top to bottom.
+
+    No list of scope-bearing action types is needed: a parameter guid that something
+    points at is, by definition, a scope.
+    """
+    children = {}
+    for action in actions:
+        children.setdefault(action.get("scope_reference"), []).append(action)
+    for siblings in children.values():
+        siblings.sort(key=lambda a: a.get("priority") or 0)
+    ordered = []
+    # Guards against a parameter guid that loops back to an enclosing scope. Malformed
+    # input would otherwise hang the poll loop; None is seeded because it is the root key
+    # and an unset parameter guid must not be read as "nested at the top level".
+    walked = {None}
+
+    def walk(scope):
+        for action in children.get(scope, []):
+            ordered.append(action)
+            for param in action.get("parameters") or []:
+                nested = param.get("guid")
+                if nested in children and nested not in walked:
+                    walked.add(nested)
+                    walk(nested)
+
+    walk(None)
+    # Anything unreachable from the root (a scope_reference we never saw as a parameter)
+    # is appended rather than dropped, so a task is never silently lost.
+    placed = {id(a) for a in ordered}
+    return ordered + [a for a in actions if id(a) not in placed]
 
 
 def _action_outcome(detail):
@@ -171,13 +213,18 @@ class MirInorbitMissionTracking:
         return label
 
     async def _build_tasks(self, actions):
-        """Ordered {guid: task dict} from the mission definition actions (flat list,
-        including actions nested in scopes)."""
+        """{guid: task dict} in execution order, one task per real mission step.
+
+        Scope-bearing actions (loop, if, try_catch, ...) are containers, not steps: they
+        are what the nested actions hang off, they need not ever report finished, and
+        while their body runs they would show as a second task in progress. Their
+        children stay, in place.
+        """
         action_names = await self._get_action_names()
         tasks = {}
-        for action in actions:
+        for action in _execution_order(actions):
             guid = action.get("guid")
-            if not guid:
+            if not guid or action.get("action_type") in _SCOPE_BEARING_DENIED:
                 continue
             tasks[guid] = {
                 "taskId": guid,

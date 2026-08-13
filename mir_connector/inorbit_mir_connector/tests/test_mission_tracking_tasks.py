@@ -11,7 +11,106 @@ from inorbit_mir_connector.src.mir_api import MirApiV2
 from inorbit_mir_connector.src.mission_tracking import (
     MirInorbitMissionTracking,
     MirNativeMissionTasks,
+    _execution_order,
 )
+
+# Real GET /missions/{id}/actions?whitelist=...,scope_reference payloads, trimmed to the
+# fields the ordering depends on.
+
+# "test mission tracking with movement": flat, but returned out of order. Ground truth from
+# GET /mission_queue/28525/actions is p12, p13 (the move), p14, p15, p16.
+FLAT_MISALIGNED = [
+    {"guid": "01cfdccd", "action_type": "wait", "priority": 12, "scope_reference": None},
+    {"guid": "aac8f71e", "action_type": "wait", "priority": 14, "scope_reference": None},
+    {"guid": "2d8240b7", "action_type": "wait", "priority": 15, "scope_reference": None},
+    {"guid": "60675cad", "action_type": "wait", "priority": 16, "scope_reference": None},
+    {"guid": "b7809d30", "action_type": "move", "priority": 13, "scope_reference": None},
+]
+
+# MiR's shipped "mirconst-guid-0000-0024-actionlist00": two scopes, each numbering its own
+# children from 0, so priority is meaningless as a global sort key.
+IF_SCOPE = "mirconst-guid-0002-0065-actlistparam"
+FIELDS_SCOPE = "mirconst-guid-0002-0073-actlistparam"
+SCOPED = [
+    {
+        "guid": "a-if",
+        "action_type": "if",
+        "priority": 0,
+        "scope_reference": None,
+        "parameters": [{"id": "true", "guid": IF_SCOPE, "value": ""}],
+    },
+    {
+        "guid": "a-throw",
+        "action_type": "throw_error",
+        "priority": 0,
+        "scope_reference": IF_SCOPE,
+        "parameters": [{"id": "message", "guid": "p-msg", "value": "no shelf"}],
+    },
+    {
+        "guid": "a-fields",
+        "action_type": "reduce_protective_fields",
+        "priority": 1,
+        "scope_reference": None,
+        "parameters": [{"id": "content", "guid": FIELDS_SCOPE, "value": ""}],
+    },
+    {
+        "guid": "a-load",
+        "action_type": "load_mission",
+        "priority": 0,
+        "scope_reference": FIELDS_SCOPE,
+        "parameters": [{"id": "mission_id", "guid": "p-mid", "value": "other"}],
+    },
+    {
+        "guid": "a-footprint",
+        "action_type": "set_footprint",
+        "priority": 1,
+        "scope_reference": FIELDS_SCOPE,
+        "parameters": [{"id": "footprint", "guid": "p-fp", "value": "fp"}],
+    },
+    {
+        "guid": "a-relmove",
+        "action_type": "relative_move",
+        "priority": 2,
+        "scope_reference": FIELDS_SCOPE,
+        "parameters": [{"id": "x", "guid": "p-x", "value": -2.0}],
+    },
+]
+
+
+def test_execution_order_flat_mission_uses_priority_not_list_order():
+    assert [a["guid"] for a in _execution_order(FLAT_MISALIGNED)] == [
+        "01cfdccd",
+        "b7809d30",
+        "aac8f71e",
+        "2d8240b7",
+        "60675cad",
+    ]
+
+
+def test_execution_order_keeps_nested_actions_inside_their_scope():
+    ordered = [a["guid"] for a in _execution_order(SCOPED)]
+    assert ordered == ["a-if", "a-throw", "a-fields", "a-load", "a-footprint", "a-relmove"]
+    # A global sort by priority hoists the nested load_mission out of its scope, above the
+    # top-level action that contains it. That is the trap this function exists to avoid.
+    naive = [a["guid"] for a in sorted(SCOPED, key=lambda a: a["priority"])]
+    assert naive.index("a-load") < naive.index("a-fields")
+    assert ordered.index("a-load") > ordered.index("a-fields")
+
+
+def test_execution_order_survives_malformed_input():
+    # Parameters without guids must not be read as nesting at the root, and a scope cycle
+    # must not hang the poll loop.
+    cyclic = [
+        {
+            "guid": "x",
+            "action_type": "loop",
+            "priority": 0,
+            "scope_reference": "s",
+            "parameters": [{"id": "content", "guid": "s"}, {"id": "noguid"}],
+        }
+    ]
+    assert [a["guid"] for a in _execution_order(cyclic)] == ["x"]
+    assert _execution_order([]) == []
 
 
 def make_tasks(*guids):
@@ -216,14 +315,35 @@ def make_tracking():
     return tracking
 
 
-def def_action(guid, action_type="move", parameters=None):
+def def_action(guid, action_type="move", parameters=None, priority=1, scope_reference=None):
     return {
         "guid": guid,
         "action_type": action_type,
         "parameters": parameters or [],
-        "priority": 1,
+        "priority": priority,
+        "scope_reference": scope_reference,
         "mission_id": "def-guid",
     }
+
+
+@pytest.mark.asyncio
+async def test_build_tasks_drops_scope_containers_but_keeps_their_body():
+    tracking = make_tracking()
+    body_scope = "p-content"
+    actions = [
+        def_action(
+            "g-loop",
+            "loop",
+            [{"id": "content", "guid": body_scope, "value": ""}],
+            priority=0,
+        ),
+        def_action("g-inner", "move", priority=0, scope_reference=body_scope),
+        def_action("g-after", "docking", priority=1),
+    ]
+    tasks = await tracking._build_tasks(actions)
+    # The loop itself is a container: it may never report finished, and while its body runs
+    # it would show as a second task in progress.
+    assert list(tasks) == ["g-inner", "g-after"]
 
 
 @pytest.mark.asyncio

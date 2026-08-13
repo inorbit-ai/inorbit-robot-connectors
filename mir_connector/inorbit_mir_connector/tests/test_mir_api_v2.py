@@ -59,13 +59,24 @@ async def test_http_error_logs_response_body(mir_api, httpx_mock, caplog):
 
 @pytest.mark.asyncio
 async def test_get_executing_mission_id(mir_api, httpx_mock):
+    """Reads only the tail of the queue, newest first.
+
+    Unbounded, this endpoint returns every entry the robot has ever run (2 MB on ours).
+    MiR silently ignores params it does not know, so limit and sort_by must travel
+    together or we would read the oldest entries instead of the newest.
+    """
     missions = [
         {"id": 2, "state": "Aborted"},
         {"id": 1, "state": "Executing"},
         {"id": 3, "state": "Completed"},
     ]
     httpx_mock.add_response(
-        method="GET", url=f"{mir_api.mir_api_base_url}/mission_queue", json=missions
+        method="GET",
+        url=(
+            f"{mir_api.mir_api_base_url}/mission_queue"
+            "?limit=20&sort_by=id%2Cdesc&whitelist=id%2Cstate"
+        ),
+        json=missions,
     )
     assert await mir_api.get_executing_mission_id() == 1
 

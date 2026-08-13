@@ -272,6 +272,7 @@ class MirInorbitMissionTracking:
         self._tasks_tracker = None  # MirNativeMissionTasks for the tracked queue entry
         self.last_reported_tasks_signature = None
         self.last_reported_status = None
+        self._finished_mission_id = None  # last queue entry seen through to a final state
 
     async def _get_action_definitions(self):
         """{action_type: definition}, fetched once and cached; {} (and a retry on the next
@@ -328,7 +329,22 @@ class MirInorbitMissionTracking:
             # Return current time as fallback
             return datetime.now().timestamp()
 
-    async def get_current_mission(self):
+    async def _find_executing_mission_id(self, robot_status):
+        """Queue id of the mission the robot is running, or None.
+
+        ``/status`` carries it and the connector already fetches ``/status`` every tick,
+        so this normally costs nothing at all. The queue endpoint is only consulted when
+        the field is missing.
+        """
+        if robot_status and "mission_queue_id" in robot_status:
+            queue_id = robot_status["mission_queue_id"]
+        else:
+            queue_id = await self.mir_api.get_executing_mission_id()
+        # The field clears when the mission ends, but if a firmware ever left it set we
+        # would re-adopt an entry we have already finished with and republish it forever.
+        return None if queue_id == self._finished_mission_id else queue_id
+
+    async def get_current_mission(self, robot_status=None):
         """Return the current mission, it's either executing or just ended.
 
         The queue entry is fetched every tick; the definition (with actions) once per
@@ -336,7 +352,7 @@ class MirInorbitMissionTracking:
         ``mission_id`` have no definition and get ``None`` for it.
         """
         if self.executing_mission_id is None:
-            self.executing_mission_id = await self.mir_api.get_executing_mission_id()
+            self.executing_mission_id = await self._find_executing_mission_id(robot_status)
             self._mission_definition = None
             self._tasks_tracker = None
         if not self.executing_mission_id:
@@ -360,6 +376,7 @@ class MirInorbitMissionTracking:
             # executing mission or None.
             # Note that the current call in this case returns the just finished mission
             self.executing_mission_id = None
+            self._finished_mission_id = queue_id
         return mission
 
     async def report_mission(self, status, metrics):
@@ -367,7 +384,7 @@ class MirInorbitMissionTracking:
         # mission tracking. Skip robot-side polling to avoid duplicate reports.
         if await self.mission_executor.has_active_mission():
             return
-        mission = await self.get_current_mission()
+        mission = await self.get_current_mission(status)
         if not mission:
             return
         tracker = self._tasks_tracker

@@ -70,6 +70,42 @@ async def test_get_current_mission(mission_tracking):
 
 
 @pytest.mark.asyncio
+async def test_executing_mission_id_comes_from_status(mission_tracking):
+    """/status already carries mission_queue_id and is already fetched every tick.
+
+    The queue endpoint is unbounded (2 MB on a robot with history) and polling it once a
+    second cannot keep up, so it is only a fallback for when the field is absent.
+    """
+    mission_tracking.mir_api.get_executing_mission_id = AsyncMock(side_effect=AssertionError)
+    assert await mission_tracking._find_executing_mission_id({"mission_queue_id": 7}) == 7
+    # Idle robot: the field is present and null, which is an answer, not a gap.
+    assert await mission_tracking._find_executing_mission_id({"mission_queue_id": None}) is None
+
+    mission_tracking.mir_api.get_executing_mission_id = AsyncMock(return_value=9)
+    assert await mission_tracking._find_executing_mission_id({}) == 9
+    assert await mission_tracking._find_executing_mission_id(None) == 9
+
+
+@pytest.mark.asyncio
+async def test_finished_mission_is_not_readopted(mission_tracking):
+    # mission_queue_id clears when the mission ends, but if a firmware left it set we would
+    # re-adopt the finished entry and republish it on every tick.
+    entry = {
+        "state": "Done",
+        "id": 5,
+        "mission_id": None,
+        "started": "2026-08-10T10:00:00",
+        "finished": "2026-08-10T10:01:00",
+    }
+    mission_tracking.mir_api.get_mission_queue_entry = AsyncMock(return_value=dict(entry))
+    status = {"mission_queue_id": 5}
+
+    assert (await mission_tracking.get_current_mission(status))["id"] == 5
+    assert mission_tracking.executing_mission_id is None
+    assert await mission_tracking.get_current_mission(status) is None
+
+
+@pytest.mark.asyncio
 async def test_fleet_action_list_without_mission_id(
     mission_tracking, sample_metrics_data, sample_status_data
 ):
@@ -78,7 +114,8 @@ async def test_fleet_action_list_without_mission_id(
     GET /missions/None is a 400, which used to raise out of every tick without ever clearing
     executing_mission_id, wedging mission tracking for the life of the process.
     """
-    mission_tracking.mir_api.get_executing_mission_id = AsyncMock(return_value=42)
+    status = {**sample_status_data, "mission_queue_id": 42}
+    mission_tracking.mir_api.get_executing_mission_id = AsyncMock(side_effect=AssertionError)
     mission_tracking.mir_api.get_mission_queue_entry = AsyncMock(
         return_value={
             "state": "Executing",
@@ -91,7 +128,7 @@ async def test_fleet_action_list_without_mission_id(
     mission_tracking.mir_api.get_mission_definition = AsyncMock(side_effect=AssertionError)
     mission_tracking.mir_api.get_mission_actions = AsyncMock(side_effect=AssertionError)
 
-    await mission_tracking.report_mission(sample_status_data, sample_metrics_data)
+    await mission_tracking.report_mission(status, sample_metrics_data)
 
     reported = mission_tracking.inorbit_sess.publish_key_values.call_args.kwargs["key_values"][
         "mission_tracking"
@@ -105,7 +142,7 @@ async def test_fleet_action_list_without_mission_id(
     assert mission_tracking._tasks_tracker is None
 
     # The next tick still tracks the same entry and still does not fetch a definition.
-    await mission_tracking.report_mission(sample_status_data, sample_metrics_data)
+    await mission_tracking.report_mission(status, sample_metrics_data)
     assert mission_tracking.executing_mission_id == 42
 
 

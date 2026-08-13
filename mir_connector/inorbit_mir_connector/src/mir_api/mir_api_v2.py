@@ -43,6 +43,10 @@ MISSION_ACTION_FIELDS = "guid,action_type,priority,scope_reference,parameters"
 # and url; these are what task labels are rendered from.
 ACTION_DEFINITION_FIELDS = "action_type,name,description,parameters"
 
+# How much of the tail of the mission queue to read when looking for the executing entry.
+# Slack for entries queued behind it; the queue itself is never truncated by the robot.
+RECENT_QUEUE_ENTRIES = 20
+
 
 class SetStateId(int, Enum):
     """Defined states for the set_state method"""
@@ -250,9 +254,23 @@ class MirApiV2(MirApiBaseClass):
         return response.json()
 
     async def get_executing_mission_id(self):
-        """Returns the id of the mission being currently executed by the robot"""
+        """Returns the id of the mission being currently executed by the robot.
+
+        Reads the newest slice of the queue rather than all of it. The queue is never
+        truncated by the robot, so on a robot that has been running for a while the
+        unbounded call is enormous: 28,526 entries, 2 MB, ~3.9 s on our MiR100, which a
+        1 s poll cannot keep up with. An executing entry is by construction among the
+        newest, and the whitelist trims each one to the two fields used here.
+
+        Note that MiR ignores query params it does not recognise instead of rejecting
+        them, so limit and sort_by have to be kept together: limit alone would silently
+        read the oldest entries.
+        """
         missions_api_url = f"/{MISSION_QUEUE_ENDPOINT_V2}"
-        response = await self._get(missions_api_url)
+        response = await self._get(
+            missions_api_url,
+            params={"limit": RECENT_QUEUE_ENTRIES, "sort_by": "id,desc", "whitelist": "id,state"},
+        )
         missions = response.json()
         executing = [m for m in missions if m["state"] == MISSION_STATE_EXECUTING]
         return executing[0]["id"] if len(executing) else None

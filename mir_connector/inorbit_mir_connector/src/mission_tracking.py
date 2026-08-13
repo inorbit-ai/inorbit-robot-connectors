@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 import logging
+import re
 from datetime import datetime
 from inorbit_edge.missions import MISSION_STATE_EXECUTING, MISSION_STATE_ABORTED
 
@@ -12,12 +13,80 @@ from .mission.translator import _SCOPE_BEARING_DENIED
 MISSION_STATE_DONE = "Done"
 MISSION_STATE_ABORT = "Abort"
 
-# Definition action parameter ids whose value is a position guid, with the label phrase
-# used to join the resolved position name ("Move to X", "Docking at X").
-POSITION_PARAM_PHRASES = {"position": "to", "marker": "at"}
-
 # Max detail GETs issued in a single poll tick.
 _MAX_DETAIL_FETCHES_PER_POLL = 25
+
+# A substitution in a MiR action description, e.g. "%(position)s" or "%(register)d".
+_PLACEHOLDER = re.compile(r"%\((\w+)\)[a-z]")
+# MiR durations are "HH:MM:SS.ffffff".
+_DURATION = re.compile(r"^(\d+):(\d{2}):(\d{2})(?:\.\d+)?$")
+
+
+def _pretty_duration(value):
+    """Render a MiR duration as "1 min 30 sec"; None when the value is not one."""
+    match = _DURATION.match(str(value))
+    if not match:
+        return None
+    hours, minutes, seconds = (int(g) for g in match.groups())
+    parts = [f"{n} {unit}" for n, unit in ((hours, "h"), (minutes, "min"), (seconds, "sec")) if n]
+    return " ".join(parts) or "0 sec"
+
+
+def _resolve_parameter(value, spec):
+    """Display text for one action parameter value, or None when it cannot be resolved.
+
+    ``Reference`` and ``Selection`` parameters carry the whole value-to-name mapping in
+    their own constraints, which is how a position guid becomes "Dock charger 285"
+    without asking the robot anything.
+    """
+    param_type = spec.get("type")
+    if param_type in ("Reference", "Selection"):
+        choices = (spec.get("constraints") or {}).get("choices") or []
+        # MiR is loose about types here: a choice value may be int 1 where the action
+        # stores the string "1".
+        match = next((c for c in choices if str(c.get("value")) == str(value)), None)
+        if match is None:
+            # Typically a deleted position still referenced by the mission.
+            return None
+        # Some references (PLC registers) have blank names; the raw value is the label.
+        return match.get("name") or str(value)
+    if param_type == "Duration":
+        return _pretty_duration(value)
+    return None if value is None else str(value)
+
+
+def _render_label(action, definition):
+    """Operator-facing label for a definition action, built from MiR's own metadata.
+
+    Every action type ships a ``description`` template ("Move to %(position)s") and, per
+    parameter, the type and value list needed to fill it in. Falls back to the action's
+    display name, then to its raw type, so an unresolvable placeholder yields "Move"
+    rather than a guid. Nothing here is per-action-type.
+    """
+    # Not every action type is listed in GET /actions (load_mission is not), so the raw
+    # type is the last resort: "load_mission" -> "Load mission".
+    name = definition.get("name") or action["action_type"].replace("_", " ").capitalize()
+    template = definition.get("description")
+    if not template:
+        return name
+    specs = {p["id"]: p for p in definition.get("parameters") or []}
+    resolved = {
+        p["id"]: _resolve_parameter(p.get("value"), specs.get(p["id"], {}))
+        for p in action.get("parameters") or []
+        if p.get("id")
+    }
+    complete = True
+
+    def substitute(match):
+        nonlocal complete
+        text = resolved.get(match.group(1))
+        if not text:
+            complete = False
+            return ""
+        return text
+
+    label = _PLACEHOLDER.sub(substitute, template).strip()
+    return label if complete and label else name
 
 
 def _execution_order(actions):
@@ -170,47 +239,26 @@ class MirInorbitMissionTracking:
         self.inorbit_sess = inorbit_sess
         self.robot_tz_info = robot_tz_info
         self.mission_executor = mission_executor
-        self._action_names = None  # {action_type: display name}, fetched once, kept for life
-        self._position_names = {}  # {position guid: name}, kept for life
+        # {action_type: definition}, one fetch for the life of the connector. Carries the
+        # label templates and the parameter value lists task labels are rendered from.
+        self._action_definitions = None
         self._mission_definition = None  # definition of the tracked mission, one fetch per entry
         self._tasks_tracker = None  # MirNativeMissionTasks for the tracked queue entry
         self.last_reported_tasks_signature = None
 
-    async def _get_action_names(self):
-        """Action-type display names, fetched once and cached; {} (and a retry on the
-        next mission) when the fetch fails."""
-        if self._action_names is None:
+    async def _get_action_definitions(self):
+        """{action_type: definition}, fetched once and cached; {} (and a retry on the next
+        mission) when the fetch fails."""
+        if self._action_definitions is None:
             try:
                 defs = await self.mir_api.get_action_definitions()
-                self._action_names = {
-                    d["action_type"]: d.get("name") for d in defs if d.get("action_type")
+                self._action_definitions = {
+                    d["action_type"]: d for d in defs if d.get("action_type")
                 }
             except Exception as e:
                 self.logger.warning(f"Failed to fetch MiR action definitions: {e}")
                 return {}
-        return self._action_names
-
-    async def _build_label(self, action, action_names):
-        """Operator-facing task label: action display name, plus the resolved position
-        name when the action targets one ("Move to Warehouse-1"). Best-effort."""
-        label = action_names.get(action["action_type"]) or action["action_type"]
-        for param in action.get("parameters") or []:
-            phrase = POSITION_PARAM_PHRASES.get(param.get("id"))
-            value = param.get("value")
-            if not phrase or not isinstance(value, str) or not value:
-                continue
-            name = self._position_names.get(value)
-            if name is None:
-                try:
-                    name = (await self.mir_api.get_position(value)).get("name")
-                    if name:
-                        self._position_names[value] = name
-                except Exception as e:
-                    self.logger.debug(f"Could not resolve position {value} for label: {e}")
-            if name:
-                label = f"{label} {phrase} {name}"
-            break
-        return label
+        return self._action_definitions
 
     async def _build_tasks(self, actions):
         """{guid: task dict} in execution order, one task per real mission step.
@@ -220,7 +268,7 @@ class MirInorbitMissionTracking:
         while their body runs they would show as a second task in progress. Their
         children stay, in place.
         """
-        action_names = await self._get_action_names()
+        definitions = await self._get_action_definitions()
         tasks = {}
         for action in _execution_order(actions):
             guid = action.get("guid")
@@ -228,7 +276,7 @@ class MirInorbitMissionTracking:
                 continue
             tasks[guid] = {
                 "taskId": guid,
-                "label": await self._build_label(action, action_names),
+                "label": _render_label(action, definitions.get(action["action_type"], {})),
                 "inProgress": False,
                 "completed": False,
             }

@@ -295,10 +295,49 @@ async def test_empty_task_list_reports_zero_percent():
     assert fields["tasks"] == [] and fields["completedPercent"] == 0
 
 
+POSITION_CHOICES = {
+    "choices": [
+        {"name": "Warehouse-1", "value": "pos-guid"},
+        {"name": "Dock charger 285", "value": "dock-guid"},
+    ]
+}
+
+# Shaped like GET /actions?whitelist=action_type,name,description,parameters on a real
+# robot: a label template plus, per parameter, the type and value list to fill it in.
 ACTION_DEFS = [
-    {"action_type": "move", "name": "Move"},
-    {"action_type": "docking", "name": "Docking"},
-    {"action_type": "charging", "name": "Charging"},
+    {
+        "action_type": "move",
+        "name": "Move",
+        "description": "Move to %(position)s",
+        "parameters": [{"id": "position", "type": "Reference", "constraints": POSITION_CHOICES}],
+    },
+    {
+        "action_type": "docking",
+        "name": "Docking",
+        "description": "Dock to %(marker)s",
+        "parameters": [{"id": "marker", "type": "Reference", "constraints": POSITION_CHOICES}],
+    },
+    {"action_type": "charging", "name": "Charging", "description": "Charging", "parameters": []},
+    {
+        "action_type": "wait",
+        "name": "Wait",
+        "description": "Wait for %(time)s.",
+        "parameters": [{"id": "time", "type": "Duration", "constraints": {}}],
+    },
+    {
+        "action_type": "wait_for_plc_register",
+        "name": "Wait for PLC register",
+        "description": "Wait for PLC register %(register)d to become %(value)f.",
+        "parameters": [
+            # Real PLC register choices have blank names.
+            {
+                "id": "register",
+                "type": "Reference",
+                "constraints": {"choices": [{"name": "", "value": 1}]},
+            },
+            {"id": "value", "type": "Float", "constraints": {}},
+        ],
+    },
 ]
 
 
@@ -311,7 +350,6 @@ def make_tracking():
     )
     tracking.mission_executor.has_active_mission = AsyncMock(return_value=False)
     tracking.mir_api.get_action_definitions = AsyncMock(return_value=ACTION_DEFS)
-    tracking.mir_api.get_position = AsyncMock(return_value={"name": "Warehouse-1"})
     return tracking
 
 
@@ -350,23 +388,43 @@ async def test_build_tasks_drops_scope_containers_but_keeps_their_body():
 async def test_build_tasks_labels_and_order():
     tracking = make_tracking()
     actions = [
-        def_action("g1", "move", [{"id": "position", "value": "pos-guid"}]),
-        def_action("g2", "docking", [{"id": "marker", "value": "pos-guid"}]),
-        def_action("g3", "charging"),
-        def_action("g4", "unknown_type"),
+        def_action("g1", "move", [{"id": "position", "value": "pos-guid"}], priority=1),
+        def_action("g2", "docking", [{"id": "marker", "value": "dock-guid"}], priority=2),
+        def_action("g3", "charging", priority=3),
+        def_action("g4", "unknown_type", priority=4),
+        def_action("g5", "wait", [{"id": "time", "value": "00:01:30.000000"}], priority=5),
     ]
     tasks = await tracking._build_tasks(actions)
-    assert list(tasks) == ["g1", "g2", "g3", "g4"]
+    assert list(tasks) == ["g1", "g2", "g3", "g4", "g5"]
     assert tasks["g1"]["label"] == "Move to Warehouse-1"
-    assert tasks["g2"]["label"] == "Docking at Warehouse-1"
+    assert tasks["g2"]["label"] == "Dock to Dock charger 285"
     assert tasks["g3"]["label"] == "Charging"
-    assert tasks["g4"]["label"] == "unknown_type"
+    # No definition at all (GET /actions does not list every type, e.g. load_mission):
+    # the raw action type, tidied up, is the last resort.
+    assert tasks["g4"]["label"] == "Unknown type"
+    assert tasks["g5"]["label"] == "Wait for 1 min 30 sec."
     assert tasks["g1"] == {
         "taskId": "g1",
         "label": "Move to Warehouse-1",
         "inProgress": False,
         "completed": False,
     }
+
+
+@pytest.mark.asyncio
+async def test_build_tasks_renders_non_reference_parameters():
+    # A reference whose choice has a blank name still resolves, to the raw value.
+    tracking = make_tracking()
+    actions = [
+        def_action(
+            "g1",
+            "wait_for_plc_register",
+            # MiR stores the register as a string where the choice value is an int.
+            [{"id": "register", "value": "1"}, {"id": "value", "value": 1.0}],
+        )
+    ]
+    tasks = await tracking._build_tasks(actions)
+    assert tasks["g1"]["label"] == "Wait for PLC register 1 to become 1.0."
 
 
 @pytest.mark.asyncio
@@ -379,23 +437,27 @@ async def test_build_tasks_variable_position_falls_back_to_action_name():
 
 
 @pytest.mark.asyncio
-async def test_build_tasks_position_lookup_failure_falls_back():
+async def test_build_tasks_unknown_position_falls_back_to_action_name():
+    # A position deleted from the robot is no longer among the action's choices. The label
+    # degrades to the action name rather than showing a bare guid.
     tracking = make_tracking()
-    tracking.mir_api.get_position = AsyncMock(side_effect=RuntimeError("404"))
-    actions = [def_action("g1", "move", [{"id": "position", "value": "pos-guid"}])]
+    actions = [def_action("g1", "move", [{"id": "position", "value": "deleted-guid"}])]
     tasks = await tracking._build_tasks(actions)
     assert tasks["g1"]["label"] == "Move"
 
 
 @pytest.mark.asyncio
-async def test_position_names_cached_across_actions():
+async def test_build_tasks_labels_need_no_extra_requests():
+    # Everything a label needs comes from the one cached /actions response.
     tracking = make_tracking()
     actions = [
         def_action("g1", "move", [{"id": "position", "value": "pos-guid"}]),
         def_action("g2", "move", [{"id": "position", "value": "pos-guid"}]),
     ]
     await tracking._build_tasks(actions)
-    assert tracking.mir_api.get_position.await_count == 1
+    await tracking._build_tasks(actions)
+    assert tracking.mir_api.get_action_definitions.await_count == 1
+    assert not [c for c in tracking.mir_api.mock_calls if "position" in str(c)]
 
 
 @pytest.mark.asyncio
@@ -403,7 +465,7 @@ async def test_action_definitions_failure_uses_raw_types_and_retries():
     tracking = make_tracking()
     tracking.mir_api.get_action_definitions = AsyncMock(side_effect=RuntimeError("boom"))
     tasks = await tracking._build_tasks([def_action("g1", "move")])
-    assert tasks["g1"]["label"] == "move"
+    assert tasks["g1"]["label"] == "Move"
     # A later mission retries the fetch instead of caching the failure.
     tracking.mir_api.get_action_definitions = AsyncMock(return_value=ACTION_DEFS)
     tasks = await tracking._build_tasks([def_action("g2", "move")])

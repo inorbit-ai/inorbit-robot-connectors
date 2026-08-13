@@ -190,12 +190,28 @@ mir_robot_wifi_access_point_frequency_hertz 0.0
 
 
 @pytest.mark.asyncio
-async def test_get_action_definitions(mir_api, httpx_mock):
+async def test_get_action_definitions_requests_label_metadata(mir_api, httpx_mock):
+    """Unwhitelisted, GET /actions returns only action_type and url.
+
+    Without the whitelist there is no name, no description template and no parameter
+    metadata, and every task label silently degrades to the raw action type.
+    """
     defs = [
-        {"action_type": "move", "name": "Move", "description": "Move to a position"},
-        {"action_type": "docking", "name": "Docking", "description": "Dock to a marker"},
+        {
+            "action_type": "move",
+            "name": "Move",
+            "description": "Move to %(position)s",
+            "parameters": [{"id": "position", "type": "Reference", "constraints": {}}],
+        },
     ]
-    httpx_mock.add_response(method="GET", url=f"{mir_api.mir_api_base_url}/actions", json=defs)
+    httpx_mock.add_response(
+        method="GET",
+        url=(
+            f"{mir_api.mir_api_base_url}/actions"
+            "?whitelist=action_type%2Cname%2Cdescription%2Cparameters"
+        ),
+        json=defs,
+    )
     assert await mir_api.get_action_definitions() == defs
 
 
@@ -219,12 +235,3 @@ async def test_get_mission_actions_requests_scope_reference(mir_api, httpx_mock)
         json=actions,
     )
     assert await mir_api.get_mission_actions("m1") == actions
-
-
-@pytest.mark.asyncio
-async def test_get_position(mir_api, httpx_mock):
-    position = {"guid": "pos-guid-1", "name": "Warehouse-1", "type_id": 0}
-    httpx_mock.add_response(
-        method="GET", url=f"{mir_api.mir_api_base_url}/positions/pos-guid-1", json=position
-    )
-    assert await mir_api.get_position("pos-guid-1") == position

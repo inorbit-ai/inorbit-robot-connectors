@@ -39,6 +39,10 @@ SOFTWARE_STATUS_ENDPOINT_V2 = "software/system_status"
 # default response; asking for it is what exposes the nesting between actions.
 MISSION_ACTION_FIELDS = "guid,action_type,priority,scope_reference,parameters"
 
+# Fields requested for action-type definitions. The default response has only action_type
+# and url; these are what task labels are rendered from.
+ACTION_DEFINITION_FIELDS = "action_type,name,description,parameters"
+
 
 class SetStateId(int, Enum):
     """Defined states for the set_state method"""
@@ -420,14 +424,16 @@ class MirApiV2(MirApiBaseClass):
         return response.json()
 
     async def get_action_definitions(self):
-        """Action-type display metadata (``GET /actions``): one entry per
-        action_type with a localized ``name`` (Accept-Language is en_US)."""
-        response = await self._get(f"/{ACTIONS_ENDPOINT_V2}")
-        return response.json()
+        """Metadata for every action type (``GET /actions``), one entry per action_type.
 
-    async def get_position(self, position_guid: str):
-        """Full position record (``GET /positions/{guid}``), including ``name``."""
-        response = await self._get(f"/{POSITIONS_ENDPOINT_V2}/{position_guid}")
+        The default response carries only ``action_type`` and ``url``; the whitelist is
+        what adds ``name``, the ``description`` label template ("Move to %(position)s")
+        and the per-parameter metadata used to fill that template in. All of it is
+        localized by the Accept-Language header (en_US).
+        """
+        response = await self._get(
+            f"/{ACTIONS_ENDPOINT_V2}", params={"whitelist": ACTION_DEFINITION_FIELDS}
+        )
         return response.json()
 
 

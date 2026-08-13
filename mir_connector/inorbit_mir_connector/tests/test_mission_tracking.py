@@ -70,6 +70,46 @@ async def test_get_current_mission(mission_tracking):
 
 
 @pytest.mark.asyncio
+async def test_fleet_action_list_without_mission_id(
+    mission_tracking, sample_metrics_data, sample_status_data
+):
+    """Fleet-dispatched ActionLists have mission_id None: no definition, no tasks, no crash.
+
+    GET /missions/None is a 400, which used to raise out of every tick without ever clearing
+    executing_mission_id, wedging mission tracking for the life of the process.
+    """
+    mission_tracking.mir_api.get_executing_mission_id = AsyncMock(return_value=42)
+    mission_tracking.mir_api.get_mission_queue_entry = AsyncMock(
+        return_value={
+            "state": "Executing",
+            "id": 42,
+            "mission_id": None,
+            "started": "2026-08-10T10:00:00",
+            "finished": None,
+        }
+    )
+    mission_tracking.mir_api.get_mission_definition = AsyncMock(side_effect=AssertionError)
+    mission_tracking.mir_api.get_mission_actions = AsyncMock(side_effect=AssertionError)
+
+    await mission_tracking.report_mission(sample_status_data, sample_metrics_data)
+
+    reported = mission_tracking.inorbit_sess.publish_key_values.call_args.kwargs["key_values"][
+        "mission_tracking"
+    ]
+    assert reported["missionId"] == 42
+    assert reported["inProgress"] is True
+    # Definition-derived fields are absent rather than fabricated.
+    assert "label" not in reported
+    assert "tasks" not in reported
+    assert "Mission Steps" not in reported["data"]
+    assert mission_tracking._tasks_tracker is None
+
+    # The next tick still tracks the same entry and still does not fetch a definition.
+    await mission_tracking.report_mission(sample_status_data, sample_metrics_data)
+    assert mission_tracking.executing_mission_id == 42
+
+
+@pytest.mark.asyncio
 async def test_skips_reporting_while_edge_executor_busy(
     mission_tracking, sample_metrics_data, sample_status_data, sample_mir_mission_data
 ):

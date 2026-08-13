@@ -198,7 +198,8 @@ class MirInorbitMissionTracking:
         """Return the current mission, it's either executing or just ended.
 
         The queue entry is fetched every tick; the definition (with actions) once per
-        queue entry, when the per-action task tracker is also (re)built.
+        queue entry, when the per-action task tracker is also (re)built. Entries with no
+        ``mission_id`` have no definition and get ``None`` for it.
         """
         if self.executing_mission_id is None:
             self.executing_mission_id = await self.mir_api.get_executing_mission_id()
@@ -208,7 +209,11 @@ class MirInorbitMissionTracking:
             return None
         queue_id = self.executing_mission_id
         mission = await self.mir_api.get_mission_queue_entry(queue_id)
-        if self._mission_definition is None:
+        # Fleet-dispatched ActionLists carry no mission_id, and are the majority of the queue
+        # on a fleet-managed robot. There is no definition to fetch (GET /missions/None is a
+        # 400) and their queue actions have a null action_id, so they are reported without a
+        # task list rather than raising on every tick.
+        if mission.get("mission_id") and self._mission_definition is None:
             definition = await self.mir_api.get_mission_definition(mission["mission_id"])
             definition["actions"] = await self.mir_api.get_mission_actions(mission["mission_id"])
             self._mission_definition = definition
@@ -250,15 +255,14 @@ class MirInorbitMissionTracking:
         ):
             # Avoid flooding mission reports when nothing important has changed
             return
+        definition = mission["definition"]
         mission_values = {
             "missionId": mission["id"],
             "inProgress": mission["state"] == MISSION_STATE_EXECUTING,
             "state": mission["state"],
-            "label": mission["definition"]["name"],
             "startTs": self._safe_localize_timestamp(mission["started"]) * 1000,
             "data": {
                 "Total Distance (m)": metrics.get("mir_robot_distance_moved_meters_total", "N/A"),
-                "Mission Steps": len(mission["definition"]["actions"]),
                 "Total Missions": mission["id"],
                 "Robot Model": status["robot_model"],
                 "Uptime (s)": status["uptime"],
@@ -268,6 +272,9 @@ class MirInorbitMissionTracking:
             },
             **task_fields,
         }
+        if definition is not None:
+            mission_values["label"] = definition["name"]
+            mission_values["data"]["Mission Steps"] = len(definition["actions"])
         if mission.get("finished") is not None:
             mission_values["endTs"] = self._safe_localize_timestamp(mission["finished"]) * 1000
             mission_values["completedPercent"] = 1

@@ -16,6 +16,32 @@ MISSION_STATE_ABORT = "Abort"
 # Max detail GETs issued in a single poll tick.
 _MAX_DETAIL_FETCHES_PER_POLL = 25
 
+# InOrbit mission statuses. Matched exactly by the platform, so the case matters.
+MISSION_STATUS_OK = "OK"
+MISSION_STATUS_WARNING = "warning"
+MISSION_STATUS_ERROR = "error"
+
+# Robot state ids that stop a running mission making progress.
+_BLOCKED_STATE_IDS = frozenset({4, 10, 12})  # Pause, EmergencyStop, Error
+
+
+def _mission_status(mission, robot_status):
+    """InOrbit status for a MiR queue entry: OK, warning or error.
+
+    MiR's own state names go out verbatim in ``state``, and the platform can only infer a
+    status from its own canonical names, so leaving this unset renders the mission grey
+    for its entire run. It is always sent explicitly.
+
+    A running mission is never an error: it has not failed, and if the robot is paused,
+    e-stopped or faulted it is stuck, which is a warning.
+    """
+    if mission.get("finished") is not None:
+        return MISSION_STATUS_OK if mission["state"] == MISSION_STATE_DONE else MISSION_STATUS_ERROR
+    if robot_status.get("state_id") in _BLOCKED_STATE_IDS:
+        return MISSION_STATUS_WARNING
+    return MISSION_STATUS_OK
+
+
 # A substitution in a MiR action description, e.g. "%(position)s" or "%(register)d".
 _PLACEHOLDER = re.compile(r"%\((\w+)\)[a-z]")
 # MiR durations are "HH:MM:SS.ffffff".
@@ -245,6 +271,7 @@ class MirInorbitMissionTracking:
         self._mission_definition = None  # definition of the tracked mission, one fetch per entry
         self._tasks_tracker = None  # MirNativeMissionTasks for the tracked queue entry
         self.last_reported_tasks_signature = None
+        self.last_reported_status = None
 
     async def _get_action_definitions(self):
         """{action_type: definition}, fetched once and cached; {} (and a retry on the next
@@ -353,12 +380,14 @@ class MirInorbitMissionTracking:
         # Merge 'Abort' and 'Aborted' values into a single state
         if mission["state"] == MISSION_STATE_ABORT:
             mission["state"] = MISSION_STATE_ABORTED
+        mission_status = _mission_status(mission, status)
         tasks_signature = tracker.signature() if tracker is not None else None
         if (
             mission["id"] == self.last_reported_mission_id
             and mission["state"] == MISSION_STATE_EXECUTING
             and completed_percent == self.last_reported_mission_progress
             and tasks_signature == self.last_reported_tasks_signature
+            and mission_status == self.last_reported_status
         ):
             # Avoid flooding mission reports when nothing important has changed
             return
@@ -368,6 +397,7 @@ class MirInorbitMissionTracking:
             "inProgress": mission["state"] == MISSION_STATE_EXECUTING,
             "state": mission["state"],
             "startTs": self._safe_localize_timestamp(mission["started"]) * 1000,
+            "status": mission_status,
             "data": {
                 "Total Distance (m)": metrics.get("mir_robot_distance_moved_meters_total", "N/A"),
                 "Total Missions": mission["id"],
@@ -384,9 +414,11 @@ class MirInorbitMissionTracking:
             mission_values["data"]["Mission Steps"] = len(definition["actions"])
         if mission.get("finished") is not None:
             mission_values["endTs"] = self._safe_localize_timestamp(mission["finished"]) * 1000
-            mission_values["completedPercent"] = 1
-            mission_values["status"] = "OK" if mission["state"] == MISSION_STATE_DONE else "error"
-        elif completed_percent is not None:
+            # Only a mission that ran to the end is 100%. An abort at step 2 of 10 used to
+            # report 1.0, contradicting the task list in the same payload.
+            if mission["state"] == MISSION_STATE_DONE:
+                completed_percent = 1
+        if completed_percent is not None:
             mission_values["completedPercent"] = completed_percent
 
         self.logger.debug(f"Reporting mission: {mission_values}")
@@ -396,3 +428,4 @@ class MirInorbitMissionTracking:
         self.last_reported_mission_progress = completed_percent
         self.last_reported_mission_id = mission["id"]
         self.last_reported_tasks_signature = tasks_signature
+        self.last_reported_status = mission_status

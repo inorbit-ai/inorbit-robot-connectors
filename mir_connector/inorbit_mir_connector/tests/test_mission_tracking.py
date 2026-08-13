@@ -147,6 +147,7 @@ async def test_report_mission(
             "missionId": 14026,
             "inProgress": True,
             "state": "Executing",
+            "status": "OK",
             "label": "Charge",
             "startTs": 1701946471000.0,
             "data": {

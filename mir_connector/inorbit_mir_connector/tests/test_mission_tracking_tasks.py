@@ -496,7 +496,63 @@ def published(tracking):
     return [c.kwargs["key_values"]["mission_tracking"] for c in calls]
 
 
-STATUS = {"robot_model": "MiR250", "uptime": 10, "serial_number": "s1"}
+STATUS = {"robot_model": "MiR250", "uptime": 10, "serial_number": "s1", "state_id": 3}
+
+
+@pytest.mark.asyncio
+async def test_report_mission_sends_status_while_executing():
+    """Without an explicit status the mission renders grey for its whole run.
+
+    The platform can only default a status from its own canonical state names, and MiR's
+    "Executing" is not one of them.
+    """
+    tracking = make_tracking()
+    wire_mission(tracking, [def_action("g1")])
+    tracking.mir_api.get_mission_queue_actions = AsyncMock(return_value=[])
+    await tracking.report_mission(STATUS, {})
+    report = published(tracking)[-1]
+    assert report["inProgress"] is True
+    assert report["status"] == "OK"
+
+
+@pytest.mark.asyncio
+async def test_report_mission_warns_while_robot_is_blocked():
+    # Paused (4), emergency stop (10) and error (12) all stop the mission progressing. The
+    # mission has not failed, so it is a warning rather than an error.
+    for state_id in (4, 10, 12):
+        tracking = make_tracking()
+        wire_mission(tracking, [def_action("g1")])
+        tracking.mir_api.get_mission_queue_actions = AsyncMock(return_value=[])
+        await tracking.report_mission({**STATUS, "state_id": state_id}, {})
+        report = published(tracking)[-1]
+        assert report["status"] == "warning", state_id
+        assert report["inProgress"] is True
+
+
+@pytest.mark.asyncio
+async def test_report_mission_republishes_when_status_changes():
+    # Nothing else changes when the robot pauses, so without status in the dedup key the
+    # warning would never reach the platform.
+    tracking = make_tracking()
+    wire_mission(tracking, [def_action("g1")])
+    tracking.mir_api.get_mission_queue_actions = AsyncMock(return_value=[])
+    await tracking.report_mission(STATUS, {})
+    await tracking.report_mission(STATUS, {})
+    assert len(published(tracking)) == 1  # unchanged, deduplicated
+    await tracking.report_mission({**STATUS, "state_id": 4}, {})
+    assert [r["status"] for r in published(tracking)] == ["OK", "warning"]
+
+
+@pytest.mark.asyncio
+async def test_report_mission_done_is_ok_and_complete():
+    tracking = make_tracking()
+    wire_mission(tracking, [def_action("g1")], entry_state="Done", finished="2026-08-10T10:05:00")
+    tracking.mir_api.get_mission_queue_actions = AsyncMock(return_value=[])
+    await tracking.report_mission(STATUS, {})
+    report = published(tracking)[-1]
+    assert report["status"] == "OK"
+    assert report["completedPercent"] == 1
+    assert report["inProgress"] is False
 
 
 @pytest.mark.asyncio
@@ -593,4 +649,6 @@ async def test_report_mission_abort_completes_observed_only():
     assert by_id["g1"]["completed"] is True
     assert by_id["g2"]["completed"] is False  # untaken branch stays incomplete
     assert "endTs" in report
-    assert report["completedPercent"] == 1
+    # An aborted mission is not 100% done. Forcing 1 here contradicted the task list sent
+    # in the very same payload.
+    assert report["completedPercent"] == 0.5

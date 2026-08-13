@@ -233,16 +233,11 @@ class MirInorbitMissionTracking:
             return
         tracker = self._tasks_tracker
         task_fields = {}
+        completed_percent = None
         if tracker is not None:
             await tracker.poll()
             task_fields = tracker.report_fields()
             completed_percent = task_fields.pop("completedPercent")
-        else:
-            # No tracker (test-mocked paths): count-based estimate as before.
-            completed_percent = min(
-                1.0,
-                len(mission.get("actions", [])) / max(1, len(mission["definition"]["actions"])),
-            )
         # Merge 'Abort' and 'Aborted' values into a single state
         if mission["state"] == MISSION_STATE_ABORT:
             mission["state"] = MISSION_STATE_ABORTED
@@ -277,7 +272,7 @@ class MirInorbitMissionTracking:
             mission_values["endTs"] = self._safe_localize_timestamp(mission["finished"]) * 1000
             mission_values["completedPercent"] = 1
             mission_values["status"] = "OK" if mission["state"] == MISSION_STATE_DONE else "error"
-        else:
+        elif completed_percent is not None:
             mission_values["completedPercent"] = completed_percent
 
         self.logger.debug(f"Reporting mission: {mission_values}")

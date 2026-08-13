@@ -119,10 +119,12 @@ async def test_report_mission(
                 "Battery Time Remaning (s)": 89725,
                 "WiFi RSSI (dbm)": -46.0,
             },
-            "completedPercent": 1.0,
         }
     }
 
+    # get_current_mission is mocked out, so no task tracker exists and there is no progress
+    # to report. Omitting completedPercent is the point: the previous count-based estimate
+    # read the queue entry's "actions", which is a URL string, and always yielded 1.0.
     assert DeepDiff(reported_mission, should_be) == {}
 
 

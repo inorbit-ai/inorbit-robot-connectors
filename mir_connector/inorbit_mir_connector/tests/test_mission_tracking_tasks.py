@@ -93,7 +93,7 @@ def test_execution_order_keeps_nested_actions_inside_their_scope():
     ordered = [a["guid"] for a in _execution_order(SCOPED)]
     assert ordered == ["a-if", "a-throw", "a-fields", "a-load", "a-footprint", "a-relmove"]
     # A global sort by priority hoists the nested load_mission out of its scope, above the
-    # top-level action that contains it. That is the trap this function exists to avoid.
+    # top-level action that contains it.
     naive = [a["guid"] for a in sorted(SCOPED, key=lambda a: a["priority"])]
     assert naive.index("a-load") < naive.index("a-fields")
     assert ordered.index("a-load") > ordered.index("a-fields")

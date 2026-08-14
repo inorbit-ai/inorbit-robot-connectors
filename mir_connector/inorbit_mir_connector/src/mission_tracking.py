@@ -21,16 +21,16 @@ MISSION_STATUS_OK = "OK"
 MISSION_STATUS_WARNING = "warning"
 MISSION_STATUS_ERROR = "error"
 
-# States we report on top of MiR's own. MiR leaves the queue entry "Executing" whether the
-# robot is driving, paused or e-stopped, so a stalled mission is invisible in the queue
-# state alone and the robot state has to supply it.
+# Mission states derived from the robot rather than the queue. MiR leaves a queue entry
+# "Executing" whether the robot is driving, paused or e-stopped, so a stalled mission is
+# invisible in the queue state alone.
 MISSION_STATE_PAUSED = "Paused"
 MISSION_STATE_EMERGENCY_STOP = "Emergency stop"
 MISSION_STATE_ERROR = "Error"
 
 # Robot state_id -> the mission state it implies while the queue entry is still executing.
-# Only 4 is corroborated (it is MirApiV2.SetStateId.PAUSE); the other two are unobserved so
-# far, and an unknown id simply leaves the mission executing.
+# Only 4 is confirmed (MirApiV2.SetStateId.PAUSE); an unrecognised id leaves the mission
+# executing.
 _STATE_BY_ROBOT_STATE_ID = {
     4: MISSION_STATE_PAUSED,
     10: MISSION_STATE_EMERGENCY_STOP,
@@ -166,8 +166,8 @@ def _execution_order(actions):
                     walk(nested)
 
     walk(None)
-    # Anything unreachable from the root (a scope_reference we never saw as a parameter)
-    # is appended rather than dropped, so a task is never silently lost.
+    # Actions unreachable from the root are appended rather than dropped, so a malformed
+    # scope_reference cannot silently lose a task.
     placed = {id(a) for a in ordered}
     return ordered + [a for a in actions if id(a) not in placed]
 
@@ -349,16 +349,15 @@ class MirInorbitMissionTracking:
     async def _find_executing_mission_id(self, robot_status):
         """Queue id of the mission the robot is running, or None.
 
-        ``/status`` carries it and the connector already fetches ``/status`` every tick,
-        so this normally costs nothing at all. The queue endpoint is only consulted when
-        the field is missing.
+        ``/status`` carries it and is already fetched every tick, so this normally costs
+        nothing. The queue endpoint is only consulted when the field is missing.
         """
         if robot_status and "mission_queue_id" in robot_status:
             queue_id = robot_status["mission_queue_id"]
         else:
             queue_id = await self.mir_api.get_executing_mission_id()
-        # The field clears when the mission ends, but if a firmware ever left it set we
-        # would re-adopt an entry we have already finished with and republish it forever.
+        # An already-finished entry is refused: the field clears when a mission ends, but
+        # a firmware that left it set would make the entry republish on every tick.
         return None if queue_id == self._finished_mission_id else queue_id
 
     async def get_current_mission(self, robot_status=None):
@@ -453,8 +452,8 @@ class MirInorbitMissionTracking:
             mission_values["data"]["Mission Steps"] = len(definition["actions"])
         if mission.get("finished") is not None:
             mission_values["endTs"] = self._safe_localize_timestamp(mission["finished"]) * 1000
-            # Only a mission that ran to the end is 100%. An abort at step 2 of 10 used to
-            # report 1.0, contradicting the task list in the same payload.
+            # Only a mission that ran to the end is 100%; an aborted one keeps the
+            # progress it reached, matching the task list sent alongside it.
             if mission["state"] == MISSION_STATE_DONE:
                 completed_percent = 1
         if completed_percent is not None:

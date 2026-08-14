@@ -195,12 +195,10 @@ class MirApiV2(MirApiBaseClass):
         """Queries a list of actions a mission executes using
         the missions/{mission_id}/actions endpoint.
 
-        ``scope_reference`` is not in the default response and has to be whitelisted
-        (the default fields are action_type, guid, mission_id, parameters, priority, url).
-        It is what makes the list a tree: it holds the guid of a *parameter* of the action
-        that contains this one, or null at the top level. Without it, the response order
-        is meaningless and ``priority`` alone cannot be used, since it only orders siblings
-        inside a single scope. See ``mission_tracking._execution_order``.
+        ``scope_reference`` has to be whitelisted; it is not in the default response. It
+        holds the guid of a parameter of the action containing this one, or null at the
+        top level, and is what makes the list a tree. See
+        ``mission_tracking._execution_order``.
         """
         actions_api_url = f"/{MISSIONS_ENDPOINT_V2}/{mission_id}/actions"
         response = await self._get(actions_api_url, params={"whitelist": MISSION_ACTION_FIELDS})
@@ -245,9 +243,10 @@ class MirApiV2(MirApiBaseClass):
         ``GET /mission_queue/{id}/actions/{action_int_id}`` returns the rich
         entry: ``{id, action_id, state, started, finished, action_type,
         parameters}``. ``action_id`` equals the mission-definition action guid
-        (what ``add_action_to_mission`` returns), so it maps a running queue
-        action back to the action we created. Completion signal is ``finished``
-        (a timestamp once done); ``state`` can be ``""`` even when finished.
+        (what ``add_action_to_mission`` returns), which is what maps a running
+        queue action back to its definition. ``finished`` is a timestamp once the
+        action is over; an empty ``state`` is what distinguishes success from
+        ``"Failed"`` or ``"Aborted"``.
         """
         action_api_url = f"/{MISSION_QUEUE_ENDPOINT_V2}/{queue_id}/actions/{action_int_id}"
         response = await self._get(action_api_url)
@@ -256,15 +255,13 @@ class MirApiV2(MirApiBaseClass):
     async def get_executing_mission_id(self):
         """Returns the id of the mission being currently executed by the robot.
 
-        Reads the newest slice of the queue rather than all of it. The queue is never
-        truncated by the robot, so on a robot that has been running for a while the
-        unbounded call is enormous: 28,526 entries, 2 MB, ~3.9 s on our MiR100, which a
-        1 s poll cannot keep up with. An executing entry is by construction among the
-        newest, and the whitelist trims each one to the two fields used here.
+        Reads the newest slice of the queue rather than all of it: the robot never
+        truncates the queue, so unbounded this grows to megabytes and takes longer than
+        the poll interval. An executing entry is always among the newest.
 
-        Note that MiR ignores query params it does not recognise instead of rejecting
-        them, so limit and sort_by have to be kept together: limit alone would silently
-        read the oldest entries.
+        ``limit`` and ``sort_by`` must be sent together. MiR ignores query params it does
+        not recognise rather than rejecting them, so ``limit`` alone would read the
+        oldest entries.
         """
         missions_api_url = f"/{MISSION_QUEUE_ENDPOINT_V2}"
         response = await self._get(

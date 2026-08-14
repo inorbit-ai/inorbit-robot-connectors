@@ -61,9 +61,9 @@ async def test_http_error_logs_response_body(mir_api, httpx_mock, caplog):
 async def test_get_executing_mission_id(mir_api, httpx_mock):
     """Reads only the tail of the queue, newest first.
 
-    Unbounded, this endpoint returns every entry the robot has ever run (2 MB on ours).
-    MiR silently ignores params it does not know, so limit and sort_by must travel
-    together or we would read the oldest entries instead of the newest.
+    Unbounded, this endpoint returns every entry the robot has ever run. MiR ignores
+    params it does not know, so limit and sort_by must travel together: limit alone
+    would return the oldest entries.
     """
     missions = [
         {"id": 2, "state": "Aborted"},

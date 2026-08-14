@@ -88,8 +88,8 @@ async def test_executing_mission_id_comes_from_status(mission_tracking):
 
 @pytest.mark.asyncio
 async def test_finished_mission_is_not_readopted(mission_tracking):
-    # mission_queue_id clears when the mission ends, but if a firmware left it set we would
-    # re-adopt the finished entry and republish it on every tick.
+    # mission_queue_id clears when a mission ends; a firmware that left it set would make
+    # the finished entry republish on every tick.
     entry = {
         "state": "Done",
         "id": 5,
@@ -111,8 +111,8 @@ async def test_fleet_action_list_without_mission_id(
 ):
     """Fleet-dispatched ActionLists have mission_id None: no definition, no tasks, no crash.
 
-    GET /missions/None is a 400, which used to raise out of every tick without ever clearing
-    executing_mission_id, wedging mission tracking for the life of the process.
+    GET /missions/None is a 400, and executing_mission_id is only reassigned when it is
+    None, so a raise here leaves the entry pinned and stops tracking for good.
     """
     status = {**sample_status_data, "mission_queue_id": 42}
     mission_tracking.mir_api.get_executing_mission_id = AsyncMock(side_effect=AssertionError)
@@ -200,9 +200,8 @@ async def test_report_mission(
         }
     }
 
-    # get_current_mission is mocked out, so no task tracker exists and there is no progress
-    # to report. Omitting completedPercent is the point: the previous count-based estimate
-    # read the queue entry's "actions", which is a URL string, and always yielded 1.0.
+    # get_current_mission is mocked out, so there is no task tracker and no progress to
+    # report: completedPercent is omitted rather than estimated.
     assert DeepDiff(reported_mission, should_be) == {}
 
 

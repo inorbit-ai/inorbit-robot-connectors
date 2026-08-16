@@ -237,6 +237,8 @@ class PhantasConnector(Connector):
         # connector doesn't show an unreachable robot as online with stale
         # data. ponytail: no debounce — a one-poll flap only re-sends a
         # retained message.
+        # TODO: move vendor-offline passthrough into inorbit-connector and
+        # refactor this and the Pudu connector to use it.
         online = status.get("online")
         if isinstance(online, bool) and online != self._vendor_online:
             if self._vendor_online is None:

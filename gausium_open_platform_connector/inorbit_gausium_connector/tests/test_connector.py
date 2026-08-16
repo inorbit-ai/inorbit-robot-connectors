@@ -295,11 +295,15 @@ async def test_execution_loop_mirrors_vendor_offline_into_robot_status(
     await connector._execution_loop()
     connector._robot_session._send_robot_status.assert_not_called()
     assert connector._robot_session.set_online_status_callback.called
+    assert connector._robot_session.publish_key_values.call_count == 1
 
     connector.robot.status = {"online": False}
     await connector._execution_loop()
     connector._robot_session._send_robot_status.assert_called_with(online=False)
+    # No publishing while offline: it would keep refreshing updateStamp.
+    assert connector._robot_session.publish_key_values.call_count == 1
 
     connector.robot.status = {"online": True}
     await connector._execution_loop()
     connector._robot_session._send_robot_status.assert_called_with(online=True)
+    assert connector._robot_session.publish_key_values.call_count == 2

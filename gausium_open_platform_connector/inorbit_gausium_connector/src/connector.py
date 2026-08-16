@@ -231,14 +231,12 @@ class PhantasConnector(Connector):
             self._logger.debug("No robot status available yet")
             return
 
-        # Vendor-offline passthrough: mirror the vendor cloud's reachability
-        # (status "online" field) into the InOrbit online status — the same
-        # retained state message the MQTT last-will uses — so a running
-        # connector doesn't show an unreachable robot as online with stale
-        # data. ponytail: no debounce — a one-poll flap only re-sends a
-        # retained message.
-        # TODO: move vendor-offline passthrough into inorbit-connector and
-        # refactor this and the Pudu connector to use it.
+        # Mirror the vendor cloud's reachability (status "online" field) into
+        # the InOrbit online status — the same retained state message the
+        # MQTT last-will uses. No debounce: a flap only re-sends a retained
+        # message.
+        # TODO: move this into inorbit-connector and refactor this and the
+        # Pudu connector to use it.
         online = status.get("online")
         if isinstance(online, bool) and online != self._vendor_online:
             if self._vendor_online is None:

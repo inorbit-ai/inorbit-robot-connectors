@@ -81,6 +81,10 @@ class PhantasConnector(Connector):
             ),
         )
 
+        # Last vendor-reported reachability (status "online" field), mirrored
+        # into the InOrbit online status. See _execution_loop.
+        self._vendor_online: bool | None = None
+
     async def _connect(self) -> None:
         """Connect to the robot services.
 
@@ -227,6 +231,25 @@ class PhantasConnector(Connector):
         if not status:
             self._logger.debug("No robot status available yet")
             return
+
+        # Vendor-offline passthrough: mirror the vendor cloud's reachability
+        # (status "online" field) into the InOrbit online status — the same
+        # retained state message the MQTT last-will uses — so a running
+        # connector doesn't show an unreachable robot as online with stale
+        # data. ponytail: no debounce — a one-poll flap only re-sends a
+        # retained message.
+        online = status.get("online")
+        if isinstance(online, bool) and online != self._vendor_online:
+            if self._vendor_online is None:
+                # Keep InOrbit's get_state probes consistent with the last
+                # vendor report.
+                self._robot_session.set_online_status_callback(
+                    lambda: self._vendor_online is not False
+                )
+            if self._vendor_online is not None or not online:
+                # Skip the initial online report: connect() already published it.
+                self._robot_session._send_robot_status(online=online)
+            self._vendor_online = online
 
         # Publish pose
         # mapPosition returns:

@@ -22,7 +22,6 @@ from tenacity import retry_if_exception_type
 from tenacity import stop_after_attempt
 from tenacity import wait_fixed
 
-
 # OAuth2 token request URL for Gausium API
 REQUEST_TOKEN_URL = "https://openapi.gs-robot.com/gas/api/v1alpha1/oauth/token"
 

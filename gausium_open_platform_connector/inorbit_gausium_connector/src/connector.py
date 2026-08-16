@@ -26,7 +26,6 @@ from .robot import RemoteTaskCommandType
 from .robot import RobotAPI
 from .robot.robot import Robot
 
-
 # Pose is received in pixels. It must be coverted to meters before publishing to inorbit
 MAP_RESOLUTION = 0.05  # meters per pixel
 

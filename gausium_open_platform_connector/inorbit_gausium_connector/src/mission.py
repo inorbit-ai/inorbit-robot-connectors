@@ -16,7 +16,6 @@ from ..config.connector_model import DEFAULT_MISSION_SUCCESS_PERCENTAGE_THRESHOL
 from .robot import RobotAPI
 from .robot import TaskState
 
-
 # The progress bar is advanced to 100% if the progress percentage is greater than this threshold
 MISSION_PROGRESS_BAR_ADVANCED_PERCENTAGE_THRESHOLD = 0.90
 

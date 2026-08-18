@@ -283,3 +283,23 @@ async def test_connector_with_none_user_scripts_dir(monkeypatch):
     )
     assert connector is not None
     assert connector.robot_api is not None
+
+
+@pytest.mark.asyncio
+async def test_execution_loop_mirrors_vendor_offline_into_robot_status(
+    connector: PhantasConnector,
+):
+    """Vendor online=False flips the InOrbit online status; the initial online is not re-sent."""
+    connector.robot.status_v2 = {}
+
+    await connector._execution_loop()
+    connector._robot_session._send_robot_status.assert_not_called()
+    assert connector._robot_session.set_online_status_callback.called
+
+    connector.robot.status = {"online": False}
+    await connector._execution_loop()
+    connector._robot_session._send_robot_status.assert_called_with(online=False)
+
+    connector.robot.status = {"online": True}
+    await connector._execution_loop()
+    connector._robot_session._send_robot_status.assert_called_with(online=True)

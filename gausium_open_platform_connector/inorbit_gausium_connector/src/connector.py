@@ -26,7 +26,6 @@ from .robot import RemoteTaskCommandType
 from .robot import RobotAPI
 from .robot.robot import Robot
 
-
 # Pose is received in pixels. It must be coverted to meters before publishing to inorbit
 MAP_RESOLUTION = 0.05  # meters per pixel
 
@@ -80,6 +79,10 @@ class PhantasConnector(Connector):
                 config.connector_config.mission_success_percentage_threshold
             ),
         )
+
+        # Last vendor-reported reachability (status "online" field), mirrored
+        # into the InOrbit online status. See _execution_loop.
+        self._vendor_online: bool | None = None
 
     async def _connect(self) -> None:
         """Connect to the robot services.
@@ -227,6 +230,25 @@ class PhantasConnector(Connector):
         if not status:
             self._logger.debug("No robot status available yet")
             return
+
+        # Mirror the vendor cloud's reachability (status "online" field) into
+        # the InOrbit online status — the same retained state message the
+        # MQTT last-will uses. No debounce: a flap only re-sends a retained
+        # message.
+        # TODO: move this into inorbit-connector and refactor this and the
+        # Pudu connector to use it.
+        online = status.get("online")
+        if isinstance(online, bool) and online != self._vendor_online:
+            if self._vendor_online is None:
+                # Keep InOrbit's get_state probes consistent with the last
+                # vendor report.
+                self._robot_session.set_online_status_callback(
+                    lambda: self._vendor_online is not False
+                )
+            if self._vendor_online is not None or not online:
+                # Skip the initial online report: connect() already published it.
+                self._robot_session._send_robot_status(online=online)
+            self._vendor_online = online
 
         # Publish pose
         # mapPosition returns:

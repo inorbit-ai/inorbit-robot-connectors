@@ -249,6 +249,12 @@ class PhantasConnector(Connector):
                 # Skip the initial online report: connect() already published it.
                 self._robot_session._send_robot_status(online=online)
             self._vendor_online = online
+        if self._vendor_online is False:
+            # Publishing while offline would keep refreshing the robot's
+            # updateStamp, so it never ages out of "recently online" views
+            # (e.g. the fleet status widget). Data is stale anyway; polling
+            # continues and publishing resumes on reconnect.
+            return
 
         # Publish pose
         # mapPosition returns:

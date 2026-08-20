@@ -86,7 +86,7 @@ and v2 S status (`GET /openapi/v2alpha1/s/robots/{sn}/status`), both already pol
 | `recovery_tank_pct` | v1 `device.recoveryWaterTank.level` | / 100 |
 | `emergency_stop` | v1 `emergencyStop.enabled` | none |
 | `speed_kmph` | v1 `speedKilometerPerHour` | none |
-| `mission_status` | derived | see 3.4 |
+| `mission_status` | derived | the standardized robot-mode datasource, closed five-value enum, see 3.4 |
 | `cleaning_mode` / `cleaning_mode_raw` | v2 `currentTask.workMode.name` | see 5.1. Live mode while a task runs; absent when idle |
 
 Tank `level` units are not stated in the Gausium docs. The observed values (`60` clean,
@@ -127,12 +127,20 @@ Note the naming trap: the live `consumable_*_wear_pct` keys are *consumed* fract
 while the mission-report `consumable_*_pct` keys (5.3) are vendor *residual* percentages,
 i.e. remaining. Opposite senses, kept distinct by the `_wear_` infix.
 
-### 3.4 `mission_status` derivation
+### 3.4 `mission_status`: the standardized robot-mode datasource
 
-The Modes panel maps arbitrary strings, but the contract's strongly recommended approach
-is a standard enum derived in the connector. Precedence, first match wins:
+`mission_status` is **the** datasource the InOrbit Modes panel binds to. Standardizing it
+is a goal of this work in its own right, not a side effect of the key rename, so it is
+pinned exactly here.
 
-| Order | Mode | Condition |
+**The key.** `mission_status`, a string key-value, published on every execution loop tick.
+It is always present and always one of the five values below: never absent, never null,
+never a vendor string. A gap or an unexpected value would show as an unknown mode in the
+panel, so the derivation has a total fallback (`Idle`) by construction.
+
+**The closed value set.** Exactly these five strings, capitalized as written:
+
+| Order | Value | Condition |
 |---|---|---|
 | 1 | `Error` | v1 `emergencyStop.enabled` |
 | 2 | `Paused` | `taskState == PAUSED` |
@@ -140,13 +148,55 @@ is a standard enum derived in the connector. Precedence, first match wins:
 | 4 | `Charging` | v1 `battery.charging` |
 | 5 | `Idle` | otherwise |
 
-`Mission` outranks `Charging` per the contract. `Paused` is adopted because Gausium
-distinguishes it.
+First match wins. `Mission` outranks `Charging` per the contract. `Paused` is adopted
+because Gausium distinguishes it. The set is closed: adding a sixth value is a change to
+the vertical contract, not a connector implementation detail, because every OEM's Modes
+config would have to learn it.
+
+**No `_raw` twin.** The convention in section 2 gives normalized enums a `<field>_raw`
+companion, but `mission_status` is derived from several fields rather than translated from
+one, so there is no single raw value to preserve. The vendor state remains fully visible
+through `task_state`, `emergency_stop`, `charging` and `localization_state`, which is the
+debugging path when a mode looks wrong.
+
+**Why the connector derives it.** Deriving in the connector makes the account-side
+configuration a plain key-value binding and identical for every OEM, which is the entire
+point of the vertical template. The alternative, deriving in account config, is what the
+Gausium setup does today: a tag-level derived DataSourceDefinition emitting raw vendor
+strings that the Modes config then buckets. **That derived datasource is retired by this
+work** and must be removed from account config when these keys ship, or it will keep
+shadowing the connector's value. Elsewhere in this repo, `mir_connector` publishes the
+same vocabulary but computes it in a derived-datasource transform over `mission_text` and
+`state_text`; connector-side derivation is the standard going forward.
+
+**The datasource definition.** A plain `DataSourceDefinition`, no transform, no unit, no
+scale:
+
+```yaml
+kind: DataSourceDefinition
+metadata:
+  scope: <CONFIG_SCOPE>
+  id: mission_status
+apiVersion: v0.1
+spec:
+  label: Mission status
+  timeline: {}
+  source:
+    keyValue:
+      key: mission_status
+```
+
+**The Modes configuration.** Modes are configured against this datasource in the InOrbit
+UI, not as a config-as-code object, so this repo cannot ship the mapping itself. Because
+the connector emits the standard vocabulary, that mapping is 1:1, value to mode, with no
+bucketing rules, pattern matching, or per-account customization. This is also why
+`StatusDefinition` is not involved: that kind expresses threshold rules over numeric
+datasources for the Fleet Status widget, and has nothing to do with modes.
 
 `localizationState == "LOST"` is **not** mapped to `Error`. The sample robot is
 simultaneously `IDLE`, `LOST` and `online` while parked, so that rule would fire
 continuously on a healthy fleet. Localization health is exposed as its own
-`localization_state` key for alerting or Modes bucketing to consume.
+`localization_state` key for alerting to consume.
 
 This is independent of `MissionState.get_from_status` in `mission.py`, which keeps its
 current behaviour of treating e-stop as a paused mission.
@@ -398,17 +448,22 @@ ship datasource and mission-tracking examples. Added:
 - `data_sources.yaml`: one DataSourceDefinition per live key-value from section 3, with
   `unit` and `scale` always explicit. Percent datasources set `scale: 1` because the
   values are already 0-1; omitting `scale` with `unit: "%"` makes the platform default to
-  `0.01` and re-scale an already-normalized value.
+  `0.01` and re-scale an already-normalized value. Includes the `mission_status`
+  definition given verbatim in 3.4, which is a plain `keyValue` binding precisely because
+  the connector now owns the derivation.
 - `mission_tracking.yaml`: the `mission_tracking` DataSourceDefinition (`type: json`)
   plus the `MissionTracking` object with `processingType: [api]` and
   `autoClosePreviousMission: true`, following the legacy Gausium connector's shape.
-- `status_definition.yaml`: Modes mapping for the five `mission_status` values, which is
-  the point of deriving the enum in the connector rather than bucketing raw vendor
-  strings in account config.
+- `status_definition.yaml`: `StatusDefinition` threshold rules over the numeric
+  datasources worth surfacing in the Fleet Status widget, at minimum `battery_pct` and
+  the two tank levels. This kind is **not** the Modes mapping: modes bind to the
+  `mission_status` datasource and are configured in the InOrbit UI, as 3.4 explains.
 - Three sample derived DataSourceDefinitions (`cleaned_area_m2`, `coverage_pct`,
   `efficiency_m2ph`) demonstrating the mission-field transform pattern, rather than all
   sixteen.
-- `README.md` updated to list the files.
+- `README.md` updated to list the files, and to state that applying
+  `status_definition.yaml` requires toggling "display in Fleet Status" per status in
+  Settings before the widget shows anything.
 
 ## 8. Implementation layers
 
@@ -454,7 +509,7 @@ The captured payloads become fixtures: `B1_status_v1.json`, `B2_status_v2_S.json
 |---|---|
 | 1 | Pose and `MapConfig` both read `map_resolution`; a non-default value moves published pose proportionally. Removed loops no longer start |
 | 2 | Every table entry maps to its enum; an unseen vendor value yields `other` with the raw value preserved |
-| 3 | The full key-value set from the sample status payloads, exact keys and values, including the 0-1 conversions and the seven generated consumable keys. `mission_status` precedence table, one case per row, including `IDLE` + `LOST` yielding `Idle` not `Error` |
+| 3 | The full key-value set from the sample status payloads, exact keys and values, including the 0-1 conversions and the seven generated consumable keys. `mission_status` precedence table, one case per row, including `IDLE` + `LOST` yielding `Idle` not `Error`; plus that it is always emitted and always within the closed five-value set, including on an empty or partial status payload |
 | 4 | Report `data` matches the canonical set for a sample report; a report with `water_used_l: 0` and `interruptions_count: 0` keeps both keys. A two-sub-task report yields two `map_<slug>_cleaned_area_m2` keys; two maps slugging identically yield two distinct keys, not one overwritten |
 | 5 | One case per row of the `task_outcome` table, including the `-1`/absent fallback and the no-report path |
 | 6 | Counter increments only on `RUNNING -> PAUSED`, resets on a new `taskInstanceId` |

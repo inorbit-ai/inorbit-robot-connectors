@@ -25,6 +25,10 @@ MISSION_PROGRESS_BAR_ADVANCED_PERCENTAGE_THRESHOLD = 0.90
 # Max time to wait for a task report to be available
 MAX_TASK_REPORT_WAIT_TIME_SECS = 10 * 60  # 10 minutes
 
+# Reported task end statuses: -1 unknown, 0 normal, 1 manual, 2 error, 3 startup failure
+TASK_END_STATUS_NORMAL = 0
+TASK_END_STATUS_ABNORMAL = (1, 2, 3)
+
 
 class InOrbitMissionStatus(Enum):
     """
@@ -95,6 +99,26 @@ class MissionState(Enum):
             return cls.unknown
 
     @staticmethod
+    def get_from_end_status(
+        task_end_status: int | None,
+        coverage_pct: float | None,
+        coverage_threshold: float,
+    ) -> "MissionState | None":
+        """Returns the mission state based on the reported task end status.
+
+        Only a normal end is judged against the coverage threshold; every abnormal end is
+        abandoned however much got cleaned. Returns None on a status the robot does not define,
+        so the caller falls back instead of guessing.
+        """
+        if task_end_status in TASK_END_STATUS_ABNORMAL:
+            return MissionState.abandoned
+        if task_end_status == TASK_END_STATUS_NORMAL:
+            if coverage_pct is None or coverage_pct >= coverage_threshold:
+                return MissionState.completed
+            return MissionState.incomplete
+        return None
+
+    @staticmethod
     def get_for_completion(
         completion_percentage: float,
         completion_percentage_threshold: float,
@@ -143,6 +167,10 @@ class MissionTracking:
         self._last_executing_task_id: str | None = None
         # Last published report
         self._last_inorbit_report: dict[str, Any] = {}
+        # RUNNING -> PAUSED transitions of the current task. No report field carries them, and
+        # e-stops are tracked separately by the emergency_stop key-value
+        self._interruptions_count = 0
+        self._last_task_state: str | None = None
         # Tasks waiting for a task report to be available to complete a mission
         self._mission_completion_tasks: set[asyncio.Task] = set()
         # Map of task IDs to their completion tasks for cancellation
@@ -157,6 +185,8 @@ class MissionTracking:
 
         last_task_id = self._last_executing_task_id
         curr_task_id = robot_status_v2.get("currentTask", {}).get("taskInstanceId")
+
+        self._count_interruptions(robot_status.get("taskState"), curr_task_id, last_task_id)
 
         # NOTE(b-Tomas): Since we are getting data from two different sources, we need to check
         # they match.
@@ -176,10 +206,12 @@ class MissionTracking:
             self._logger.info(
                 f"Mission changed: last task ID: {last_task_id}, current task ID: {curr_task_id}"
             )
-            # Start mission completion handling
+            # Start mission completion handling. The interruptions count is captured now because
+            # the report can take minutes to arrive, by which time a new task may have reset it
             completion_data = {
                 "task_instance_id": last_task_id,
                 "last_inorbit_report": deepcopy(self._last_inorbit_report),
+                "interruptions_count": self._interruptions_count,
                 "timestamp": time(),
             }
             # Wait in the background for the task report to be available and update the mission data
@@ -198,7 +230,7 @@ class MissionTracking:
             and robot_is_executing_mission
         ):
             self._logger.debug(f"Updating mission {curr_executing_task.get('name')}")
-            self._last_inorbit_report = MissionTracking._update_mission(
+            self._last_inorbit_report = self._update_mission(
                 robot_status, robot_status_v2, self._last_inorbit_report
             )
             self._logger.debug(f"InOrbit mission report: {self._last_inorbit_report}")
@@ -206,6 +238,19 @@ class MissionTracking:
 
         self._last_robot_status = robot_status
         self._last_executing_task_id = curr_task_id
+
+    def _count_interruptions(
+        self, task_state: str | None, curr_task_id: str | None, last_task_id: str | None
+    ) -> None:
+        """Count the times the current task went from running to paused."""
+        if curr_task_id != last_task_id:
+            self._interruptions_count = 0
+        if (
+            self._last_task_state == TaskState.RUNNING.value
+            and task_state == TaskState.PAUSED.value
+        ):
+            self._interruptions_count += 1
+        self._last_task_state = task_state
 
     def _create_mission_completion_task(self, completion_data: dict) -> asyncio.Task:
         """Wait for a task report of a finished mission to be available."""
@@ -251,7 +296,9 @@ class MissionTracking:
             if last_task_report:
                 self._logger.info(f"Completing mission with report ID {last_task_report.get('id')}")
                 completed_report = self._complete_mission(
-                    last_task_report, completion_data["last_inorbit_report"]
+                    last_task_report,
+                    completion_data["last_inorbit_report"],
+                    interruptions_count=completion_data["interruptions_count"],
                 )
                 self._publish_callback(completed_report)
             # If the report is not available, mark the mission as abandoned
@@ -339,8 +386,8 @@ class MissionTracking:
         if self._mission_completion_tasks:
             await asyncio.gather(*self._mission_completion_tasks, return_exceptions=True)
 
-    @staticmethod
     def _update_mission(
+        self,
         robot_status: dict[str, Any],
         robot_status_v2: dict[str, Any],
         previous_report: dict[str, Any] = dict(),
@@ -388,6 +435,7 @@ class MissionTracking:
             ),
             "task_state": normalize_task_state(task_state) if task_state else None,
             "task_state_raw": task_state,
+            "interruptions_count": self._interruptions_count,
             **cleaning_mode_keys(
                 robot_status_v2.get("currentTask", {}).get("workMode", {}).get("name")
             ),
@@ -403,54 +451,63 @@ class MissionTracking:
         }
 
     def _complete_mission(
-        self, task_report: dict[str, Any], last_inorbit_report: dict[str, Any]
+        self,
+        task_report: dict[str, Any],
+        last_inorbit_report: dict[str, Any],
+        interruptions_count: int | None = None,
     ) -> dict[str, Any]:
-        """Completes a previous mission based on its report data"""
+        """Completes a previous mission based on its report data. The interruptions count
+        defaults to the live one, for callers completing the mission that is still current."""
         inorbit_report = deepcopy(last_inorbit_report)
 
         report_id = task_report.get("id")
+        task_end_status = task_report.get("taskEndStatus")
         data = report_to_data(
             task_report,
             current_map_name=self._last_robot_status.get("localizationInfo", {})
             .get("map", {})
             .get("name"),
+            interruptions_count=(
+                self._interruptions_count if interruptions_count is None else interruptions_count
+            ),
         )
 
         # Calculated InOrbit mission data
         inorbit_report["inProgress"] = False
         inorbit_report["label"] = task_report.get("displayName")
 
-        # Set the state and status based on the completion percentage (area cleaned)
-        # and the progress percentage (progress bar).
+        # Set the state and status based on how the robot says the task ended, falling back to
+        # the coverage and progress bar heuristic when it reports a status it does not define
+        coverage_pct = data.get("coverage_pct")
         last_progress_bar_percentage = last_inorbit_report.get("completedPercent", 0)
-        state = MissionState.get_for_completion(
-            task_report.get("completionPercentage", 0),
-            self._mission_success_percentage_threshold,
-            last_progress_bar_percentage,
+        state = MissionState.get_from_end_status(
+            task_end_status, coverage_pct, self._mission_success_percentage_threshold
         )
+        if state:
+            data["task_outcome"] = state.value["state"]
+        else:
+            state = MissionState.get_for_completion(
+                coverage_pct or 0,
+                self._mission_success_percentage_threshold,
+                last_progress_bar_percentage,
+            )
+
         if state is MissionState.incomplete:
             data["Error"] = (
                 f"Mission failed to achieve a completion percentage of "
                 f"{self._mission_success_percentage_threshold * 100}%"
             )
+        elif state is MissionState.abandoned:
+            data["Error"] = f"Mission ended with task end status {task_end_status}"
         inorbit_report.update(state.value)
 
-        # Advance the progress bar to 100% if the previously published progress was enough
-        # to consider the mission as finished
-        # Otherwise, let the progress bar stay as it was before receiving the report
-        # and mark it as abandoned
-        if state is MissionState.completed or state is MissionState.incomplete:
-            self._logger.info(
-                f"Completing mission {report_id} with previous progress "
-                f"{last_progress_bar_percentage}"
-            )
-            inorbit_report["completedPercent"] = 1
-        else:
-            self._logger.info(
-                f"Abandoning mission {report_id} with previous progress "
-                f"{last_progress_bar_percentage}"
-            )
-            inorbit_report["completedPercent"] = last_progress_bar_percentage
+        # Show the fraction of the plan actually covered
+        self._logger.info(
+            f"Mission {report_id} ended as {state.value['state']} with coverage {coverage_pct}"
+        )
+        inorbit_report["completedPercent"] = (
+            coverage_pct if coverage_pct is not None else last_progress_bar_percentage
+        )
 
         # Wall time is the honest figure for a finished mission
         inorbit_report["estimatedDurationSecs"] = data.get("duration_s")

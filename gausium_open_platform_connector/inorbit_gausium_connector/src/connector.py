@@ -21,6 +21,7 @@ from PIL import Image
 
 from .. import __version__
 from ..config.connector_model import ConnectorConfig
+from .key_values import build_key_values
 from .mission import MissionTracking
 from .robot import RemoteTaskCommandType
 from .robot import RobotAPI
@@ -290,17 +291,13 @@ class PhantasConnector(Connector):
         self.mission_tracking.update(status, status_v2)
 
         # Publish key values
-        key_values = {
-            **status,
-            "battery_percentage": status.get("battery", {}).get("powerPercentage"),
-            "charging": status.get("battery", {}).get("charging"),
-            "api_connected": self.robot.api_connected,
-            "connector_version": __version__,
-            "display_name": self.robot.robot_data.get("displayName", ""),
-            "model_family": self.robot.robot_data.get("modelFamilyCode", ""),
-            "model_type": self.robot.robot_data.get("modelTypeCode", ""),
-            "software_version": self.robot.robot_data.get("softwareVersion", ""),
-        }
+        key_values = build_key_values(
+            status,
+            status_v2,
+            self.robot.robot_data,
+            self.robot.api_connected,
+            __version__,
+        )
         self._logger.debug(f"Publishing key values: {key_values}")
         self._robot_session.publish_key_values(key_values)
 

@@ -330,3 +330,20 @@ def test_dead_polling_loops_are_gone():
     assert not hasattr(Robot, "_update_robot_details")
     assert not hasattr(Robot, "task_reports")
     assert not hasattr(Robot, "robot_details")
+
+
+@pytest.mark.asyncio
+async def test_execution_loop_publishes_canonical_key_values(
+    connector: PhantasConnector, status_v1, status_v2
+):
+    connector.robot.status = status_v1
+    connector.robot.status_v2 = status_v2
+    connector.robot.robot_data = {"displayName": "robot1"}
+
+    await connector._execution_loop()
+
+    published = connector._robot_session.publish_key_values.call_args.args[0]
+    assert published["battery_pct"] == 1.0
+    assert published["mission_status"] == "Idle"
+    assert "battery_percentage" not in published
+    assert "localizationInfo" not in published

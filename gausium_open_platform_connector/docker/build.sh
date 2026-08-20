@@ -36,7 +36,7 @@ pyproject = pathlib.Path("pyproject.toml")
 data = tomllib.loads(pyproject.read_text())
 print(data["project"]["version"])
 PY
-)-rc3
+)-rc4
 if [ $? -ne 0 ]; then
     CONNECTOR_VERSION="latest"
 fi

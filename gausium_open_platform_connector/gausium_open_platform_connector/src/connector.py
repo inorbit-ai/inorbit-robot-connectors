@@ -6,7 +6,6 @@
 
 # Standard
 import asyncio
-import io
 import math
 from functools import partial
 from typing import override
@@ -16,9 +15,6 @@ from inorbit_connector.commands import CommandFailure, CommandResultCode, parse_
 from inorbit_connector.connector import FleetConnector
 from inorbit_connector.models import MapConfigTemp
 from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND, COMMAND_MESSAGE, COMMAND_NAV_GOAL
-
-# Third-party
-from PIL import Image
 
 # Local
 from gausium_open_platform_connector import __version__
@@ -35,13 +31,6 @@ from gausium_open_platform_connector.src.key_values import build_key_values
 from gausium_open_platform_connector.src.mission import MissionTracker
 
 ROBOT_DATA_POLL_INTERVAL_SECS = 60.0
-
-
-def _flip_vertically(png_bytes: bytes) -> bytes:
-    """Flip a PNG vertically: InOrbit expects the map origin at the bottom-left."""
-    buffer = io.BytesIO()
-    Image.open(io.BytesIO(png_bytes)).transpose(Image.FLIP_TOP_BOTTOM).save(buffer, format="PNG")
-    return buffer.getvalue()
 
 
 class GausiumOpenPlatformConnector(FleetConnector):
@@ -224,11 +213,8 @@ class GausiumOpenPlatformConnector(FleetConnector):
         )
         if image_bytes is None:
             return None
-        try:
-            # PNG re-encoding is slow enough to stall the fleet's publish loops
-            image_bytes = await asyncio.to_thread(_flip_vertically, image_bytes)
-        except Exception as e:  # noqa: BLE001 -- publish the unflipped image on any failure
-            self._logger.error(f"Failed to flip map image: {e}")
+        # No orientation correction: map format_version 2 (the default) displays the
+        # image exactly as uploaded; only version 1 maps are mirrored by the platform
         return MapConfigTemp(
             image=image_bytes,
             map_id=map_id,

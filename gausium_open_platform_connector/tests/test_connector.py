@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import io
 import logging
 import math
 import threading
@@ -16,7 +15,6 @@ import pytest
 from inorbit_connector.commands import CommandFailure, CommandResultCode
 from inorbit_connector.connector import FleetConnector
 from inorbit_edge.robot import COMMAND_CUSTOM_COMMAND, COMMAND_MESSAGE, COMMAND_NAV_GOAL
-from PIL import Image
 
 from gausium_open_platform_connector import __version__
 from gausium_open_platform_connector.src.commands import (
@@ -398,19 +396,10 @@ async def test_unsupported_commands_fail(connector, robot_state, command_name) -
 # --- Map fetching ---------------------------------------------------------------
 
 
-def make_png() -> bytes:
-    """1x2 PNG: red on top, blue on the bottom."""
-    image = Image.new("RGB", (1, 2))
-    image.putpixel((0, 0), (255, 0, 0))
-    image.putpixel((0, 1), (0, 0, 255))
-    buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
-    return buffer.getvalue()
-
-
 @pytest.mark.asyncio
-async def test_fetch_robot_map_flips_image(connector, robot_state) -> None:
-    connector._client.get_map_image.return_value = make_png()
+async def test_fetch_robot_map_publishes_image_as_downloaded(connector, robot_state) -> None:
+    # format_version 2 (the default) displays the map as uploaded, so no flipping
+    connector._client.get_map_image.return_value = b"\x89PNG-bytes"
 
     result = await connector.fetch_robot_map(ROBOT_ID, MAP_ID)
 
@@ -418,14 +407,13 @@ async def test_fetch_robot_map_flips_image(connector, robot_state) -> None:
         SN_1, MAP_ID, "floor_1", "maps/x/versions/y"
     )
     assert result is not None
+    assert result.image == b"\x89PNG-bytes"
     assert result.map_id == MAP_ID
     assert result.map_label == "floor_1"
     assert result.origin_x == 0.0
     assert result.origin_y == 0.0
     assert result.resolution == 0.05
-    flipped = Image.open(io.BytesIO(result.image))
-    assert flipped.getpixel((0, 0)) == (0, 0, 255)
-    assert flipped.getpixel((0, 1)) == (255, 0, 0)
+    assert result.format_version == 2
 
 
 @pytest.mark.asyncio

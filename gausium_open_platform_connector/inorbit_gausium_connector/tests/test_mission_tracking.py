@@ -4,15 +4,13 @@
 
 import asyncio
 from copy import deepcopy
-from datetime import datetime
 from time import time
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import Mock
 
 import pytest
-from inorbit_gausium_connector.src.mission import filter_truthy
-from inorbit_gausium_connector.src.mission import gausium_date_to_inorbit_millis
+from inorbit_gausium_connector.src.mission import filter_none
 from inorbit_gausium_connector.src.mission import InOrbitMissionStatus
 from inorbit_gausium_connector.src.mission import MissionState
 from inorbit_gausium_connector.src.mission import MissionTracking
@@ -98,6 +96,7 @@ def sample_task_report():
             "suctionBlade": 99.86,
         },
         "taskInstanceId": "task-123",
+        "cleaningMode": "洗地",
         "taskReportPngUri": (
             "https://bot.gs-robot.com/robot-task/task/report/png/v2/en/"
             "9ef6801e-457f-45e5-bfce-46a44db05e4e"
@@ -138,7 +137,7 @@ class TestMissionTracking:
         assert published_report["inProgress"] == MissionState.in_progress.value["inProgress"]
         assert published_report["label"] == "Cleaning Task"
         assert published_report["completedPercent"] == 0.5
-        assert published_report["data"]["Task ID"] == "task-123"
+        assert published_report["data"]["task_id"] == "task-123"
 
     def test_update_mission_progress(
         self, mission_tracking, sample_robot_status, sample_robot_status_v2, mock_publish_callback
@@ -377,16 +376,29 @@ class TestMissionTracking:
             "completedPercent": 0.5,
             "estimatedDurationSecs": 600,  # 300 / 0.5
             "data": {
-                "Map name": "Floor 1",
-                "Task ID": "task-123",
-                "Task instance ID": "task-123",
-                "Task state": TaskState.RUNNING.value,
-                "Cleaning mileage": 100.5,
-                "Time elapsed [s]": 300,
+                "map_name": "Floor 1",
+                "task_id": "task-123",
+                "task_instance_id": "task-123",
+                "distance_m": 100.5,
+                "active_cleaning_time_s": 300,
+                "task_state": "cleaning",
+                "task_state_raw": TaskState.RUNNING.value,
             },
         }
 
         assert result == expected
+
+    def test_update_mission_publishes_cleaning_mode(
+        self, sample_robot_status, sample_robot_status_v2
+    ):
+        """Test that the live cleaning mode is published while a task runs."""
+        sample_robot_status_v2["currentTask"]["workMode"] = {"name": "__洗地"}
+
+        result = MissionTracking._update_mission(sample_robot_status, sample_robot_status_v2)
+
+        assert result["data"]["cleaning_mode"] == "scrub"
+        assert result["data"]["cleaning_mode_raw"] == "__洗地"
+        assert result["data"]["cleaning_mode_label"] == "Wash the floor"
 
     def test_update_mission_zero_progress(self, sample_robot_status, sample_robot_status_v2):
         """Test _update_mission with zero progress."""
@@ -447,10 +459,15 @@ class TestMissionTracking:
         assert result["state"] == MissionState.completed.value["state"]
         assert result["status"] == MissionState.completed.value["status"]
         assert result["completedPercent"] == 1
-        assert result["estimatedDurationSecs"] == 8915
+        # Wall time, not the vendor's active cleaning time of 8915 s
+        assert result["estimatedDurationSecs"] == 9803
         assert "startTs" in result
         assert "endTs" in result
-        assert "Report image URI" in result["data"]
+        assert result["data"]["report_image_url"] == sample_task_report["taskReportPngUri"]
+        assert result["data"]["active_cleaning_time_s"] == 8915
+        assert result["data"]["coverage_pct"] == 0.9169
+        assert result["data"]["water_used_l"] == 0
+        assert result["data"]["cleaning_mode_label"] == "Wash the floor"
 
     def test_complete_mission_low_completion(self, mission_tracking, sample_task_report):
         """Test _complete_mission with low completion percentage."""
@@ -476,7 +493,7 @@ class TestMissionTracking:
             "status": InOrbitMissionStatus.ok.value,
             "state": MissionState.in_progress.value["state"],
             "inProgress": True,
-            "data": {"Task state": TaskState.RUNNING.value},
+            "data": {"task_state": "cleaning"},
             "completedPercent": 0.5,
         }
 
@@ -486,108 +503,24 @@ class TestMissionTracking:
         assert result["state"] == MissionState.not_reported.value["state"]
         assert result["status"] == MissionState.not_reported.value["status"]
         assert result["data"]["Error"] == "Unable to find task report."
-        assert result["data"]["Task state"] is None
 
 
 class TestUtilityFunctions:
     """Test cases for utility functions."""
 
-    def test_filter_truthy(self):
-        """Test filter_truthy function."""
+    def test_filter_none(self):
+        """Test filter_none function."""
         data = {
             "valid": "value",
             "empty_string": "",
             "none": None,
             "zero": 0,
             "false": False,
-            "true": True,
-            "list": [1, 2, 3],
-            "empty_list": [],
         }
 
-        result = filter_truthy(data)
-
-        expected = {
+        assert filter_none(data) == {
             "valid": "value",
-            "true": True,
-            "list": [1, 2, 3],
+            "empty_string": "",
+            "zero": 0,
+            "false": False,
         }
-
-        assert result == expected
-
-    def test_gausium_date_to_inorbit_millis(self):
-        """Test gausium_date_to_inorbit_millis function."""
-        # Test with Z timezone
-        date_str = "2023-12-01T10:00:00Z"
-        result = gausium_date_to_inorbit_millis(date_str)
-
-        expected = int(datetime.fromisoformat("2023-12-01T10:00:00+00:00").timestamp() * 1000)
-        assert result == expected
-
-    def test_gausium_date_to_inorbit_millis_different_date(self):
-        """Test gausium_date_to_inorbit_millis with different date."""
-        date_str = "2023-06-15T14:30:45Z"
-        result = gausium_date_to_inorbit_millis(date_str)
-
-        expected = int(datetime.fromisoformat("2023-06-15T14:30:45+00:00").timestamp() * 1000)
-        assert result == expected
-
-
-class TestCleaningModeTranslation:
-    """Test cases for cleaning mode translation functionality."""
-
-    def test_translate_cleaning_mode_known_modes(self):
-        """Test translation of known cleaning modes."""
-        # Test various known cleaning modes
-        test_cases = [
-            ("尘推", "Dust mop"),
-            ("抛光", "Polish"),
-            ("快速尘推", "High-speed dust mop"),
-            ("深度抛光", "Deep polish"),
-            ("低速尘推", "Low-speed dust mop"),
-            ("结晶模式", "Crystallization mode"),
-            ("地毯清洁", "Carpet cleaning"),
-            ("静音推尘", "Slient dust mopping"),
-            ("喷雾消毒", "Disinfection spray"),
-            ("滚刷洗地", "Roller brush scrubbing"),
-            ("布刷尘推", "Cloth brush dust mopping"),
-            ("轻度清洁", "Light cleaning"),
-            ("中度清洁", "Middle cleaning"),
-            ("重度清洁", "Heavy cleaning"),
-            ("吸风清洁", "Suction cleaning"),
-            ("测试", "Test"),
-            ("扫地", "Sweep the floor"),
-            ("洗地", "Wash the floor"),
-            ("吸尘", "Vacuum"),
-        ]
-
-        for chinese_mode, expected_english in test_cases:
-            result = MissionTracking._translate_cleaning_mode(chinese_mode)
-            assert (
-                result == expected_english
-            ), f"Failed to translate '{chinese_mode}' to '{expected_english}'"
-
-    def test_translate_cleaning_mode_unknown_mode(self):
-        """Test translation of unknown cleaning mode."""
-
-        unknown_mode = "未知模式"
-        result = MissionTracking._translate_cleaning_mode(unknown_mode)
-
-        # Should return the original mode if not found
-        assert result == unknown_mode
-
-    def test_translate_cleaning_mode_with_underscores(self):
-        """Test translation of cleaning mode with underscores."""
-
-        # Test that underscores are removed before translation
-        mode_with_underscores = "尘_推"
-        result = MissionTracking._translate_cleaning_mode(mode_with_underscores)
-
-        # Should translate to "Dust mop" after removing underscore
-        assert result == "Dust mop"
-
-    def test_translate_cleaning_mode_empty_string(self):
-        """Test translation of empty cleaning mode."""
-
-        result = MissionTracking._translate_cleaning_mode("")
-        assert result == ""

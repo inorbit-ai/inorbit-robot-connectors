@@ -238,7 +238,10 @@ Sourced from `GET /openapi/v2alpha1/robots/{sn}/taskReports`.
 | `cleaning_mode` / `cleaning_mode_raw` | `cleaningMode` | see 5.1 |
 | `task_outcome` | derived | see 5.5 |
 | `task_end_status_raw` | `taskEndStatus` | raw int |
+| `task_instance_id` | `taskInstanceId` | correlates the completed report with the in-progress updates |
+| `task_progress` | `taskProgress` | published raw. `0` on every sample report, and the docs never define it or relate it to `completionPercentage`, so it is passed through rather than interpreted |
 | `map_name` | `subTasks[].mapName` | unique, comma-joined; falls back to the current map |
+| `map_<slug>_cleaned_area_m2` | `subTasks[]` | per-map breakdown, see 5.6 |
 | `report_image_url` | `taskReportPngUri` | none |
 | `polished_area_planned_m2` | `plannedPolishingAreaSquareMeter` | none |
 | `polished_area_m2` | `actualPolishingAreaSquareMeter` | none |
@@ -309,7 +312,40 @@ Expected effect in practice: all 20 sample reports carry
 `taskEndStatus: 1` at roughly 30 % coverage, so they stay `abandoned` but for a stated
 reason rather than by heuristic.
 
-### 5.6 `filter_truthy` must go
+### 5.6 Per-map breakdown, and why per-zone coverage is not filled
+
+The contract carries per-zone coverage as flat scalars riding alongside the mission
+fields (`zone_<slug>_planned_m2`, `zone_<slug>_actual_m2`, `zone_<slug>_pct`), so they
+stay KPI-definable. Gausium supplies part of that shape and not the rest.
+
+**Available and published.** `subTasks[]` breaks a task down per map, each entry carrying
+`mapId`, `mapName`, `actualCleaningAreaSquareMeter` and `taskId`. For a multi-floor task
+this is per-floor cleaned area. Published with the contract's grammar as
+`map_<slug>_cleaned_area_m2`, one scalar key per sub-task, where `<slug>` is the map name
+lowercased with each run of non-alphanumeric characters collapsed to `_` and leading and
+trailing `_` stripped. If two map names slug identically, later ones get a numeric
+suffix so no key is silently overwritten. On the sample report this yields a single
+`map_target_cleaned_area_m2`-shaped key at `659.965`.
+
+The dimension is named `map_`, not `zone_`, because a Gausium sub-task is a map or floor
+rather than a spatial subdivision within one. Reusing `zone_` would collide with the
+contract's meaning once true zones arrive.
+
+**Not available.** Per-map *planned* area has no field, so per-map coverage percentage
+cannot be computed and no `map_<slug>_pct` is published. No planned-area value is
+synthesized from the task total: that would be an invented number wherever a task spans
+more than one map, and adds nothing where it spans exactly one, since task-level
+`coverage_pct` already covers that case.
+
+**Zones proper.** `areaNameList` carries area *names* only, no per-area figures, and is
+`""` on every sample report. It is published raw so the dimension exists the moment the
+vendor populates it. Actual per-zone areas appear in no report field, and zone
+definitions come from the subareas endpoint, which returns `partitions: []` on the sample
+robot. So `zone_<slug>_*` stays unfilled for want of vendor data, not by choice: nothing
+in this spec blocks it, and the per-map keys above are the same shape, so filling zones
+later is an additional loop over a richer payload rather than a redesign.
+
+### 5.7 `filter_truthy` must go
 
 `mission.py` currently passes report data through `filter_truthy`, which drops any falsy
 value. Under canonical keys that silently deletes `interruptions_count: 0`,
@@ -351,7 +387,7 @@ that drops `None` only.
 | `POST /openapi/v1/map/subareas/get` | Returns `partitions: []`. Would be the `submit_task` area catalog once areas are defined |
 | Task Report Push and Incident Push webhooks | Planned as its own follow-up task, specified in section 11 |
 | Batch status (`status:batchGet`) | Only relevant to a fleet-connector refactor, which the `claude/gausium-fleet-connector-6de7f6` branch already implements |
-| Per-zone coverage (`zone_<slug>_*`) | The contract defers it to its own platform-side design. `area_names` is published raw so the dimension exists |
+| Per-zone coverage (`zone_<slug>_*`) | Blocked on vendor data, not deferred by choice. No report field carries per-zone areas and the subareas endpoint returns `partitions: []`. The per-map breakdown that *is* available is published, see 5.6 |
 
 ## 7. Config as code
 
@@ -384,7 +420,7 @@ Stacked PRs (gh-stack), based on `main`, each layer one scope. Paths are relativ
 | 1 | `gausium/housekeeping` | `src/robot/robot.py`, `src/connector.py`, `config/connector_model.py` | Delete both dead polls and their key-values (3.1, 6). `map_resolution` config replaces the module constant (4). No new published data |
 | 2 | `gausium/cleaning-mode-enum` | `src/mission.py` | Vendor-to-contract enum table and the `_raw` twin convention (5.1) |
 | 3 | `gausium/canonical-key-values` | `src/connector.py`, `tests/test_connector.py` | Key-value rewrite: contract keys, additional keys, `mission_status` derivation (3.2-3.4) |
-| 4 | `gausium/canonical-mission-data` | `src/mission.py` | Report `data` reshaped to canonical keys, `filter_truthy` replaced (5.2, 5.3, 5.6). No state-logic change |
+| 4 | `gausium/canonical-mission-data` | `src/mission.py` | Report `data` reshaped to canonical keys, per-map breakdown, `filter_truthy` replaced (5.2, 5.3, 5.6, 5.7). No state-logic change |
 | 5 | `gausium/task-end-status` | `src/mission.py` | `task_outcome` from `taskEndStatus` (5.5). Isolated because it is the only behaviour change, so it can be reverted alone |
 | 6 | `gausium/interruptions-count` | `src/mission.py` | Per-instance transition counter (5.4) |
 | 7 | `gausium/command-feedback` | `src/robot/robot_api.py`, `src/connector.py` | Command-state polling and real result codes (6) |
@@ -419,7 +455,7 @@ The captured payloads become fixtures: `B1_status_v1.json`, `B2_status_v2_S.json
 | 1 | Pose and `MapConfig` both read `map_resolution`; a non-default value moves published pose proportionally. Removed loops no longer start |
 | 2 | Every table entry maps to its enum; an unseen vendor value yields `other` with the raw value preserved |
 | 3 | The full key-value set from the sample status payloads, exact keys and values, including the 0-1 conversions and the seven generated consumable keys. `mission_status` precedence table, one case per row, including `IDLE` + `LOST` yielding `Idle` not `Error` |
-| 4 | Report `data` matches the canonical set for a sample report; a report with `water_used_l: 0` and `interruptions_count: 0` keeps both keys |
+| 4 | Report `data` matches the canonical set for a sample report; a report with `water_used_l: 0` and `interruptions_count: 0` keeps both keys. A two-sub-task report yields two `map_<slug>_cleaned_area_m2` keys; two maps slugging identically yield two distinct keys, not one overwritten |
 | 5 | One case per row of the `task_outcome` table, including the `-1`/absent fallback and the no-report path |
 | 6 | Counter increments only on `RUNNING -> PAUSED`, resets on a new `taskInstanceId` |
 | 7 | Terminal state reported as success and failure; timeout path does not hang the command handler |

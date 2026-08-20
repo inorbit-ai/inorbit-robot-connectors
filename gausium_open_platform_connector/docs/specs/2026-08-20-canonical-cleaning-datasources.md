@@ -106,6 +106,17 @@ Derivable from the same two payloads, published today only as opaque nested blob
 | `battery_cycles` | v1 `battery.cycleTimes` | count |
 | `battery_temp_c` | max of v1 `battery.temperature1..7` | Celsius assumed (26-27 at idle). Max is the alert-relevant figure |
 | `consumable_<part>_wear_pct` | v1/v2 `device.<part>.usedLife / .lifeSpan` | see below |
+| `spray_active` | v1 `device.spray.isRunning` | bool, see 3.6 |
+| `spray_water_level` | v1 `device.spray.waterLevel` | `-1` means not available, published as absent |
+| `vacuum_active` | v1 `device.vacuum.enabled` | bool |
+| `vacuum_level` | v2 `device.vacuum.level` | `-1` means not available, published as absent |
+| `filter_active` | v1 `device.filter.isRunning` | bool |
+| `scrubber_brush_active` | v1 `device.scrubberBrush.enabled` | bool |
+| `scrubber_brush_down` | v1 `device.scrubberBrush.ifPutDown` | bool |
+| `soft_squeegee_down` | v1 `device.softSqueegee.ifPutDown` | bool |
+| `rolling_squeegee_down` | v1 `device.rollingSqueegee.ifPutDown` | bool |
+| `side_brush_left_down` | v1 `device.leftSideBrush.ifPutDown` | bool |
+| `side_brush_right_down` | v1 `device.rightSideBrush.ifPutDown` | bool |
 | `executable_tasks` | v1 `executableTasks[]` | JSON list of `{id, name, map_name}` |
 | `nav_points` | v2 `navigationPoints.naviPoints[].naviPointName` | JSON list of names |
 | `work_modes` | v1/v2 `workModes[]` | JSON list of `{id, name, strength, type}` |
@@ -209,6 +220,39 @@ current behaviour of treating e-stop as a paused mission.
 `api_connected` (API reachability, deliberately distinct from `robot_online` which is
 vendor-reported robot reachability), `connector_version`, `display_name`, `model_family`,
 `model_type`, `software_version`.
+
+### 3.6 Active cleaning versus transit within `Mission`
+
+A robot in `Mission` may be scrubbing, or driving to a refill point, to a dock, or between
+areas. Distinguishing those is wanted, and the signals for it are in the status payload we
+already poll, at no extra request cost: the cleaning actuators. Scrubbing means brushes
+engaged and lowered, spray running, squeegee down and vacuum on. Transiting means the
+opposite. Supporting evidence lives in `nav_status`, `elevator_status` for inter-floor
+moves, and `executingTask.cleaningMileage` going flat while `speed_kmph` stays non-zero.
+
+That the vendor models this distinction at all is visible end-of-task: the report's
+`durationSeconds` is smaller than wall time, which is why 5.3 splits
+`active_cleaning_time_s` from `duration_s`.
+
+**Decision: publish the actuator flags now, derive nothing yet.** The eleven actuator keys
+in 3.3 are published as-is. No `cleaning_active` boolean and no additional
+`mission_status` value is introduced in this work, for two reasons:
+
+1. Every captured payload comes from an idle, docked robot, so every actuator flag reads
+   `false` or lifted. Which flags actually toggle, whether they vary by work mode (a
+   dust-mop task uses neither spray nor squeegee, so an actuator-based rule tuned on
+   scrubbing would read as "not cleaning" for the whole task), and how they behave during
+   an intra-task pause are all unverified. A rule written now would be a guess with a
+   plausible shape.
+2. Adding a `mission_status` value works against the homogeneous-mode-values aim in 3.4
+   unless every cleaning-robot connector adopts the same value at the same time. That is a
+   vertical-level decision, not this connector's to make unilaterally.
+
+**What unblocks it:** a status capture from a robot mid-task, ideally spanning a
+cleaning stretch, a refill or dock trip, and a pause. With the flags already flowing, the
+interim derivation can be a derived datasource in account config, needing no connector
+release, and it graduates into the connector once a rule survives contact with real
+mid-task data.
 
 ## 4. Pose
 
@@ -512,7 +556,7 @@ The captured payloads become fixtures: `B1_status_v1.json`, `B2_status_v2_S.json
 |---|---|
 | 1 | Pose and `MapConfig` both read `map_resolution`; a non-default value moves published pose proportionally. Removed loops no longer start |
 | 2 | Every table entry maps to its enum; an unseen vendor value yields `other` with the raw value preserved |
-| 3 | The full key-value set from the sample status payloads, exact keys and values, including the 0-1 conversions and the seven generated consumable keys. `mission_status` precedence table, one case per row, including `IDLE` + `LOST` yielding `Idle` not `Error`; plus that it is always emitted and always one of the five values, including on an empty or partial status payload |
+| 3 | The full key-value set from the sample status payloads, exact keys and values, including the 0-1 conversions and the seven generated consumable keys. `mission_status` precedence table, one case per row, including `IDLE` + `LOST` yielding `Idle` not `Error`; plus that it is always emitted and always one of the five values, including on an empty or partial status payload. Actuator flags pass through as booleans, and a `-1` `spray_water_level` or `vacuum_level` is absent rather than published as `-1` |
 | 4 | Report `data` matches the canonical set for a sample report; a report with `water_used_l: 0` and `interruptions_count: 0` keeps both keys. A two-sub-task report yields two `map_<slug>_cleaned_area_m2` keys; two maps slugging identically yield two distinct keys, not one overwritten |
 | 5 | One case per row of the `task_outcome` table, including the `-1`/absent fallback and the no-report path |
 | 6 | Counter increments only on `RUNNING -> PAUSED`, resets on a new `taskInstanceId` |

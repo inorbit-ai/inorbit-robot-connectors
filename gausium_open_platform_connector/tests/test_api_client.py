@@ -38,7 +38,7 @@ STATUS_V1 = {
             "battery": {"charging": False, "powerPercentage": 100},
             "localizationInfo": {
                 "localizationState": "LOST",
-                "map": {"id": "4fbbc4b3-138d-4923-b432-6c4d7ffd04da", "name": "target1534"},
+                "map": {"id": "map-1", "name": "floor_1"},
             },
         },
         {"serialNumber": SN_2, "taskState": "RUNNING", "online": True},
@@ -54,8 +54,8 @@ STATUS_V2 = {
             "localizationInfo": {
                 "localizationState": "LOST",
                 "map": {
-                    "id": "4fbbc4b3-138d-4923-b432-6c4d7ffd04da",
-                    "name": "target1534",
+                    "id": "map-1",
+                    "name": "floor_1",
                     "version": "maps/de3c27cf/versions/1ee75251",
                 },
             },
@@ -162,7 +162,7 @@ async def test_batch_status_v2_uses_get_with_json_body(
     result = await client.batch_status_v2([SN_1, SN_2])
 
     assert set(result) == {SN_1}
-    assert result[SN_1]["localizationInfo"]["map"]["name"] == "target1534"
+    assert result[SN_1]["localizationInfo"]["map"]["name"] == "floor_1"
 
 
 @pytest.mark.asyncio
@@ -184,7 +184,7 @@ async def test_get_robots_returns_raw_response(
         "robots": [
             {
                 "serialNumber": SN_1,
-                "displayName": "Target1534",
+                "displayName": "Robot Alpha",
                 "modelFamilyCode": "50",
                 "modelTypeCode": "Scrubber 50H",
                 "online": True,
@@ -222,19 +222,41 @@ async def test_get_task_reports_v2(client: GausiumApiClient, httpx_mock: HTTPXMo
 
 
 @pytest.mark.asyncio
+async def test_get_report_map_images(client: GausiumApiClient, httpx_mock: HTTPXMock) -> None:
+    images = [{"url": "https://example.com/0", "map_image_id": 0}]
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{BASE_URL}openapi-server/v1/api/task/report/map-images/query",
+        match_json={"robotSn": SN_1, "taskReportId": "report-1"},
+        json={"code": 0, "data": images, "msg": "SUCCESS"},
+    )
+
+    assert await client.get_report_map_images(SN_1, "report-1") == images
+
+
+@pytest.mark.asyncio
+async def test_get_report_map_images_failure_returns_none(
+    client: GausiumApiClient, httpx_mock: HTTPXMock
+) -> None:
+    httpx_mock.add_response(method="POST", status_code=500)
+
+    assert await client.get_report_map_images(SN_1, "report-1") is None
+
+
+@pytest.mark.asyncio
 async def test_get_map_image(client: GausiumApiClient, httpx_mock: HTTPXMock) -> None:
     download_uri = "https://blob.example.com/maps/map.png?sig=abc"
     httpx_mock.add_response(
         method="GET",
         url=httpx.URL(
             f"{BASE_URL}openapi/v2alpha1/robots/{SN_1}/map",
-            params={"mapId": "map-id", "mapName": "target1534", "mapVersion": "v1"},
+            params={"mapId": "map-id", "mapName": "floor_1", "mapVersion": "v1"},
         ),
         json={"downloadUri": download_uri},
     )
     httpx_mock.add_response(method="GET", url=download_uri, content=b"\x89PNG-bytes")
 
-    result = await client.get_map_image(SN_1, "map-id", "target1534", "v1")
+    result = await client.get_map_image(SN_1, "map-id", "floor_1", "v1")
 
     assert result == b"\x89PNG-bytes"
     # The pre-signed URI must be fetched without the Bearer header
@@ -306,7 +328,7 @@ async def test_create_nosite_task(client: GausiumApiClient, httpx_mock: HTTPXMoc
     )
 
     await client.create_nosite_task(
-        SN_1, "task", "map-id", "target1534", "area-1", "清洗", loop=True, loop_count=2
+        SN_1, "task", "map-id", "floor_1", "area-1", "清洗", loop=True, loop_count=2
     )
 
     request = httpx_mock.get_requests()[-1]
@@ -317,7 +339,7 @@ async def test_create_nosite_task(client: GausiumApiClient, httpx_mock: HTTPXMoc
             "cleaningMode": "清洗",
             "loop": "true",
             "loopCount": "2",
-            "mapName": "target1534",
+            "mapName": "floor_1",
             "startParam": {"mapId": "map-id", "areaId": "area-1"},
         },
     }

@@ -95,7 +95,7 @@ async def test_poll_status_ignores_unknown_serial_numbers(
 async def test_poll_robot_data_stops_on_short_page(client: AsyncMock, poller: DataPoller) -> None:
     client.get_robots.return_value = {
         "robots": [
-            {"serialNumber": SN_1, "displayName": "Target1534"},
+            {"serialNumber": SN_1, "displayName": "Robot Alpha"},
             {"serialNumber": "GS999-9999-999-9999", "displayName": "Other"},
         ]
     }
@@ -105,7 +105,7 @@ async def test_poll_robot_data_stops_on_short_page(client: AsyncMock, poller: Da
     client.get_robots.assert_awaited_once_with(page=1, page_size=ROBOTS_PAGE_SIZE)
     assert poller.get_state(SN_1).robot_data == {
         "serialNumber": SN_1,
-        "displayName": "Target1534",
+        "displayName": "Robot Alpha",
     }
     assert poller.get_state(SN_2).robot_data == {}
 
@@ -114,7 +114,7 @@ async def test_poll_robot_data_stops_on_short_page(client: AsyncMock, poller: Da
 async def test_poll_robot_data_pages_until_all_seen(client: AsyncMock, poller: DataPoller) -> None:
     full_page = [
         {"serialNumber": f"GS999-0000-000-{i:04d}"} for i in range(ROBOTS_PAGE_SIZE - 1)
-    ] + [{"serialNumber": SN_1, "displayName": "Target1534"}]
+    ] + [{"serialNumber": SN_1, "displayName": "Robot Alpha"}]
     second_page = [{"serialNumber": SN_2, "displayName": "Target1102"}] + [
         {"serialNumber": f"GS998-0000-000-{i:04d}"} for i in range(ROBOTS_PAGE_SIZE - 1)
     ]
@@ -126,18 +126,18 @@ async def test_poll_robot_data_pages_until_all_seen(client: AsyncMock, poller: D
         call(page=1, page_size=ROBOTS_PAGE_SIZE),
         call(page=2, page_size=ROBOTS_PAGE_SIZE),
     ]
-    assert poller.get_state(SN_1).robot_data["displayName"] == "Target1534"
+    assert poller.get_state(SN_1).robot_data["displayName"] == "Robot Alpha"
     assert poller.get_state(SN_2).robot_data["displayName"] == "Target1102"
 
 
 @pytest.mark.asyncio
 async def test_poll_robot_data_failure_keeps_cache(client: AsyncMock, poller: DataPoller) -> None:
     client.get_robots.side_effect = [
-        {"robots": [{"serialNumber": SN_1, "displayName": "Target1534"}]},
+        {"robots": [{"serialNumber": SN_1, "displayName": "Robot Alpha"}]},
         None,
     ]
     await poller.poll_robot_data_once()
 
     await poller.poll_robot_data_once()
 
-    assert poller.get_state(SN_1).robot_data["displayName"] == "Target1534"
+    assert poller.get_state(SN_1).robot_data["displayName"] == "Robot Alpha"

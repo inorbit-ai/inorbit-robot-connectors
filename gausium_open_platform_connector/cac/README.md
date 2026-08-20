@@ -29,7 +29,12 @@ inorbit apply -f footprint.yaml
 | File | Contents |
 |------|----------|
 | `actions.yaml` | UI actions for the connector's custom commands (submit task, task command, navigate) |
-| `data_sources.yaml` | Definitions for the key-values published per robot |
-| `mission_tracking.yaml` | Mission tracking from the `mission_tracking` event |
-| `status_definition.yaml` | Fleet Status rules (battery, API connectivity) |
+| `data_sources.yaml` | Definitions for the canonical key-values published per robot, including the `mission_status` datasource that platform-side Modes configuration maps |
+| `mission_tracking.yaml` | Mission tracking from the `mission_tracking` event, plus sample derived datasources over mission fields (cleaned area, coverage, efficiency) |
+| `status_definition.yaml` | Fleet Status rules (battery, tanks, API connectivity) |
 | `footprint.yaml` | Phantas robot footprint geometry |
+
+Percent key-values are published as 0-1, so their datasources carry `scale: 1` and
+StatusDefinition thresholds are fractions. Applying `status_definition.yaml` requires
+toggling "Display in Fleet Status" per status in Settings > Robot Data before the widget
+shows anything.

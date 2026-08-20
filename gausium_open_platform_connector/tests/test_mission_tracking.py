@@ -17,8 +17,10 @@ from gausium_open_platform_connector.src.mission import (
     MissionState,
     MissionTracker,
     TaskState,
-    filter_truthy,
-    gausium_date_to_inorbit_millis,
+    derive_task_outcome,
+    filter_none,
+    normalize_cleaning_mode,
+    to_inorbit_millis,
 )
 
 SN = "GS000-0000-000-0001"
@@ -26,6 +28,11 @@ SN = "GS000-0000-000-0001"
 
 @pytest.fixture()
 def fetch_reports() -> AsyncMock:
+    return AsyncMock(return_value=[])
+
+
+@pytest.fixture()
+def fetch_report_map_images() -> AsyncMock:
     return AsyncMock(return_value=[])
 
 
@@ -40,7 +47,7 @@ def spawned() -> list[asyncio.Task]:
 
 
 @pytest.fixture()
-def tracker(fetch_reports, publish, spawned) -> MissionTracker:
+def tracker(fetch_reports, fetch_report_map_images, publish, spawned) -> MissionTracker:
     def spawn_task(name: str, coro) -> asyncio.Task:
         task = asyncio.create_task(coro, name=name)
         spawned.append(task)
@@ -49,6 +56,7 @@ def tracker(fetch_reports, publish, spawned) -> MissionTracker:
     return MissionTracker(
         SN,
         fetch_reports=fetch_reports,
+        fetch_report_map_images=fetch_report_map_images,
         publish=publish,
         spawn_task=spawn_task,
         success_threshold=0.90,
@@ -76,7 +84,7 @@ def running_status() -> dict:
 
 @pytest.fixture()
 def running_status_v2() -> dict:
-    return {"currentTask": {"taskInstanceId": "task-123"}}
+    return {"currentTask": {"taskInstanceId": "task-123", "workMode": {"name": "__洗地"}}}
 
 
 @pytest.fixture()
@@ -92,21 +100,38 @@ def idle_status_v2() -> dict:
 @pytest.fixture()
 def task_report() -> dict:
     return {
-        "id": "9ef6801e-457f-45e5-bfce-46a44db05e4e",
+        "id": "report-1",
         "displayName": "clean areas 1 and 2",
         "operator": "user",
         "completionPercentage": 0.917,
         "durationSeconds": 8915,
         "plannedCleaningAreaSquareMeter": 967.26,
         "actualCleaningAreaSquareMeter": 886.918,
-        "efficiencySquareMeterPerHour": 358.15,
+        "efficiencySquareMeterPerHour": 999.99,
+        "plannedPolishingAreaSquareMeter": 0,
+        "actualPolishingAreaSquareMeter": 0,
         "waterConsumptionLiter": 0,
         "startBatteryPercentage": 99,
         "endBatteryPercentage": 49,
         "consumablesResidualPercentage": {"brush": 100, "filter": 100, "suctionBlade": 99.86},
         "taskInstanceId": "task-123",
         "cleaningMode": "洗地",
+        "taskEndStatus": 0,
         "taskReportPngUri": "https://example.com/report.png",
+        "subTasks": [
+            {
+                "mapId": "map-1",
+                "mapName": "Floor 1",
+                "actualCleaningAreaSquareMeter": 886.918,
+                "taskId": "task-def-9",
+            }
+        ],
+        "taskId": "task-def-9",
+        "planId": "",
+        "areaNameList": "",
+        "loopCount": 0,
+        "expectedLoopCount": 0,
+        "taskProgress": 0,
         "startTime": "2026-06-26T03:53:27Z",
         "endTime": "2026-06-26T06:36:50Z",
     }
@@ -135,12 +160,15 @@ async def test_in_progress_update_publishes_report(
         "completedPercent": 0.5,
         "estimatedDurationSecs": 600,
         "data": {
-            "Map name": "Floor 1",
-            "Task ID": "task-123",
-            "Task instance ID": "task-123",
-            "Task state": TaskState.RUNNING.value,
-            "Cleaning mileage": 100.5,
-            "Time elapsed [s]": 300,
+            "map_name": "Floor 1",
+            "task_id": "task-123",
+            "task_instance_id": "task-123",
+            "task_state": "cleaning",
+            "distance_m": 100.5,
+            "active_cleaning_time_s": 300,
+            "interruptions_count": 0,
+            "cleaning_mode": "scrub",
+            "cleaning_mode_raw": "__洗地",
         },
     }
 
@@ -173,6 +201,7 @@ async def test_completed_percent_is_monotonic(
     assert report["completedPercent"] == 0.5
     assert report["state"] == MissionState.paused.value["state"]
     assert report["status"] == MissionState.paused.value["status"]
+    assert report["data"]["task_state"] == "paused"
 
 
 @pytest.mark.asyncio
@@ -198,13 +227,47 @@ async def test_completion_with_successful_report(
     assert report["status"] == "OK"
     assert report["inProgress"] is False
     assert report["label"] == "clean areas 1 and 2"
-    assert report["completedPercent"] == 1
-    assert report["estimatedDurationSecs"] == 8915
-    assert report["startTs"] == gausium_date_to_inorbit_millis("2026-06-26T03:53:27Z")
-    assert report["endTs"] == gausium_date_to_inorbit_millis("2026-06-26T06:36:50Z")
-    assert report["data"]["Report image URI"] == "https://example.com/report.png"
-    assert report["data"]["Cleaning mode"] == "Wash the floor"
-    assert "Task state" not in report["data"]  # Reset (and filtered) when the mission ends
+    # The progress bar shows the covered fraction, not a forced 100%
+    assert report["completedPercent"] == 0.9169
+    # Wall time, not the vendor's active-cleaning durationSeconds
+    assert report["estimatedDurationSecs"] == 9803
+    assert report["startTs"] == to_inorbit_millis("2026-06-26T03:53:27Z")
+    assert report["endTs"] == to_inorbit_millis("2026-06-26T06:36:50Z")
+    assert report["data"] == {
+        "task_outcome": "completed",
+        "task_end_status_raw": 0,
+        "planned_area_m2": 967.26,
+        "cleaned_area_m2": 886.918,
+        "coverage_pct": 0.9169,  # Cleaned over planned, not the vendor completionPercentage
+        "duration_s": 9803,
+        "active_cleaning_time_s": 8915,
+        "efficiency_m2ph": 358.1,  # Computed from cleaned area and active time
+        "water_used_l": 0,  # Falsy values are kept, only None is filtered
+        "battery_start_pct": 99 / 100,
+        "battery_end_pct": 49 / 100,
+        "battery_used_pct": 50 / 100,
+        "interruptions_count": 0,
+        "cleaning_mode": "scrub",
+        "cleaning_mode_raw": "洗地",
+        "task_instance_id": "task-123",
+        "task_progress": 0,
+        "map_name": "Floor 1",
+        "floors_cleaned_count": 1,
+        "report_image_url": "https://example.com/report.png",
+        "polished_area_planned_m2": 0,
+        "polished_area_m2": 0,
+        "operator": "user",
+        "report_id": "report-1",
+        "task_id": "task-def-9",
+        "plan_id": "",
+        "area_names": "",
+        "loop_count": 0,
+        "expected_loop_count": 0,
+        "consumable_brush_pct": 100 / 100,
+        "consumable_filter_pct": 100 / 100,
+        "consumable_suction_blade_pct": 99.86 / 100,
+        "map_floor_1_cleaned_area_m2": 886.918,
+    }
 
 
 @pytest.mark.asyncio
@@ -221,7 +284,7 @@ async def test_completion_below_threshold_is_incomplete(
 ) -> None:
     running_status["executingTask"]["progress"] = 95
     tracker.update(running_status, running_status_v2)
-    task_report["completionPercentage"] = 0.5  # Below the 0.90 success threshold
+    task_report["actualCleaningAreaSquareMeter"] = 400  # Coverage below the 0.90 threshold
     fetch_reports.return_value = [task_report]
 
     await finish_mission(tracker, idle_status, idle_status_v2, spawned)
@@ -229,12 +292,84 @@ async def test_completion_below_threshold_is_incomplete(
     report = publish.call_args[0][0]
     assert report["state"] == MissionState.incomplete.value["state"]
     assert report["status"] == MissionState.incomplete.value["status"]
-    assert report["completedPercent"] == 1
+    assert report["completedPercent"] == report["data"]["coverage_pct"] == 0.4135
+    assert report["data"]["task_outcome"] == "incomplete"
     assert "Error" in report["data"]
 
 
 @pytest.mark.asyncio
-async def test_completion_with_low_progress_is_abandoned(
+@pytest.mark.parametrize(
+    ("end_status", "reason"),
+    [(1, "manual stop"), (2, "error"), (3, "startup failure")],
+)
+async def test_abnormal_end_is_abandoned_regardless_of_coverage(
+    tracker,
+    publish,
+    fetch_reports,
+    spawned,
+    running_status,
+    running_status_v2,
+    idle_status,
+    idle_status_v2,
+    task_report,
+    end_status,
+    reason,
+) -> None:
+    running_status["executingTask"]["progress"] = 95
+    tracker.update(running_status, running_status_v2)
+    task_report["taskEndStatus"] = end_status
+    fetch_reports.return_value = [task_report]
+
+    await finish_mission(tracker, idle_status, idle_status_v2, spawned)
+
+    report = publish.call_args[0][0]
+    assert report["state"] == MissionState.abandoned.value["state"]
+    assert report["data"]["task_outcome"] == "abandoned"
+    assert reason in report["data"]["Error"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("end_status", [-1, None], ids=["unknown", "absent"])
+async def test_unknown_end_status_falls_back_to_progress_heuristic(
+    tracker,
+    publish,
+    fetch_reports,
+    spawned,
+    running_status,
+    running_status_v2,
+    idle_status,
+    idle_status_v2,
+    task_report,
+    end_status,
+) -> None:
+    # Progress bar never got close to done, so the fallback abandons the mission
+    tracker.update(running_status, running_status_v2)
+    if end_status is None:
+        del task_report["taskEndStatus"]
+    else:
+        task_report["taskEndStatus"] = end_status
+    fetch_reports.return_value = [task_report]
+
+    await finish_mission(tracker, idle_status, idle_status_v2, spawned)
+
+    report = publish.call_args[0][0]
+    assert report["state"] == MissionState.abandoned.value["state"]
+    assert "task_outcome" not in report["data"]  # Omitted rather than guessed
+
+
+def test_derive_task_outcome_table() -> None:
+    assert derive_task_outcome(0, 0.95, 0.90) == "completed"
+    assert derive_task_outcome(0, 0.5, 0.90) == "incomplete"
+    assert derive_task_outcome(0, None, 0.90) == "completed"  # Take the robot at its word
+    assert derive_task_outcome(1, 0.99, 0.90) == "abandoned"
+    assert derive_task_outcome(2, 0.99, 0.90) == "abandoned"
+    assert derive_task_outcome(3, 0.99, 0.90) == "abandoned"
+    assert derive_task_outcome(-1, 0.99, 0.90) is None
+    assert derive_task_outcome(None, 0.99, 0.90) is None
+
+
+@pytest.mark.asyncio
+async def test_battery_used_withheld_when_charged_mid_task(
     tracker,
     publish,
     fetch_reports,
@@ -245,16 +380,172 @@ async def test_completion_with_low_progress_is_abandoned(
     idle_status_v2,
     task_report,
 ) -> None:
-    # Progress bar never got close to done
     tracker.update(running_status, running_status_v2)
+    task_report["startBatteryPercentage"] = 40
+    task_report["endBatteryPercentage"] = 90
     fetch_reports.return_value = [task_report]
 
     await finish_mission(tracker, idle_status, idle_status_v2, spawned)
 
+    data = publish.call_args[0][0]["data"]
+    assert data["battery_start_pct"] == 40 / 100
+    assert data["battery_end_pct"] == 90 / 100
+    assert "battery_used_pct" not in data
+
+
+@pytest.mark.asyncio
+async def test_coverage_heatmap_urls_joined_in_vendor_order(
+    tracker,
+    publish,
+    fetch_reports,
+    fetch_report_map_images,
+    spawned,
+    running_status,
+    running_status_v2,
+    idle_status,
+    idle_status_v2,
+    task_report,
+) -> None:
+    tracker.update(running_status, running_status_v2)
+    fetch_reports.return_value = [task_report]
+    fetch_report_map_images.return_value = [
+        {"url": "https://example.com/1", "map_image_id": 1},
+        {"url": "https://example.com/0", "map_image_id": 0},
+    ]
+
+    await finish_mission(tracker, idle_status, idle_status_v2, spawned)
+
+    fetch_report_map_images.assert_awaited_once_with("report-1")
+    data = publish.call_args[0][0]["data"]
+    assert data["coverage_heatmap_url"] == "https://example.com/0, https://example.com/1"
+
+
+@pytest.mark.asyncio
+async def test_no_map_images_yields_no_heatmap_key(
+    tracker,
+    publish,
+    fetch_reports,
+    fetch_report_map_images,
+    spawned,
+    running_status,
+    running_status_v2,
+    idle_status,
+    idle_status_v2,
+    task_report,
+) -> None:
+    tracker.update(running_status, running_status_v2)
+    fetch_reports.return_value = [task_report]
+    fetch_report_map_images.return_value = None  # API failure must not break completion
+
+    await finish_mission(tracker, idle_status, idle_status_v2, spawned)
+
+    assert "coverage_heatmap_url" not in publish.call_args[0][0]["data"]
+
+
+@pytest.mark.asyncio
+async def test_multi_map_report_breakdown(
+    tracker,
+    publish,
+    fetch_reports,
+    spawned,
+    running_status,
+    running_status_v2,
+    idle_status,
+    idle_status_v2,
+    task_report,
+) -> None:
+    tracker.update(running_status, running_status_v2)
+    task_report["subTasks"] = [
+        {"mapName": "Floor 1", "actualCleaningAreaSquareMeter": 100.0},
+        {"mapName": "Floor 2", "actualCleaningAreaSquareMeter": 200.0},
+        {"mapName": "Floor 2", "actualCleaningAreaSquareMeter": 50.0},  # Slug collision
+    ]
+    fetch_reports.return_value = [task_report]
+
+    await finish_mission(tracker, idle_status, idle_status_v2, spawned)
+
+    data = publish.call_args[0][0]["data"]
+    assert data["map_name"] == "Floor 1, Floor 2"
+    assert data["floors_cleaned_count"] == 3
+    assert data["map_floor_1_cleaned_area_m2"] == 100.0
+    assert data["map_floor_2_cleaned_area_m2"] == 200.0
+    assert data["map_floor_2_2_cleaned_area_m2"] == 50.0
+
+
+@pytest.mark.asyncio
+async def test_interruptions_counted_and_reset(
+    tracker, publish, spawned, running_status, running_status_v2
+) -> None:
+    tracker.update(running_status, running_status_v2)
+
+    paused_status = deepcopy(running_status)
+    paused_status["taskState"] = TaskState.PAUSED.value
+    tracker.update(paused_status, running_status_v2)
+    resumed_status = deepcopy(running_status)
+    resumed_status["executingTask"]["progress"] = 60
+    tracker.update(resumed_status, running_status_v2)
+    tracker.update(paused_status, running_status_v2)
+
+    assert publish.call_args[0][0]["data"]["interruptions_count"] == 2
+
+    # A new task instance starts the counter fresh
+    next_status = deepcopy(running_status)
+    next_status["executingTask"]["id"] = "task-456"
+    tracker.update(next_status, {"currentTask": {"taskInstanceId": "task-456"}})
+
+    assert publish.call_args[0][0]["data"]["interruptions_count"] == 0
+    for task in spawned:
+        task.cancel()
+    await asyncio.gather(*spawned, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_completed_report_carries_interruptions(
+    tracker,
+    publish,
+    fetch_reports,
+    spawned,
+    running_status,
+    running_status_v2,
+    idle_status,
+    idle_status_v2,
+    task_report,
+) -> None:
+    tracker.update(running_status, running_status_v2)
+    paused_status = deepcopy(running_status)
+    paused_status["taskState"] = TaskState.PAUSED.value
+    tracker.update(paused_status, running_status_v2)
+    fetch_reports.return_value = [task_report]
+
+    await finish_mission(tracker, idle_status, idle_status_v2, spawned)
+
+    assert publish.call_args[0][0]["data"]["interruptions_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_push_transport_epoch_millis_timestamps(
+    tracker,
+    publish,
+    fetch_reports,
+    spawned,
+    running_status,
+    running_status_v2,
+    idle_status,
+    idle_status_v2,
+    task_report,
+) -> None:
+    # The push callback sends epoch milliseconds instead of ISO 8601 strings
+    task_report["startTime"] = 1750912000000
+    task_report["endTime"] = 1750912060000
+    fetch_reports.return_value = [task_report]
+    tracker.update(running_status, running_status_v2)
+
+    await finish_mission(tracker, idle_status, idle_status_v2, spawned)
+
     report = publish.call_args[0][0]
-    assert report["state"] == MissionState.abandoned.value["state"]
-    assert report["status"] == MissionState.abandoned.value["status"]
-    assert report["completedPercent"] == 0.5
+    assert report["startTs"] == 1750912000000
+    assert report["endTs"] == 1750912060000
+    assert report["data"]["duration_s"] == 60
 
 
 @pytest.mark.asyncio
@@ -281,7 +572,7 @@ async def test_completion_report_not_found(
     assert report["state"] == MissionState.not_reported.value["state"]
     assert report["status"] == MissionState.not_reported.value["status"]
     assert report["inProgress"] is False
-    assert report["data"] == {"Error": "Unable to find task report.", "Task state": None}
+    assert report["data"] == {"Error": "Unable to find task report."}
 
 
 @pytest.mark.asyncio
@@ -362,14 +653,36 @@ async def test_shutdown_cancels_pending_waits(
     assert spawned[0].done()
 
 
-def test_filter_truthy() -> None:
+def test_filter_none() -> None:
     data = {"valid": "value", "empty": "", "none": None, "zero": 0, "false": False, "true": True}
-    assert filter_truthy(data) == {"valid": "value", "true": True}
+    assert filter_none(data) == {
+        "valid": "value",
+        "empty": "",
+        "zero": 0,
+        "false": False,
+        "true": True,
+    }
 
 
-def test_gausium_date_to_inorbit_millis() -> None:
+def test_to_inorbit_millis() -> None:
     expected = int(datetime.fromisoformat("2026-06-26T03:53:27+00:00").timestamp() * 1000)
-    assert gausium_date_to_inorbit_millis("2026-06-26T03:53:27Z") == expected
+    assert to_inorbit_millis("2026-06-26T03:53:27Z") == expected
+    assert to_inorbit_millis(1750912000000) == 1750912000000
+    assert to_inorbit_millis(None) is None
+    assert to_inorbit_millis("") is None
+
+
+def test_normalize_cleaning_mode() -> None:
+    assert normalize_cleaning_mode("__洗地") == "scrub"
+    assert normalize_cleaning_mode("洗地") == "scrub"
+    assert normalize_cleaning_mode("尘推") == "dust_mop"
+    assert normalize_cleaning_mode("抛光") == "polish"
+    assert normalize_cleaning_mode("吸尘") == "vacuum"
+    assert normalize_cleaning_mode("扫地") == "sweep"
+    assert normalize_cleaning_mode("喷雾消毒") == "disinfect"
+    # Intensity variants and unknowns are not guessed into a category
+    assert normalize_cleaning_mode("重度清洁") == "other"
+    assert normalize_cleaning_mode("未知模式") == "other"
 
 
 def test_translate_cleaning_mode() -> None:

@@ -21,10 +21,14 @@ framework.
 
 ## Features
 
-- Per-robot pose (map-referenced), odometry and key-values: battery, charging, task state,
-  vendor online flag, model and software info, plus the raw vendor status payload
-- Mission tracking: publishes a `mission_tracking` event per robot, enriched with the Gausium
-  task report once the task completes
+- Per-robot pose (map-referenced), odometry and key-values following the canonical
+  cleaning-vertical data contract: snake_case keys, SI units, percentages as 0-1, normalized
+  enums with `_raw` twins carrying the vendor value (battery, task state, tanks, actuators,
+  consumable wear, `mission_status` for platform-side modes, and more)
+- Mission tracking: publishes a `mission_tracking` event per robot with canonical mission
+  fields (coverage, cleaned area, efficiency, water use, battery use, interruptions,
+  `task_outcome` from the vendor end status), enriched with the Gausium task report and its
+  coverage map images once the task completes
 - On-demand robot maps: map images are fetched from the Gausium API and published when a robot
   reports a pose on an unknown map
 - Custom commands to submit cleaning tasks and control tasks and navigation (see
@@ -75,6 +79,7 @@ Top level (see [`config/fleet.example.yaml`](config/fleet.example.yaml)):
 | `client_id` | required | OAuth client ID |
 | `client_secret` | required | OAuth client secret |
 | `access_key_secret` | required | OAuth access key secret |
+| `map_resolution` | `0.05` | Map resolution in meters per pixel, used for both the pose conversion and the published map image |
 | `mission_success_percentage_threshold` | `0.9` | Cleaned-area ratio at which a mission is reported successful |
 
 Each `fleet` entry:
@@ -133,6 +138,13 @@ Version 2.0.0 is a rewrite as a fleet connector:
   See [`config/fleet.example.yaml`](config/fleet.example.yaml).
 - The `total_traveled_distance` and `total_operation_time` key-values were dropped: the
   upstream endpoint feeding them is broken and returned zeros.
+- Every published key name changed to the canonical cleaning-vertical contract (see
+  [`docs/specs/2026-08-20-canonical-cleaning-datasources.md`](docs/specs/2026-08-20-canonical-cleaning-datasources.md)):
+  the raw vendor status is no longer splatted into the key-values, `battery_percentage`
+  became `battery_pct` (0-1), and mission report data uses snake_case SI-unit fields.
+  Reapply [`cac/`](cac/README.md) and update any account config referencing the old keys,
+  including the tag-level derived datasource previously feeding robot modes, which is
+  replaced by the connector-published `mission_status` key.
 
 ## Contributing
 

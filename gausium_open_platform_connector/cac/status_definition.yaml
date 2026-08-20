@@ -4,33 +4,61 @@
 
 # StatusDefinitions link to DataSourceDefinitions by matching `id`.
 # After applying, enable "Display in Fleet Status" for each in Settings > Robot Data.
+# Percent datasources are 0-1, so thresholds are fractions.
 # Replace <ACCOUNT_ID> and <TAG_ID> with real values before applying.
 
-# --- Battery (published as 0-100) ---------------------------------------------
+# --- Battery -------------------------------------------------------------------------
 ---
 kind: StatusDefinition
 apiVersion: v0.1
 metadata:
-  id: battery-percentage
+  id: battery_pct
   scope: tag/<ACCOUNT_ID>/<TAG_ID>
 spec:
   rules:
     - function: BELOW
       params:
-        - 10
+        - 0.1
       status: ERROR
     - function: BELOW
       params:
-        - 20
+        - 0.2
       status: WARNING
 
-# --- API connectivity ----------------------------------------------------------
+# --- Tanks ---------------------------------------------------------------------------
+---
+kind: StatusDefinition
+apiVersion: v0.1
+metadata:
+  id: clean_water_tank_pct
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  rules:
+    - function: BELOW
+      params:
+        - 0.1
+      status: WARNING
+
+---
+kind: StatusDefinition
+apiVersion: v0.1
+metadata:
+  id: recovery_tank_pct
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  rules:
+    - function: ABOVE
+      params:
+        - 0.9
+      status: WARNING
+
+# --- API connectivity ------------------------------------------------------------------
 # False = the connector cannot reach the Gausium Open Platform API.
 ---
 kind: StatusDefinition
 apiVersion: v0.1
 metadata:
-  id: api-connected
+  id: api_connected
   scope: tag/<ACCOUNT_ID>/<TAG_ID>
 spec:
   rules:

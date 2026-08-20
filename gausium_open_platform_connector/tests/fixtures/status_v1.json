@@ -1,0 +1,62 @@
+{
+  "serialNumber": "GS000-0000-000-0001",
+  "name": "robots/GS000-0000-000-0001",
+  "position": {"latitude": 0, "longitude": 0, "angle": 0},
+  "taskState": "IDLE",
+  "online": true,
+  "speedKilometerPerHour": 0,
+  "battery": {
+    "charging": false,
+    "powerPercentage": 100,
+    "totalVoltage": 27450,
+    "current": 20,
+    "fullCapacity": 60252,
+    "soc": 100,
+    "soh": "HEALTHY",
+    "cycleTimes": 9,
+    "protectorStatus": ["CELL_HIGH_VOLTAGE_PROTECTION"],
+    "temperature1": 27,
+    "temperature2": 27,
+    "temperature3": 27,
+    "temperature4": 27,
+    "temperature5": 26,
+    "temperature6": 26,
+    "temperature7": 26,
+    "cellVoltage1": 3409,
+    "cellVoltage2": 3493
+  },
+  "emergencyStop": {"enabled": false},
+  "localizationInfo": {
+    "localizationState": "LOST",
+    "map": {"id": "map-1", "name": "floor_1"}
+  },
+  "navStatus": "NAVI_IDLE",
+  "currentElevatorStatus": "ELEVATOR_CONTROLLER_IDLE",
+  "latestReportTime": "1786912977060",
+  "executableTasks": [
+    {"id": "task-def-1", "name": "Daily_Clean", "map": {"id": "map-1", "name": "floor_1"}},
+    {"id": "task-def-2", "name": "Weekly_Clean", "map": {"id": "map-1", "name": "floor_1"}}
+  ],
+  "executingTask": {"id": "", "name": "", "progress": 0, "timeRemaining": 0, "cleaningMileage": 0},
+  "cleanModes": [{"name": "__尘推"}, {"name": "__洗地"}],
+  "device": {
+    "vacuum": {"enabled": false},
+    "cleanWaterTank": {"level": 60},
+    "recoveryWaterTank": {"level": 0},
+    "rollingBrush": {"lifeSpan": 300, "usedLife": 0},
+    "scrubberBrush": {"enabled": false, "ifPutDown": false, "lifeSpan": 300, "usedLife": 0},
+    "leftSideBrush": {"ifPutDown": false},
+    "rightSideBrush": {"ifPutDown": false},
+    "softSqueegee": {"ifPutDown": false, "lifeSpan": 250, "usedLife": 22.106201},
+    "rollingSqueegee": {"ifPutDown": false, "lifeSpan": 200, "usedLife": 0},
+    "ordinaryDustPush": {"lifeSpan": 20, "usedLife": 0},
+    "rollingDustPush": {"lifeSpan": 20, "usedLife": 0},
+    "filter": {"isRunning": false, "lifeSpan": 201, "usedLife": 0},
+    "spray": {"isRunning": false, "waterLevel": 0}
+  },
+  "workModes": [
+    {"id": "mode-1", "name": "__尘推", "strength": "custom", "type": "1"},
+    {"id": "mode-2", "name": "__洗地", "strength": "custom", "type": "1"},
+    {"id": "inspect", "name": "inspect", "strength": "middle", "type": "5"}
+  ]
+}

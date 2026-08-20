@@ -47,6 +47,7 @@ _ENDPOINT = EndpointMapper(
         ("openapi/v2alpha1/robots/-/taskReports", "task_reports_v2"),
         ("openapi/v2alpha1/robots/-/map", "map"),
         ("openapi/v2alpha1/robotCommand/tempTask:send", "temp_task"),
+        ("openapi-server/v1/api/task/report/map-images/query", "report_map_images"),
     ]
 )
 
@@ -224,6 +225,19 @@ class GausiumApiClient:
         if response is None:
             return None
         return response.json().get("robotTaskReports", [])
+
+    async def get_report_map_images(
+        self, serial_number: str, task_report_id: str
+    ) -> list[dict] | None:
+        """Fetch the coverage map image entries of one task report (RPC-style POST read)."""
+        response = await self._fetch(
+            "POST",
+            "openapi-server/v1/api/task/report/map-images/query",
+            json={"robotSn": serial_number, "taskReportId": task_report_id},
+        )
+        if response is None:
+            return None
+        return response.json().get("data", [])
 
     async def get_map_image(
         self, serial_number: str, map_id: str, map_name: str, map_version: str

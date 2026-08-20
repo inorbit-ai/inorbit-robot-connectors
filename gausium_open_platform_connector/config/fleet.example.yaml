@@ -30,6 +30,8 @@ connector_config:
   access_key_secret: your-access-key-secret
   # (optional) A mission is reported successful if the cleaned area ratio reaches this value
   # mission_success_percentage_threshold: 0.9
+  # (optional) Map resolution in meters per pixel, shared by pose conversion and map publishing
+  # map_resolution: 0.05
 
 # Fleet configuration - list of robots to manage
 # Each robot must specify:

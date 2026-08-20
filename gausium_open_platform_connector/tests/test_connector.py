@@ -25,15 +25,16 @@ from gausium_open_platform_connector.src.commands import (
 )
 from gausium_open_platform_connector.src.config.models import GausiumOpenPlatformConnectorConfig
 from gausium_open_platform_connector.src.connector import GausiumOpenPlatformConnector
+from gausium_open_platform_connector.src.key_values import build_key_values
 
 ROBOT_ID = "robot-alpha"
 SN_1 = "GS000-0000-000-0001"
 SN_2 = "GS000-0000-000-0002"
-MAP_ID = "4fbbc4b3-138d-4923-b432-6c4d7ffd04da"
+MAP_ID = "map-1"
 
 
 def sample_status() -> dict:
-    """Realistic v1 batch status entry (modeled on .prd samples, serial sanitized)."""
+    """Realistic v1 batch status entry (modeled on sanitized API captures)."""
     return {
         "serialNumber": SN_1,
         "name": f"robots/{SN_1}",
@@ -45,7 +46,7 @@ def sample_status() -> dict:
         "emergencyStop": {"enabled": False},
         "localizationInfo": {
             "localizationState": "SUCCEED",
-            "map": {"id": MAP_ID, "name": "target1534"},
+            "map": {"id": MAP_ID, "name": "floor_1"},
             "mapPosition": {"x": 100.0, "y": 200.0, "angle": 90.0},
         },
         "navStatus": "NAVI_IDLE",
@@ -60,7 +61,7 @@ def sample_status_v2() -> dict:
         "online": True,
         "localizationInfo": {
             "localizationState": "SUCCEED",
-            "map": {"id": MAP_ID, "name": "target1534", "version": "maps/x/versions/y"},
+            "map": {"id": MAP_ID, "name": "floor_1", "version": "maps/x/versions/y"},
         },
         "currentTask": {"taskInstanceId": ""},
     }
@@ -117,7 +118,7 @@ def robot_state(connector):
     state.status_v2 = sample_status_v2()
     state.robot_data = {
         "serialNumber": SN_1,
-        "displayName": "Target1534",
+        "displayName": "Robot Alpha",
         "modelFamilyCode": "S",
         "modelTypeCode": "Scrubber 50H",
         "softwareVersion": "5.10.2",
@@ -130,26 +131,25 @@ def robot_state(connector):
 
 
 @pytest.mark.asyncio
-async def test_key_values_parity_with_v1(connector, robot_state) -> None:
+async def test_canonical_key_values_are_published(connector, robot_state) -> None:
     await connector._execution_loop()
 
     connector.publish_robot_key_values.assert_called_once()
     args, kwargs = connector.publish_robot_key_values.call_args
     assert args == (ROBOT_ID,)
     assert kwargs == {
-        **robot_state.status,
-        "battery_percentage": 87,
-        "charging": False,
+        **build_key_values(robot_state.status, robot_state.status_v2),
         "api_connected": True,
         "connector_version": __version__,
-        "display_name": "Target1534",
+        "display_name": "Robot Alpha",
         "model_family": "S",
         "model_type": "Scrubber 50H",
         "software_version": "5.10.2",
     }
-    # Deliberately dropped in v2.0.0 (broken upstream endpoint)
-    assert "total_traveled_distance" not in kwargs
-    assert "total_operation_time" not in kwargs
+    # The raw vendor status is no longer splatted into the key-values
+    assert "taskState" not in kwargs
+    assert kwargs["task_state"] == "idle"
+    assert kwargs["battery_pct"] == 0.87
 
 
 @pytest.mark.asyncio
@@ -164,6 +164,32 @@ async def test_pose_is_converted_and_published(connector, robot_state) -> None:
         frame_id=MAP_ID,
     )
     connector.publish_robot_odometry.assert_called_once_with(ROBOT_ID, linear_speed=1.0)
+
+
+@pytest.mark.asyncio
+async def test_map_resolution_config_moves_pose(monkeypatch, config, session) -> None:
+    config.connector_config.map_resolution = 0.1
+
+    def fake_init(self, cfg, **kwargs):
+        self.config = cfg
+        self._logger = logging.getLogger("test-connector")
+        self._FleetConnector__fleet_lock = threading.RLock()
+        self._FleetConnector__background_tasks = []
+
+    monkeypatch.setattr(FleetConnector, "__init__", fake_init)
+    connector = GausiumOpenPlatformConnector(config)
+    connector._get_robot_session = Mock(return_value=session)
+    connector.publish_robot_pose = Mock()
+    connector.publish_robot_odometry = Mock()
+    connector.publish_robot_key_values = Mock()
+    state = connector._poller.get_state(SN_1)
+    state.status = sample_status()
+    state.status_v2 = sample_status_v2()
+
+    await connector._execution_loop()
+
+    assert connector.publish_robot_pose.call_args.kwargs["x"] == 100.0 * 0.1
+    assert connector.publish_robot_pose.call_args.kwargs["y"] == 200.0 * 0.1
 
 
 @pytest.mark.asyncio
@@ -239,7 +265,7 @@ async def test_submit_task_success(connector, robot_state) -> None:
         SN_1,
         task_name="InOrbit task",
         map_id=MAP_ID,
-        map_name="target1534",
+        map_name="floor_1",
         area_id="area-1",
         cleaning_mode="清洗",
         loop=False,
@@ -313,7 +339,7 @@ async def test_navigate_success(connector, robot_state) -> None:
     connector._client.send_remote_navigation_command.assert_awaited_once_with(
         SN_1,
         RemoteNavigationCommandType.CROSS_NAVIGATE,
-        {"startNavigationParameter": {"map": "target1534", "position": "Maintenance"}},
+        {"startNavigationParameter": {"map": "floor_1", "position": "Maintenance"}},
     )
     options["result_function"].assert_called_once_with(CommandResultCode.SUCCESS)
 
@@ -389,11 +415,11 @@ async def test_fetch_robot_map_flips_image(connector, robot_state) -> None:
     result = await connector.fetch_robot_map(ROBOT_ID, MAP_ID)
 
     connector._client.get_map_image.assert_awaited_once_with(
-        SN_1, MAP_ID, "target1534", "maps/x/versions/y"
+        SN_1, MAP_ID, "floor_1", "maps/x/versions/y"
     )
     assert result is not None
     assert result.map_id == MAP_ID
-    assert result.map_label == "target1534"
+    assert result.map_label == "floor_1"
     assert result.origin_x == 0.0
     assert result.origin_y == 0.0
     assert result.resolution == 0.05

@@ -4,7 +4,11 @@
 
 # Mission tracking driven by the `mission_tracking` event published by the connector.
 # The event carries: missionId, label, state, status, inProgress, completedPercent,
-# startTs, endTs, estimatedDurationSecs and a `data` object with task details.
+# startTs, endTs, estimatedDurationSecs and a `data` object with canonical
+# cleaning-vertical fields (planned_area_m2, cleaned_area_m2, coverage_pct, duration_s,
+# active_cleaning_time_s, efficiency_m2ph, water_used_l, battery_*_pct,
+# interruptions_count, cleaning_mode, task_outcome, per-map map_<slug>_cleaned_area_m2,
+# report_image_url, coverage_heatmap_url and more).
 # States emitted: in-progress, paused, completed, incomplete, abandoned,
 # not-reported, unknown. `status` is set by the connector, so no stateDefinitions
 # are needed here.
@@ -14,10 +18,11 @@
 kind: DataSourceDefinition
 apiVersion: v0.1
 metadata:
-  id: mission-tracking
+  id: mission_tracking
   scope: tag/<ACCOUNT_ID>/<TAG_ID>
 spec:
   label: Mission Tracking
+  type: json
   timeline: {}
   source:
     keyValue:
@@ -32,6 +37,60 @@ metadata:
 spec:
   processingType:
     - api
+  autoClosePreviousMission: true
   attributes:
     mission_tracking:
       - type: missionApi
+
+# --- Mission-field datasources -------------------------------------------------------
+# The mission `data` fields are scalars, so any of them can be turned into a
+# KPI-definable datasource with a derived transform. Three samples below; copy the
+# pattern for other fields (water_used_l, battery_used_pct, interruptions_count, ...).
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: cleaned_area_m2
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Cleaned Area
+  unit: m2
+  timeline:
+    fieldType: number
+  source:
+    derived:
+      transform: |
+        getValue("mission_tracking").data.cleaned_area_m2
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: coverage_pct
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Coverage
+  unit: "%"
+  scale: 1
+  timeline:
+    fieldType: number
+  source:
+    derived:
+      transform: |
+        getValue("mission_tracking").data.coverage_pct
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: efficiency_m2ph
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Cleaning Efficiency
+  unit: m2/h
+  timeline:
+    fieldType: number
+  source:
+    derived:
+      transform: |
+        getValue("mission_tracking").data.efficiency_m2ph

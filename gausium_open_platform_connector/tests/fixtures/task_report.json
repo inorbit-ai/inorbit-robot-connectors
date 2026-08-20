@@ -1,0 +1,39 @@
+{
+  "id": "report-1",
+  "displayName": "Daily_Clean",
+  "robot": "Robot 1",
+  "robotSerialNumber": "GS000-0000-000-0001",
+  "operator": "user",
+  "completionPercentage": 0.3,
+  "durationSeconds": 2904,
+  "areaNameList": "",
+  "plannedCleaningAreaSquareMeter": 2196.568,
+  "actualCleaningAreaSquareMeter": 659.965,
+  "efficiencySquareMeterPerHour": 870.182,
+  "plannedPolishingAreaSquareMeter": 0,
+  "actualPolishingAreaSquareMeter": 0,
+  "waterConsumptionLiter": 14.611,
+  "startBatteryPercentage": 100,
+  "endBatteryPercentage": 78,
+  "consumablesResidualPercentage": {"brush": 100, "filter": 100, "suctionBlade": 91.18},
+  "taskInstanceId": "task-instance-1",
+  "cleaningMode": "洗地",
+  "taskEndStatus": 1,
+  "taskReportPngUri": "https://cloud.example.com/report/png/report-1",
+  "subTasks": [
+    {
+      "mapId": "map-1",
+      "mapName": "floor_1",
+      "actualCleaningAreaSquareMeter": 659.965,
+      "taskId": "task-def-1"
+    }
+  ],
+  "taskId": "task-def-1",
+  "planId": "",
+  "planRunningTime": 7321,
+  "loopCount": 0,
+  "taskProgress": 0,
+  "expectedLoopCount": 0,
+  "startTime": "2026-08-16T11:25:13Z",
+  "endTime": "2026-08-16T12:14:14Z"
+}

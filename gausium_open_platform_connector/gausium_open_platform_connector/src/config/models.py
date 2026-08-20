@@ -39,6 +39,8 @@ class GausiumOpenPlatformConfig(ConnectorSpecificConfig):
         client_secret (str): OAuth client secret
         access_key_secret (str): OAuth open access key
         api_timeout (float): Timeout for API requests in seconds
+        map_resolution (float): Map resolution in meters per pixel, shared by the pose
+            conversion and the published map image so the two cannot drift
         mission_success_percentage_threshold (float): Cleaned area ratio above which a
             finished mission is reported as successful
     """
@@ -50,6 +52,7 @@ class GausiumOpenPlatformConfig(ConnectorSpecificConfig):
     client_secret: str
     access_key_secret: str
     api_timeout: float = 10.0
+    map_resolution: float = Field(default=0.05, gt=0.0)
     mission_success_percentage_threshold: float = Field(
         default=DEFAULT_MISSION_SUCCESS_PERCENTAGE_THRESHOLD, ge=0.0, le=1.0
     )

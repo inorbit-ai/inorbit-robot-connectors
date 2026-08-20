@@ -31,10 +31,8 @@ from gausium_open_platform_connector.src.commands import (
     RemoteTaskCommandType,
 )
 from gausium_open_platform_connector.src.config.models import GausiumOpenPlatformConnectorConfig
+from gausium_open_platform_connector.src.key_values import build_key_values
 from gausium_open_platform_connector.src.mission import MissionTracker
-
-# Poses arrive in map pixels; convert to meters before publishing
-MAP_RESOLUTION = 0.05  # meters per pixel
 
 ROBOT_DATA_POLL_INTERVAL_SECS = 60.0
 
@@ -69,12 +67,15 @@ class GausiumOpenPlatformConnector(FleetConnector):
             access_key_secret=connector_config.access_key_secret,
             timeout=connector_config.api_timeout,
         )
+        # Poses arrive in map pixels; convert to meters before publishing
+        self._map_resolution = connector_config.map_resolution
         self._sn_by_robot_id = {robot.robot_id: robot.serial_number for robot in config.fleet}
         self._poller = DataPoller(self._client, list(self._sn_by_robot_id.values()))
         self._trackers = {
             robot_id: MissionTracker(
                 serial_number,
                 fetch_reports=partial(self._client.get_task_reports_v2, serial_number),
+                fetch_report_map_images=partial(self._client.get_report_map_images, serial_number),
                 publish=partial(self._publish_mission_tracking, robot_id),
                 spawn_task=self._spawn_logged_task,
                 success_threshold=connector_config.mission_success_percentage_threshold,
@@ -169,8 +170,8 @@ class GausiumOpenPlatformConnector(FleetConnector):
         if x is not None and y is not None and angle is not None:
             self.publish_robot_pose(
                 robot_id,
-                x=x * MAP_RESOLUTION,
-                y=y * MAP_RESOLUTION,
+                x=x * self._map_resolution,
+                y=y * self._map_resolution,
                 yaw=math.radians(angle),
                 frame_id=localization_info.get("map", {}).get("id") or "map",
             )
@@ -182,9 +183,7 @@ class GausiumOpenPlatformConnector(FleetConnector):
         self._trackers[robot_id].update(status, state.status_v2)
 
         key_values = {
-            **status,
-            "battery_percentage": status.get("battery", {}).get("powerPercentage"),
-            "charging": status.get("battery", {}).get("charging"),
+            **build_key_values(status, state.status_v2),
             "api_connected": state.api_connected,
             "connector_version": __version__,
             "display_name": state.robot_data.get("displayName", ""),
@@ -236,7 +235,7 @@ class GausiumOpenPlatformConnector(FleetConnector):
             map_label=map_name,
             origin_x=0.0,
             origin_y=0.0,
-            resolution=MAP_RESOLUTION,
+            resolution=self._map_resolution,
         )
 
     @override

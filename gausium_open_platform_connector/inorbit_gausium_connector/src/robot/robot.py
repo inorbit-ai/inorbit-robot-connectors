@@ -31,9 +31,7 @@ class Robot:
         self._stop_event = asyncio.Event()
         self._robot_status: dict = {}
         self._robot_status_v2: dict = {}
-        self._task_reports: dict = {}
         self._robot_data: dict = {}
-        self._robot_details: dict = {}
         self._default_update_freq = default_update_freq
         self._running_tasks: list[asyncio.Task] = []
 
@@ -46,12 +44,7 @@ class Robot:
         self._run_in_loop(self._update_robot_status_v2)
 
         # Update non realtime data at a lower frequency (every minute)
-        every_minute = 1 / 60
-        self._run_in_loop(self._update_robot_data, frequency=every_minute)
-        self._run_in_loop(self._update_robot_details, frequency=every_minute)
-
-        # Start task reports polling at a lower frequency (every 5 seconds)
-        self._run_in_loop(self._update_task_reports, frequency=0.2)
+        self._run_in_loop(self._update_robot_data, frequency=1 / 60)
 
         self.logger.debug(f"Started {len(self._running_tasks)} polling tasks")
 
@@ -105,15 +98,6 @@ class Robot:
             self.logger.error(f"Error fetching robot status: {e}")
             # Keep the last known status on error
 
-    async def _update_task_reports(self) -> None:
-        """Fetch task reports from the API."""
-        try:
-            self._task_reports = await self._robot_api.get_task_reports(page=1, page_size=2)
-            self.logger.debug("Task reports updated successfully")
-        except Exception as e:
-            self.logger.error(f"Error fetching task reports: {e}")
-            # Keep the last known reports on error
-
     async def _update_robot_data(self) -> None:
         """Fetch robot-inherent data from the robot list API."""
         try:
@@ -134,15 +118,6 @@ class Robot:
             self.logger.error(f"Error fetching robot data: {e}")
             # Keep the last known data on error
 
-    async def _update_robot_details(self) -> None:
-        """Fetch other robot details from the API."""
-        try:
-            self._robot_details = (await self._robot_api.get_robot_details()).get("data", {})
-            self.logger.debug("Robot details updated successfully")
-        except Exception as e:
-            self.logger.error(f"Error fetching robot details: {e}")
-            # Keep the last known details on error
-
     @property
     def status(self) -> dict:
         """Return the latest robot status"""
@@ -154,11 +129,6 @@ class Robot:
         return self._robot_status_v2
 
     @property
-    def task_reports(self) -> dict:
-        """Return the latest task reports"""
-        return self._task_reports
-
-    @property
     def api_connected(self) -> bool:
         """Return whether the API connection is healthy.
         This is defined by whether the last API call succeeded, regardless of its status code"""
@@ -168,11 +138,6 @@ class Robot:
     def robot_data(self) -> dict:
         """Return the latest robot data"""
         return self._robot_data
-
-    @property
-    def robot_details(self) -> dict:
-        """Return the latest robot details"""
-        return self._robot_details
 
     def _run_in_loop(self, coro: Coroutine, frequency: float | None = None) -> None:
         """Run a coroutine in a loop at a specified frequency. If no frequency is

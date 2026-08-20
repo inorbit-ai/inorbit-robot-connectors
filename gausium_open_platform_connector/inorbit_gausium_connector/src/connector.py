@@ -26,9 +26,6 @@ from .robot import RemoteTaskCommandType
 from .robot import RobotAPI
 from .robot.robot import Robot
 
-# Pose is received in pixels. It must be coverted to meters before publishing to inorbit
-MAP_RESOLUTION = 0.05  # meters per pixel
-
 
 # InOrbit custom command names
 class CustomCommands(str, Enum):
@@ -201,7 +198,8 @@ class PhantasConnector(Connector):
                         map_label=map_name,
                         origin_x=0.0,
                         origin_y=0.0,
-                        resolution=MAP_RESOLUTION,  # Use the same resolution as pose conversion
+                        # Use the same resolution as pose conversion
+                        resolution=self.config.connector_config.map_resolution,
                     )
 
                     self._logger.info(
@@ -272,10 +270,11 @@ class PhantasConnector(Connector):
         # Note: lost robots publish a mapId but no x and y coordinates
         # x, y and yaw are required for pose publishing
         if x is not None and y is not None and angle is not None:
+            map_resolution = self.config.connector_config.map_resolution
             pose_data = {
                 "frame_id": frame_id,
-                "x": x * MAP_RESOLUTION,
-                "y": y * MAP_RESOLUTION,
+                "x": x * map_resolution,
+                "y": y * map_resolution,
                 "yaw": math.radians(angle),
             }
             self.publish_pose(**pose_data)
@@ -301,10 +300,6 @@ class PhantasConnector(Connector):
             "model_family": self.robot.robot_data.get("modelFamilyCode", ""),
             "model_type": self.robot.robot_data.get("modelTypeCode", ""),
             "software_version": self.robot.robot_data.get("softwareVersion", ""),
-            # Convert ft to m. This is the only data expressed in imperial units. Others do
-            # not need conversion.
-            "total_traveled_distance": self.robot.robot_details.get("totalMileage", 0.0) * 0.3048,
-            "total_operation_time": self.robot.robot_details.get("totalDuration", 0.0),  # Seconds
         }
         self._logger.debug(f"Publishing key values: {key_values}")
         self._robot_session.publish_key_values(key_values)

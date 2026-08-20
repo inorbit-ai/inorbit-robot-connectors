@@ -1,0 +1,152 @@
+{
+  "serialNumber": "GS000-0000-000-0000",
+  "taskState": "IDLE",
+  "online": true,
+  "speedKilometerPerHour": 0,
+  "battery": {
+    "charging": false,
+    "powerPercentage": 100,
+    "chargerCurrent": 0.02,
+    "totalVoltage": 27450,
+    "current": 20,
+    "fullCapacity": 60252,
+    "soc": 100,
+    "soh": "HEALTHY",
+    "cycleTimes": 9,
+    "protectorStatus": [
+      "CELL_HIGH_VOLTAGE_PROTECTION"
+    ],
+    "temperature1": 27,
+    "temperature2": 27,
+    "temperature3": 27,
+    "temperature4": 27,
+    "temperature5": 26,
+    "temperature6": 26,
+    "temperature7": 26,
+    "cellVoltage1": 3409,
+    "cellVoltage2": 3493,
+    "cellVoltage3": 3451,
+    "cellVoltage4": 3457,
+    "cellVoltage5": 3497,
+    "cellVoltage6": 3497,
+    "cellVoltage7": 3402
+  },
+  "emergencyStop": {
+    "enabled": false
+  },
+  "localizationInfo": {
+    "localizationState": "LOST",
+    "map": {
+      "id": "4fbbc4b3-138d-4923-b432-6c4d7ffd04da",
+      "name": "map1",
+      "version": "maps/de3c27cf-6e71-11f1-9a0d-7533782aab4f/versions/1ee75251-996c-11f1-ac47-ab00d36c087e"
+    }
+  },
+  "cleanModes": [
+    {
+      "name": "__尘推"
+    },
+    {
+      "name": "__洗地"
+    }
+  ],
+  "supportSite": true,
+  "navigationPoints": {
+    "naviPoints": [
+      {
+        "naviPointName": "Maintenance",
+        "navPointGridX": 1811,
+        "navPointGridY": 1803
+      }
+    ]
+  },
+  "workModes": [
+    {
+      "id": "ee678a00028040f5a4cd3421168b7bb3",
+      "name": "__尘推",
+      "strength": "custom",
+      "type": "1"
+    },
+    {
+      "id": "43e87701a9a64e6cac2dff5e63ec0d28",
+      "name": "__洗地",
+      "strength": "custom",
+      "type": "1"
+    },
+    {
+      "id": "inspect",
+      "name": "inspect",
+      "strength": "middle",
+      "type": "5"
+    }
+  ],
+  "currentTask": {
+    "workMode": {
+      "id": "",
+      "name": "",
+      "type": 0,
+      "subType": "",
+      "strength": ""
+    },
+    "taskInstanceId": "",
+    "manualControlling": false
+  },
+  "device": {
+    "cleanWaterTank": {
+      "level": 60
+    },
+    "recoveryWaterTank": {
+      "level": 0
+    },
+    "rollingBrush": {
+      "lifeSpan": 300,
+      "usedLife": 0
+    },
+    "scrubberBrush": {
+      "enabled": false,
+      "ifPutDown": false,
+      "lifeSpan": 300,
+      "usedLife": 0
+    },
+    "leftSideBrush": {
+      "ifPutDown": false
+    },
+    "rightSideBrush": {
+      "ifPutDown": false
+    },
+    "softSqueegee": {
+      "ifPutDown": false,
+      "lifeSpan": 250,
+      "usedLife": 22.106201
+    },
+    "rollingSqueegee": {
+      "ifPutDown": false,
+      "lifeSpan": 200,
+      "usedLife": 0
+    },
+    "ordinaryDustPush": {
+      "lifeSpan": 20,
+      "usedLife": 0
+    },
+    "rollingDustPush": {
+      "lifeSpan": 20,
+      "usedLife": 0
+    },
+    "filter": {
+      "isRunning": false,
+      "lifeSpan": 201,
+      "usedLife": 0
+    },
+    "spray": {
+      "isRunning": false,
+      "waterLevel": 0
+    },
+    "vacuum": {
+      "enabled": false,
+      "level": 0
+    }
+  },
+  "navStatus": "NAVI_IDLE",
+  "currentElevatorStatus": "ELEVATOR_CONTROLLER_IDLE",
+  "latestReportTime": "1786912977060"
+}

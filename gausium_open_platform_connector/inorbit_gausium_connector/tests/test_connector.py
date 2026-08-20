@@ -307,3 +307,26 @@ async def test_execution_loop_mirrors_vendor_offline_into_robot_status(
     await connector._execution_loop()
     connector._robot_session._send_robot_status.assert_called_with(online=True)
     assert connector._robot_session.publish_key_values.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_pose_scales_with_map_resolution(connector: PhantasConnector, status_v1):
+    connector.config.connector_config.map_resolution = 0.1
+    status_v1["localizationInfo"]["mapPosition"] = {"x": 10, "y": 20, "angle": 0}
+    connector.robot.status = status_v1
+    connector.robot.status_v2 = {}
+    connector.publish_pose = Mock()
+
+    await connector._execution_loop()
+
+    assert connector.publish_pose.call_args.kwargs["x"] == 1.0
+    assert connector.publish_pose.call_args.kwargs["y"] == 2.0
+
+
+def test_dead_polling_loops_are_gone():
+    from inorbit_gausium_connector.src.robot.robot import Robot
+
+    assert not hasattr(Robot, "_update_task_reports")
+    assert not hasattr(Robot, "_update_robot_details")
+    assert not hasattr(Robot, "task_reports")
+    assert not hasattr(Robot, "robot_details")

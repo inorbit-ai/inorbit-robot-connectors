@@ -58,6 +58,26 @@ Taken from the contract, restated because every table below depends on them:
   normalize to `"other"` while the raw key still shows exactly what the robot said.
   Numeric fields get no `_raw` twin.
 - Mission-report fields are scalars, so they are KPI-definable with no platform changes.
+- Numeric rounding follows the shipped convention: `coverage_pct` to 4 decimals,
+  `efficiency_m2ph` to 1, second-valued fields to whole seconds.
+
+### Alignment with the reference implementation
+
+Another cleaning-robot connector has already implemented this contract; it is called the
+reference implementation throughout this spec. **Where both connectors publish the same
+field, this spec follows the reference implementation's version**, including choices
+that look arbitrary in isolation: key names, value vocabularies, how a quantity is
+computed, join separators, and when to omit a field rather than guess it. A second dialect
+of the same contract defeats the point of having one.
+
+The alignment applies to the published surface, not the plumbing. The vendor field a value
+comes from and the arithmetic needed to reach it are necessarily Gausium-specific, and a
+field one OEM cannot supply stays a declared per-OEM gap.
+
+Divergences that survive, each with a reason stated where it appears: `interruptions_count`
+is a connector-side counter here because no Gausium field carries it (5.4), the live
+in-progress data carries `distance_m`, which has no counterpart there (5.2), and Gausium
+cannot publish cleaned area mid-run, only a progress percentage.
 
 ## 3. Live key-values
 
@@ -79,7 +99,8 @@ and v2 S status (`GET /openapi/v2alpha1/s/robots/{sn}/status`), both already pol
 |---|---|---|
 | `battery_pct` | v1 `battery.powerPercentage` | / 100 |
 | `charging` | v1 `battery.charging` | none |
-| `task_state` | v1 `taskState` | raw vendor enum (`IDLE`, `RUNNING`, `PAUSED`, `OTHER`) |
+| `task_state` | v1 `taskState` | normalized to the contract enum `idle` / `cleaning` / `paused` / `unknown`, as the reference implementation does. `IDLE` to `idle`, `RUNNING` to `cleaning`, `PAUSED` to `paused`, `OTHER` and anything unrecognized to `unknown` |
+| `task_state_raw` | v1 `taskState` | the untouched vendor string, per the `_raw` convention |
 | `robot_online` | v1 `online` | none |
 | `current_map_name` | v1 `localizationInfo.map.name` | none |
 | `clean_water_tank_pct` | v1 `device.cleanWaterTank.level` | / 100 |
@@ -151,22 +172,33 @@ unchanged across OEMs instead of each account re-bucketing a different set of ve
 strings. This is a convention to converge on, not a platform constraint, and it is the
 reason this connector derives the value itself rather than shipping raw vendor states.
 
-**The key.** `mission_status`, a string key-value, published on every execution loop tick.
-This connector always emits it and always emits one of the five values below: never
-absent, never null, never a vendor string. The derivation has a total fallback (`Idle`) by
-construction, so there is no input that produces a gap or a surprise value.
+**The key.** `mission_status`, a string key-value, published on every execution loop tick
+where the vendor status is usable. The four values and their precedence match what the
+reference implementation ships, so the two OEMs share one Modes configuration:
 
 | Order | Value | Condition |
 |---|---|---|
 | 1 | `Error` | v1 `emergencyStop.enabled` |
-| 2 | `Paused` | `taskState == PAUSED` |
-| 3 | `Mission` | `taskState in (RUNNING, OTHER)` or v2 `currentTask.taskInstanceId` non-empty |
-| 4 | `Charging` | v1 `battery.charging` |
-| 5 | `Idle` | otherwise |
+| 2 | `Mission` | `taskState in (RUNNING, PAUSED, OTHER)` or v2 `currentTask.taskInstanceId` non-empty |
+| 3 | `Charging` | v1 `battery.charging` |
+| 4 | `Idle` | `taskState == IDLE` |
 
-First match wins. `Mission` outranks `Charging` per the contract. `Paused` is adopted
-because Gausium distinguishes it. Capitalization is as written, since the values are
-matched as strings on the platform side.
+First match wins. `Mission` outranks `Charging` per the contract. Capitalization is as
+written, since the values are matched as strings on the platform side.
+
+**No `Paused` value, even though Gausium reports one.** The contract makes `Paused`
+optional and defaults a paused task to `Mission`, and the shipped reference derivation has four
+values. Emitting a fifth that only one OEM produces would force per-OEM Modes
+configuration, which is the thing 3.4 exists to avoid. Nothing is lost: a paused task is
+visible as `task_state: paused`, which is canonical and normalized identically across both
+connectors.
+
+**Omitted rather than guessed when the state is unknown.** If the status payload is
+missing or `taskState` is absent, the key is not published, so the cloud retains the last
+known mode instead of being told the robot is `Idle`. This matches the reference
+implementation, which skips publication while its own run state is absent or offline. It also composes with the existing
+behaviour of publishing nothing at all while the vendor reports the robot offline. When
+`taskState` is present, one of the four values always results.
 
 Any change to this vocabulary should be made across cleaning-robot connectors together
 rather than here alone, or the homogeneity that motivates it is lost.
@@ -302,18 +334,33 @@ The rule is: map only unambiguous modes. Intensity variants (`轻度清洁`, `�
 value is always preserved in `cleaning_mode_raw`, so nothing is lost and a mis-mapping is
 debuggable. The observed value on the sample robot is `洗地` -> `scrub`.
 
+This matches how the reference implementation handles the same field: map only what the
+evidence supports, fall
+back to `other`, and always ship the vendor value in `cleaning_mode_raw`. Note that
+`cleaning_mode_raw` is vendor-native by definition, so it is a Chinese string here and an
+integer there.
+
 ### 5.2 In-progress report `data`
+
+Keys shared with the completed report carry the same meaning, so one KPI reads both the
+live and the final value of a mission.
 
 | Key | Source |
 |---|---|
 | `map_name` | v1 `localizationInfo.map.name` |
 | `task_id` | v1 `executingTask.id` |
 | `task_instance_id` | v2 `currentTask.taskInstanceId` |
-| `task_state` | v1 `taskState` |
-| `distance_m` | v1 `executingTask.cleaningMileage` (unit undocumented, assumed metres) |
-| `time_elapsed_s` | v1 `executingTask.timeRemaining` (empirically elapsed, not remaining) |
+| `task_state` | v1 `taskState`, normalized as in 3.2 |
+| `distance_m` | v1 `executingTask.cleaningMileage` (unit undocumented, assumed metres). No counterpart in the reference implementation |
+| `active_cleaning_time_s` | v1 `executingTask.timeRemaining` (empirically elapsed, not remaining), whole seconds |
 | `cleaning_mode` / `cleaning_mode_raw` | v2 `currentTask.workMode.name` |
 | `interruptions_count` | connector counter, see 5.4 |
+
+`active_cleaning_time_s` rather than a separate live-only name, so it is the same key the
+completed report fills, as in the reference implementation. Gausium exposes no mid-run
+cleaned area, only
+`executingTask.progress`, so `cleaned_area_m2` and `efficiency_m2ph` are absent live and
+appear only on completion. That is a declared per-OEM gap.
 
 ### 5.3 Completed report `data`
 
@@ -323,23 +370,25 @@ Sourced from `GET /openapi/v2alpha1/robots/{sn}/taskReports`.
 |---|---|---|
 | `planned_area_m2` | `plannedCleaningAreaSquareMeter` | none |
 | `cleaned_area_m2` | `actualCleaningAreaSquareMeter` | none |
-| `coverage_pct` | `completionPercentage` | already 0-1; falls back to `cleaned / planned` if absent |
-| `duration_s` | `endTime - startTime` | ISO 8601 delta in seconds |
-| `active_cleaning_time_s` | `durationSeconds` | none |
-| `efficiency_m2ph` | `efficiencySquareMeterPerHour` | vendor value used as-is |
-| `water_used_l` | `waterConsumptionLiter` | none |
+| `coverage_pct` | `actualCleaningAreaSquareMeter / plannedCleaningAreaSquareMeter` | clamped 0-1, rounded to 4. Cleaned over planned as in the reference implementation, not the vendor's own `completionPercentage`; see below |
+| `duration_s` | `endTime - startTime` | ISO 8601 delta, whole seconds |
+| `active_cleaning_time_s` | `durationSeconds` | whole seconds |
+| `efficiency_m2ph` | `cleaned_area_m2 / (active_cleaning_time_s / 3600)` | rounded to 1, computed as the reference implementation computes it; see below |
+| `water_used_l` | `waterConsumptionLiter` | none, already litres |
 | `battery_start_pct` | `startBatteryPercentage` | / 100 |
 | `battery_end_pct` | `endBatteryPercentage` | / 100 |
-| `battery_used_pct` | `startBatteryPercentage - endBatteryPercentage` | / 100 |
+| `battery_used_pct` | `startBatteryPercentage - endBatteryPercentage` | / 100, published only when start >= end; see below |
 | `interruptions_count` | connector counter | see 5.4 |
 | `cleaning_mode` / `cleaning_mode_raw` | `cleaningMode` | see 5.1 |
 | `task_outcome` | derived | see 5.5 |
 | `task_end_status_raw` | `taskEndStatus` | raw int |
 | `task_instance_id` | `taskInstanceId` | correlates the completed report with the in-progress updates |
 | `task_progress` | `taskProgress` | published raw. `0` on every sample report, and the docs never define it or relate it to `completionPercentage`, so it is passed through rather than interpreted |
-| `map_name` | `subTasks[].mapName` | unique, comma-joined; falls back to the current map |
+| `map_name` | `subTasks[].mapName` | unique, joined with `", "` as the reference implementation joins its floor list; falls back to the current map |
 | `map_<slug>_cleaned_area_m2` | `subTasks[]` | per-map breakdown, see 5.6 |
-| `report_image_url` | `taskReportPngUri` | none |
+| `floors_cleaned_count` | `len(subTasks)` | count of maps the task covered, the reference implementation's `floors_cleaned_count` |
+| `report_image_url` | `taskReportPngUri` | the whole-report render, same role as the reference implementation's `report_image_url` |
+| `coverage_heatmap_url` | report map-images query | joined with `", "`, see 5.8 |
 | `polished_area_planned_m2` | `plannedPolishingAreaSquareMeter` | none |
 | `polished_area_m2` | `actualPolishingAreaSquareMeter` | none |
 | `operator` | `operator` | none |
@@ -352,11 +401,39 @@ Sourced from `GET /openapi/v2alpha1/robots/{sn}/taskReports`.
 | `consumable_brush_pct` | `consumablesResidualPercentage.brush` | / 100, residual (remaining) |
 | `consumable_filter_pct` | `consumablesResidualPercentage.filter` | / 100, residual |
 | `consumable_suction_blade_pct` | `consumablesResidualPercentage.suctionBlade` | / 100, residual |
-| `report_map_image_<n>_url` | report map-images query | one scalar key per returned image, see 5.8 |
 
 `duration_s` and `active_cleaning_time_s` are genuinely different quantities, not a
 rename: the sample report shows `durationSeconds: 2904` against an `endTime - startTime`
 of 2941 s.
+
+**`coverage_pct` is cleaned over planned, not `completionPercentage`.** Gausium does
+supply a ready-made 0-1 figure and it is nearly identical on the sample report (`0.3`
+against `659.965 / 2196.568 = 0.3004`), so this costs nothing here. It is adopted because
+the reference implementation had to compute the ratio, having found its vendor progress
+field counts loop
+progress, and one definition across OEMs is worth more than one saved division.
+`completionPercentage` remains the fallback when either area is missing.
+
+**`efficiency_m2ph` is computed, not taken from the vendor.** Gausium reports
+`efficiencySquareMeterPerHour: 870.182`, while `cleaned_area_m2 / (active_cleaning_time_s
+/ 3600)` gives 818 on the same report, implying the vendor divides by a different time
+base it does not document. Computing it matches the reference implementation, which has no
+vendor field, and makes
+the number mean the same thing on both fleets. The vendor value is the fallback when
+`active_cleaning_time_s` is missing or zero.
+
+**`battery_used_pct` is guarded.** A run that recharges mid-task can end higher than it
+started, which would make the subtraction negative. The reference implementation hit the
+mirror image of this and
+suppresses its derived start value when the arithmetic breaks. Here the vendor gives both
+endpoints directly, so `battery_start_pct` and `battery_end_pct` are always published and
+only the difference is withheld when it would be negative.
+
+`completedPercent` on the InOrbit mission object is set to `coverage_pct` on completion,
+not forced to 1, so the progress bar shows the fraction of the plan actually covered. This
+follows the reference implementation and replaces the current behaviour of advancing the
+bar to 100 % whenever the
+mission is judged complete.
 
 Report field extraction, including this timestamp delta, should live in one
 transport-agnostic place rather than inline in the poll path. The push callback in
@@ -388,26 +465,42 @@ indistinguishable from one that failed.
 `taskEndStatus` is a documented enum (Task Report Push page): `-1` Unknown, `0` Normal,
 `1` Manual, `2` Error, `3` Startup failure. New mapping:
 
-| `taskEndStatus` | Coverage >= threshold | `task_outcome` / MissionState |
+`taskEndStatus` is a documented enum (Task Report Push page): `-1` Unknown, `0` Normal,
+`1` Manual, `2` Error, `3` Startup failure. It lines up with the vendor status enum the
+reference implementation already decodes, and the mapping follows its shape: only the
+normal-completion status
+is judged against the coverage threshold, and every abnormal end is `abandoned` regardless
+of how much got cleaned.
+
+| `taskEndStatus` | Coverage >= threshold | `task_outcome` |
 |---|---|---|
 | `0` Normal | yes | `completed` |
 | `0` Normal | no | `incomplete` |
-| `1` Manual | yes | `completed` |
-| `1` Manual | no | `abandoned` |
+| `0` Normal | coverage unknown | `completed`, taking the robot at its word |
+| `1` Manual | any | `abandoned` |
 | `2` Error | any | `abandoned` |
 | `3` Startup failure | any | `abandoned` |
-| `-1` or absent | - | fall back to the current progress-bar plus threshold logic |
+| `-1` or absent | - | key omitted |
 | report never found | - | `not_reported` (unchanged) |
 
-The 0.90 progress-bar heuristic survives only in the `-1`/absent row. `task_outcome`
-publishes the same four contract values the existing `MissionState` members already use,
-so no new state vocabulary is introduced. The `Error` detail string for `incomplete`
-missions is retained, and `abandoned` gains an analogous detail naming the vendor end
-status.
+`1` Manual is `abandoned` unconditionally, aligning with the reference implementation's
+cancelled status. An earlier
+draft of this spec promoted a manual stop above the threshold to `completed`; that has no
+counterpart in the reference implementation and would have made the same vendor situation read
+differently per OEM.
 
-Expected effect in practice: all 20 sample reports carry
-`taskEndStatus: 1` at roughly 30 % coverage, so they stay `abandoned` but for a stated
-reason rather than by heuristic.
+On an unknown or absent status the key is omitted rather than guessed, matching the
+reference implementation's
+handling of a status it does not recognize. `MissionState` on the mission object still
+needs a value in that case and keeps the existing progress-bar plus threshold fallback, so
+the `MISSION_PROGRESS_BAR_ADVANCED_PERCENTAGE_THRESHOLD = 0.90` heuristic survives there
+and nowhere else. `task_outcome` publishes the same four contract values the existing
+`MissionState` members already use, so no new state vocabulary is introduced. The `Error`
+detail string for `incomplete` missions is retained, and `abandoned` gains an analogous
+detail naming the vendor end status.
+
+Expected effect in practice: all 20 sample reports carry `taskEndStatus: 1` at roughly
+30 % coverage, so they stay `abandoned` but for a stated reason rather than by heuristic.
 
 ### 5.6 Per-map breakdown, and why per-zone coverage is not filled
 
@@ -458,20 +551,24 @@ The map-images query returns a `data` array whose entries carry `url`, `map_imag
 
 These are a different artifact from `report_image_url`. The fetched map image is a
 2144x2670 colormap PNG, a coverage map; `taskReportPngUri` renders a 1080x6684 RGBA page,
-the whole report as an image.
+the whole report as an image. That split maps onto the two reference keys: the whole-report
+render is `report_image_url`, and the per-area coverage render is `coverage_heatmap_url`,
+which is the reference implementation's cleaning-effect image.
 
-**Published as one scalar key per image**, `report_map_image_<n>_url`, where `<n>` is the
-vendor's `map_image_id`. Scalar keys rather than a JSON list, so each image is
-individually addressable by dashboards and mission-data consumers, consistent with the
-rest of the contract.
+**Published as one key, `coverage_heatmap_url`, with the URLs joined by `", "` in
+`map_image_id` order.** The reference implementation faces the identical situation, a
+multi-floor run rendering one
+image set per floor, and joins them under a single key so a consumer reads one field
+whatever the run did. An earlier draft of this spec used suffixed
+`report_map_image_<n>_url` keys instead; that is the more addressable shape but it is a
+second dialect for the same data, so the join wins.
 
-**Keyed on the vendor index, not paired to sub-tasks.** Pairing images onto the
-`map_<slug>_*` keys from 5.6 would be more useful and is probably how it works, since the
-sample task had one sub-task and produced exactly one image. But the sample gives n = 1,
-which cannot distinguish one-image-per-map from one-per-report or one-per-loop, and a
-wrong positional pairing would attribute a floor's coverage image to a different floor
-silently. A multi-map report settles it; if the ordering holds, these graduate to
-slug-keyed names.
+Joining also sidesteps a question the samples cannot answer. Pairing images onto the
+`map_<slug>_*` keys from 5.6 would be more useful still, and the sample task had one
+sub-task and produced exactly one image, but n = 1 cannot distinguish one-image-per-map
+from one-per-report or one-per-loop, and a wrong positional pairing would attribute a
+floor's coverage image to a different floor silently. Joining in the vendor's own index
+order asserts nothing about which map an image belongs to.
 
 **Open: whether the URLs need authentication.** The probe fetched one successfully, but
 its HTTP client carried the bearer token globally, so a bare URL handed to a browser is
@@ -488,7 +585,7 @@ building layer 8.
 | Endpoint | Purpose |
 |---|---|
 | `GET /v1alpha1/robots/{sn}/commands/{id}` | Command lifecycle state. Today `submit_task` and `task_command` report `CommandResultCode.SUCCESS` as soon as the POST is accepted. Capture the command id from the POST response, poll to a terminal state, report the real outcome. Response shape is unverified: the sample listing was `{"robotCommands": [], "total": "0"}` because no command had ever been issued, so the implementation must tolerate an unknown state vocabulary and time out rather than assume one |
-| `POST /openapi-server/v1/api/task/report/map-images/query` | Verified working, returns a vendor-indexed `data[]` of image URLs per report. Feeds `report_map_image_<n>_url`, see 5.8 |
+| `POST /openapi-server/v1/api/task/report/map-images/query` | Verified working, returns a vendor-indexed `data[]` of image URLs per report. Feeds `coverage_heatmap_url`, see 5.8 |
 
 ### Removed
 
@@ -557,7 +654,7 @@ Stacked PRs (gh-stack), based on `main`, each layer one scope. Paths are relativ
 | 5 | `gausium/task-end-status` | `src/mission.py` | `task_outcome` from `taskEndStatus` (5.5). Isolated because it is the only behaviour change, so it can be reverted alone |
 | 6 | `gausium/interruptions-count` | `src/mission.py` | Per-instance transition counter (5.4) |
 | 7 | `gausium/command-feedback` | `src/robot/robot_api.py`, `src/connector.py` | Command-state polling and real result codes (6) |
-| 8 | `gausium/report-map-images` | `src/robot/robot_api.py`, `src/mission.py` | Report map-images query and `report_map_image_<n>_url` (5.8, 6) |
+| 8 | `gausium/report-map-images` | `src/robot/robot_api.py`, `src/mission.py` | Report map-images query and `coverage_heatmap_url` (5.8, 6) |
 | 9 | `gausium/cac-examples` | `../cac_examples/` | Section 7. Last, because it locks in the key names layers 3-8 settle |
 
 Layers 7 and 8 are independent of 2-6 and could ship as standalone PRs off `main`
@@ -565,7 +662,7 @@ instead of riding the stack.
 
 ## 9. Feedback for the contract
 
-Two corrections for the cleaning vertical initiative's Gausium mapping:
+Corrections for the cleaning vertical initiative's Gausium mapping:
 
 1. `battery_soh` is a **string** enum (observed `"HEALTHY"`), not a number. The contract
    lists it under numeric battery-health optionals.
@@ -573,10 +670,25 @@ Two corrections for the cleaning vertical initiative's Gausium mapping:
    (`-1`/`0`/`1`/`2`/`3`), which the contract's "MissionState logic (`taskEndStatus` +
    threshold)" row names without giving the enum. The decoding in 5.5 should be the
    reference for other OEM mappings.
+3. The Gausium row for `task_state` reads "published", which is true of the vendor string
+   but not of the contract's `idle`/`cleaning`/`paused`/`unknown` enum. It is a
+   normalization to do, not a field already satisfied.
 
 Also worth folding back: consumable wear is expressible as a unit-free ratio, so the
 contract's "units not in Gausium docs, confirm with OEM" caveat on
 `consumable_<part>_wear_pct` does not block the field.
+
+Two conventions worth promoting from per-OEM choices to contract rules, since both
+connectors now depend on them and a third OEM would otherwise have to rediscover them:
+
+- **`coverage_pct` is cleaned over planned**, never a vendor completion or progress field,
+  even where the vendor supplies one that happens to agree. Same for `efficiency_m2ph`
+  being computed from cleaned area and active time.
+- **Omit rather than guess.** An enum value the mapping does not recognize omits the
+  normalized key while the `_raw` twin still ships; a derived figure whose arithmetic does
+  not hold is withheld rather than published wrong. Both connectors arrived at this
+  independently, on `task_outcome` and `mission_status` here and on `battery_start_pct`
+  there.
 
 ## 10. Testing
 
@@ -587,12 +699,12 @@ The captured payloads become fixtures: `B1_status_v1.json`, `B2_status_v2_S.json
 |---|---|
 | 1 | Pose and `MapConfig` both read `map_resolution`; a non-default value moves published pose proportionally. Removed loops no longer start |
 | 2 | Every table entry maps to its enum; an unseen vendor value yields `other` with the raw value preserved |
-| 3 | The full key-value set from the sample status payloads, exact keys and values, including the 0-1 conversions and the seven generated consumable keys. `mission_status` precedence table, one case per row, including `IDLE` + `LOST` yielding `Idle` not `Error`; plus that it is always emitted and always one of the five values, including on an empty or partial status payload. Actuator flags pass through as booleans, and a `-1` `spray_water_level` or `vacuum_level` is absent rather than published as `-1` |
-| 4 | Report `data` matches the canonical set for a sample report; a report with `water_used_l: 0` and `interruptions_count: 0` keeps both keys. A two-sub-task report yields two `map_<slug>_cleaned_area_m2` keys; two maps slugging identically yield two distinct keys, not one overwritten |
-| 5 | One case per row of the `task_outcome` table, including the `-1`/absent fallback and the no-report path |
+| 3 | The full key-value set from the sample status payloads, exact keys and values, including the 0-1 conversions and the seven generated consumable keys. `task_state` normalization table, one case per vendor value, plus `task_state_raw` carrying the untouched string. `mission_status` precedence table, one case per row, including `PAUSED` yielding `Mission` not a fifth value, `IDLE` + `LOST` yielding `Idle` not `Error`, and an absent `taskState` yielding no key at all rather than `Idle`. Actuator flags pass through as booleans, and a `-1` `spray_water_level` or `vacuum_level` is absent rather than published as `-1` |
+| 4 | Report `data` matches the canonical set for a sample report; a report with `water_used_l: 0` and `interruptions_count: 0` keeps both keys. `coverage_pct` is the area ratio, and falls back to `completionPercentage` only when an area is missing. `efficiency_m2ph` is computed, and falls back to the vendor field only when `active_cleaning_time_s` is zero or missing. `battery_used_pct` is withheld when the end level exceeds the start, while both endpoint keys still publish. A two-sub-task report yields two `map_<slug>_cleaned_area_m2` keys and `floors_cleaned_count: 2`; two maps slugging identically yield two distinct keys, not one overwritten |
+| 5 | One case per row of the `task_outcome` table: the three `0` Normal rows, `1`/`2`/`3` all `abandoned` regardless of coverage, `-1` and absent omitting the key while `MissionState` still resolves through the progress-bar fallback, and the no-report path |
 | 6 | Counter increments only on `RUNNING -> PAUSED`, resets on a new `taskInstanceId` |
 | 7 | Terminal state reported as success and failure; timeout path does not hang the command handler |
-| 8 | A one-entry response yields exactly `report_map_image_0_url`; a three-entry response yields three keys at the vendor's indices, not positional ones; an empty `data` yields no keys; a failing or slow query does not break report completion |
+| 8 | A one-entry response yields `coverage_heatmap_url` with one URL; a three-entry response yields the three joined by `", "` in `map_image_id` order; an empty `data` yields no key; a failing or slow query does not break report completion |
 | 9 | `cac_examples` YAML parses; ids match the keys layers 3-8 publish |
 
 ## 11. Follow-up task: push callbacks replacing polling

@@ -135,15 +135,16 @@ async def test_canonical_key_values_are_published(connector, robot_state) -> Non
     connector.publish_robot_key_values.assert_called_once()
     args, kwargs = connector.publish_robot_key_values.call_args
     assert args == (ROBOT_ID,)
-    assert kwargs == {
-        **build_key_values(robot_state.status, robot_state.status_v2),
-        "api_connected": True,
-        "connector_version": __version__,
-        "display_name": "Robot Alpha",
-        "model_family": "S",
-        "model_type": "Scrubber 50H",
-        "software_version": "5.10.2",
-    }
+    assert kwargs == build_key_values(
+        robot_state.status,
+        robot_state.status_v2,
+        robot_state.robot_data,
+        True,
+        __version__,
+    )
+    assert kwargs["api_connected"] is True
+    assert kwargs["display_name"] == "Robot Alpha"
+    assert kwargs["software_version"] == "5.10.2"
     # The raw vendor status is no longer splatted into the key-values
     assert "taskState" not in kwargs
     assert kwargs["task_state"] == "idle"

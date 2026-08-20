@@ -155,6 +155,19 @@ spec:
 kind: DataSourceDefinition
 apiVersion: v0.1
 metadata:
+  id: cleaning_mode_label
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Cleaning Mode (English)
+  timeline: {}
+  source:
+    keyValue:
+      key: cleaning_mode_label
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
   id: speed_kmph
   scope: tag/<ACCOUNT_ID>/<TAG_ID>
 spec:

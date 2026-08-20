@@ -16,15 +16,14 @@ from gausium_open_platform_connector.src.key_values import build_key_values
 CAC_DIR = Path(__file__).parent.parent / "cac"
 FIXTURES = Path(__file__).parent / "fixtures"
 
-# Keys added by the connector on top of build_key_values
-EXTRA_KEYS = {
-    "api_connected",
-    "connector_version",
-    "display_name",
-    "model_family",
-    "model_type",
-    "software_version",
-    "mission_tracking",
+# Published outside the key-value builder, as an event
+EXTRA_KEYS = {"mission_tracking"}
+
+ROBOT_DATA = {
+    "displayName": "Robot Alpha",
+    "modelFamilyCode": "S",
+    "modelTypeCode": "Scrubber 50H",
+    "softwareVersion": "5.10.2",
 }
 
 
@@ -36,7 +35,8 @@ def published_keys() -> set[str]:
     status_v1 = json.loads((FIXTURES / "status_v1.json").read_text())
     status_v2 = json.loads((FIXTURES / "status_v2.json").read_text())
     status_v2["currentTask"]["workMode"]["name"] = "__洗地"  # Expose the cleaning_mode keys
-    return set(build_key_values(status_v1, status_v2)) | EXTRA_KEYS
+    key_values = build_key_values(status_v1, status_v2, ROBOT_DATA, True, "2.0.0")
+    return set(key_values) | EXTRA_KEYS
 
 
 def test_all_cac_files_parse() -> None:

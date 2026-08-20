@@ -8,20 +8,13 @@ from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
-from datetime import datetime
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from gausium_open_platform_connector.src.mission import (
-    MissionState,
-    MissionTracker,
-    TaskState,
-    derive_task_outcome,
-    filter_none,
-    normalize_cleaning_mode,
-    to_inorbit_millis,
-)
+from gausium_open_platform_connector.src.canonical import TaskState
+from gausium_open_platform_connector.src.mission import MissionState, MissionTracker, filter_none
+from gausium_open_platform_connector.src.report import report_time_to_millis
 
 SN = "GS000-0000-000-0001"
 
@@ -163,12 +156,14 @@ async def test_in_progress_update_publishes_report(
             "map_name": "Floor 1",
             "task_id": "task-123",
             "task_instance_id": "task-123",
-            "task_state": "cleaning",
             "distance_m": 100.5,
             "active_cleaning_time_s": 300,
+            "task_state": "cleaning",
+            "task_state_raw": "RUNNING",
             "interruptions_count": 0,
             "cleaning_mode": "scrub",
             "cleaning_mode_raw": "__洗地",
+            "cleaning_mode_label": "Wash the floor",
         },
     }
 
@@ -231,8 +226,8 @@ async def test_completion_with_successful_report(
     assert report["completedPercent"] == 0.9169
     # Wall time, not the vendor's active-cleaning durationSeconds
     assert report["estimatedDurationSecs"] == 9803
-    assert report["startTs"] == to_inorbit_millis("2026-06-26T03:53:27Z")
-    assert report["endTs"] == to_inorbit_millis("2026-06-26T06:36:50Z")
+    assert report["startTs"] == report_time_to_millis("2026-06-26T03:53:27Z")
+    assert report["endTs"] == report_time_to_millis("2026-06-26T06:36:50Z")
     assert report["data"] == {
         "task_outcome": "completed",
         "task_end_status_raw": 0,
@@ -249,6 +244,7 @@ async def test_completion_with_successful_report(
         "interruptions_count": 0,
         "cleaning_mode": "scrub",
         "cleaning_mode_raw": "洗地",
+        "cleaning_mode_label": "Wash the floor",
         "task_instance_id": "task-123",
         "task_progress": 0,
         "map_name": "Floor 1",
@@ -298,10 +294,7 @@ async def test_completion_below_threshold_is_incomplete(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("end_status", "reason"),
-    [(1, "manual stop"), (2, "error"), (3, "startup failure")],
-)
+@pytest.mark.parametrize("end_status", [1, 2, 3])
 async def test_abnormal_end_is_abandoned_regardless_of_coverage(
     tracker,
     publish,
@@ -313,7 +306,6 @@ async def test_abnormal_end_is_abandoned_regardless_of_coverage(
     idle_status_v2,
     task_report,
     end_status,
-    reason,
 ) -> None:
     running_status["executingTask"]["progress"] = 95
     tracker.update(running_status, running_status_v2)
@@ -325,7 +317,7 @@ async def test_abnormal_end_is_abandoned_regardless_of_coverage(
     report = publish.call_args[0][0]
     assert report["state"] == MissionState.abandoned.value["state"]
     assert report["data"]["task_outcome"] == "abandoned"
-    assert reason in report["data"]["Error"]
+    assert report["data"]["Error"] == f"Mission ended with task end status {end_status}"
 
 
 @pytest.mark.asyncio
@@ -357,15 +349,16 @@ async def test_unknown_end_status_falls_back_to_progress_heuristic(
     assert "task_outcome" not in report["data"]  # Omitted rather than guessed
 
 
-def test_derive_task_outcome_table() -> None:
-    assert derive_task_outcome(0, 0.95, 0.90) == "completed"
-    assert derive_task_outcome(0, 0.5, 0.90) == "incomplete"
-    assert derive_task_outcome(0, None, 0.90) == "completed"  # Take the robot at its word
-    assert derive_task_outcome(1, 0.99, 0.90) == "abandoned"
-    assert derive_task_outcome(2, 0.99, 0.90) == "abandoned"
-    assert derive_task_outcome(3, 0.99, 0.90) == "abandoned"
-    assert derive_task_outcome(-1, 0.99, 0.90) is None
-    assert derive_task_outcome(None, 0.99, 0.90) is None
+def test_state_from_end_status_table() -> None:
+    state = MissionState.get_from_end_status
+    assert state(0, 0.95, 0.90) is MissionState.completed
+    assert state(0, 0.5, 0.90) is MissionState.incomplete
+    assert state(0, None, 0.90) is MissionState.completed  # Take the robot at its word
+    assert state(1, 0.99, 0.90) is MissionState.abandoned
+    assert state(2, 0.99, 0.90) is MissionState.abandoned
+    assert state(3, 0.99, 0.90) is MissionState.abandoned
+    assert state(-1, 0.99, 0.90) is None
+    assert state(None, 0.99, 0.90) is None
 
 
 @pytest.mark.asyncio
@@ -662,31 +655,3 @@ def test_filter_none() -> None:
         "false": False,
         "true": True,
     }
-
-
-def test_to_inorbit_millis() -> None:
-    expected = int(datetime.fromisoformat("2026-06-26T03:53:27+00:00").timestamp() * 1000)
-    assert to_inorbit_millis("2026-06-26T03:53:27Z") == expected
-    assert to_inorbit_millis(1750912000000) == 1750912000000
-    assert to_inorbit_millis(None) is None
-    assert to_inorbit_millis("") is None
-
-
-def test_normalize_cleaning_mode() -> None:
-    assert normalize_cleaning_mode("__洗地") == "scrub"
-    assert normalize_cleaning_mode("洗地") == "scrub"
-    assert normalize_cleaning_mode("尘推") == "dust_mop"
-    assert normalize_cleaning_mode("抛光") == "polish"
-    assert normalize_cleaning_mode("吸尘") == "vacuum"
-    assert normalize_cleaning_mode("扫地") == "sweep"
-    assert normalize_cleaning_mode("喷雾消毒") == "disinfect"
-    # Intensity variants and unknowns are not guessed into a category
-    assert normalize_cleaning_mode("重度清洁") == "other"
-    assert normalize_cleaning_mode("未知模式") == "other"
-
-
-def test_translate_cleaning_mode() -> None:
-    assert MissionTracker._translate_cleaning_mode("__洗地") == "Wash the floor"
-    assert MissionTracker._translate_cleaning_mode("尘推") == "Dust mop"
-    assert MissionTracker._translate_cleaning_mode("未知模式") == "未知模式"
-    assert MissionTracker._translate_cleaning_mode("") == ""

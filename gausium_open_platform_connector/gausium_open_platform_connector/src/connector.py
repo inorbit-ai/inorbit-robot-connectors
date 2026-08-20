@@ -171,15 +171,13 @@ class GausiumOpenPlatformConnector(FleetConnector):
 
         self._trackers[robot_id].update(status, state.status_v2)
 
-        key_values = {
-            **build_key_values(status, state.status_v2),
-            "api_connected": state.api_connected,
-            "connector_version": __version__,
-            "display_name": state.robot_data.get("displayName", ""),
-            "model_family": state.robot_data.get("modelFamilyCode", ""),
-            "model_type": state.robot_data.get("modelTypeCode", ""),
-            "software_version": state.robot_data.get("softwareVersion", ""),
-        }
+        key_values = build_key_values(
+            status,
+            state.status_v2,
+            state.robot_data,
+            state.api_connected,
+            __version__,
+        )
         self.publish_robot_key_values(robot_id, **key_values)
 
     @override

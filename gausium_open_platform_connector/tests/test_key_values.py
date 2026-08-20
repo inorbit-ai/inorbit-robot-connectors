@@ -11,9 +11,21 @@ from pathlib import Path
 
 import pytest
 
-from gausium_open_platform_connector.src.key_values import build_key_values, derive_mission_status
+from gausium_open_platform_connector.src.key_values import _mission_status, build_key_values
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+ROBOT_DATA = {
+    "displayName": "Robot Alpha",
+    "modelFamilyCode": "S",
+    "modelTypeCode": "Scrubber 50H",
+    "softwareVersion": "5.10.2",
+}
+
+
+def build(status: dict, status_v2: dict) -> dict:
+    """`build_key_values` with the identity arguments fixed, which every case shares."""
+    return build_key_values(status, status_v2, ROBOT_DATA, True, "2.0.0")
 
 
 def load_fixture(name: str) -> dict:
@@ -31,7 +43,13 @@ def status_v2() -> dict:
 
 
 def test_full_key_value_set(status_v1, status_v2) -> None:
-    assert build_key_values(status_v1, status_v2) == {
+    assert build(status_v1, status_v2) == {
+        "api_connected": True,
+        "connector_version": "2.0.0",
+        "display_name": "Robot Alpha",
+        "model_family": "S",
+        "model_type": "Scrubber 50H",
+        "software_version": "5.10.2",
         "battery_pct": 1.0,
         "charging": False,
         "task_state": "idle",
@@ -94,7 +112,7 @@ def test_full_key_value_set(status_v1, status_v2) -> None:
 def test_task_state_normalization(status_v1, status_v2, vendor_state, canonical) -> None:
     status_v1["taskState"] = vendor_state
 
-    key_values = build_key_values(status_v1, status_v2)
+    key_values = build(status_v1, status_v2)
 
     assert key_values["task_state"] == canonical
     assert key_values["task_state_raw"] == vendor_state
@@ -103,7 +121,7 @@ def test_task_state_normalization(status_v1, status_v2, vendor_state, canonical)
 def test_task_state_absent_omits_keys(status_v1, status_v2) -> None:
     del status_v1["taskState"]
 
-    key_values = build_key_values(status_v1, status_v2)
+    key_values = build(status_v1, status_v2)
 
     assert "task_state" not in key_values
     assert "task_state_raw" not in key_values
@@ -117,7 +135,7 @@ def test_mission_status_emergency_stop_is_error(status_v1, status_v2) -> None:
     status_v1["emergencyStop"]["enabled"] = True
     status_v1["taskState"] = "RUNNING"
 
-    assert derive_mission_status(status_v1, status_v2) == "Error"
+    assert _mission_status(status_v1, status_v2) == "Error"
 
 
 @pytest.mark.parametrize("vendor_state", ["RUNNING", "PAUSED", "OTHER"])
@@ -125,40 +143,47 @@ def test_mission_status_active_states_are_mission(status_v1, status_v2, vendor_s
     # No fifth Paused value: a paused task stays Mission, visible via task_state
     status_v1["taskState"] = vendor_state
 
-    assert derive_mission_status(status_v1, status_v2) == "Mission"
+    assert _mission_status(status_v1, status_v2) == "Mission"
 
 
 def test_mission_status_v2_task_makes_idle_a_mission(status_v1, status_v2) -> None:
     status_v2["currentTask"]["taskInstanceId"] = "task-instance-1"
 
-    assert derive_mission_status(status_v1, status_v2) == "Mission"
+    assert _mission_status(status_v1, status_v2) == "Mission"
 
 
 def test_mission_status_mission_outranks_charging(status_v1, status_v2) -> None:
     status_v1["taskState"] = "RUNNING"
     status_v1["battery"]["charging"] = True
 
-    assert derive_mission_status(status_v1, status_v2) == "Mission"
+    assert _mission_status(status_v1, status_v2) == "Mission"
 
 
 def test_mission_status_charging(status_v1, status_v2) -> None:
     status_v1["battery"]["charging"] = True
 
-    assert derive_mission_status(status_v1, status_v2) == "Charging"
+    assert _mission_status(status_v1, status_v2) == "Charging"
 
 
 def test_mission_status_idle_and_lost_is_idle(status_v1, status_v2) -> None:
     # LOST fires continuously on healthy parked robots, so it never maps to Error
     assert status_v1["localizationInfo"]["localizationState"] == "LOST"
 
-    assert derive_mission_status(status_v1, status_v2) == "Idle"
+    assert _mission_status(status_v1, status_v2) == "Idle"
+
+
+def test_mission_status_unrecognized_task_state_is_idle(status_v1, status_v2) -> None:
+    # A state the vendor adds later is not a mission and not charging, so it reads Idle
+    status_v1["taskState"] = "SOMETHING_NEW"
+
+    assert _mission_status(status_v1, status_v2) == "Idle"
 
 
 def test_mission_status_absent_task_state_is_omitted(status_v1, status_v2) -> None:
     del status_v1["taskState"]
     status_v1["emergencyStop"]["enabled"] = True
 
-    assert derive_mission_status(status_v1, status_v2) is None
+    assert _mission_status(status_v1, status_v2) is None
 
 
 # --- Field-level behaviors -----------------------------------------------------
@@ -169,7 +194,7 @@ def test_negative_levels_are_absent(status_v1, status_v2) -> None:
     status_v1["device"]["spray"]["waterLevel"] = -1
     status_v2["device"]["vacuum"]["level"] = -1
 
-    key_values = build_key_values(status_v1, status_v2)
+    key_values = build(status_v1, status_v2)
 
     assert "spray_water_level" not in key_values
     assert "vacuum_level" not in key_values
@@ -181,7 +206,7 @@ def test_consumable_wear_is_generic_and_clamped(status_v1, status_v2) -> None:
     del status_v1["device"]["rollingBrush"]
     del status_v2["device"]["rollingBrush"]
 
-    key_values = build_key_values(status_v1, status_v2)
+    key_values = build(status_v1, status_v2)
 
     assert key_values["consumable_hepa_sensor_wear_pct"] == 1.0  # Clamped
     assert "consumable_rolling_brush_wear_pct" not in key_values
@@ -190,28 +215,40 @@ def test_consumable_wear_is_generic_and_clamped(status_v1, status_v2) -> None:
 
 
 def test_cleaning_mode_present_only_while_a_task_runs(status_v1, status_v2) -> None:
-    idle_key_values = build_key_values(status_v1, status_v2)
+    idle_key_values = build(status_v1, status_v2)
     assert "cleaning_mode" not in idle_key_values
 
     status_v2["currentTask"]["workMode"]["name"] = "__洗地"
-    running_key_values = build_key_values(status_v1, status_v2)
+    running_key_values = build(status_v1, status_v2)
 
     assert running_key_values["cleaning_mode"] == "scrub"
     assert running_key_values["cleaning_mode_raw"] == "__洗地"
+    assert running_key_values["cleaning_mode_label"] == "Wash the floor"
 
 
 def test_unknown_cleaning_mode_is_other_with_raw_preserved(status_v1, status_v2) -> None:
     status_v2["currentTask"]["workMode"]["name"] = "重度清洁"
 
-    key_values = build_key_values(status_v1, status_v2)
+    key_values = build(status_v1, status_v2)
 
     assert key_values["cleaning_mode"] == "other"
     assert key_values["cleaning_mode_raw"] == "重度清洁"
+    # An unmapped mode still gets its English label when the vendor name is known
+    assert key_values["cleaning_mode_label"] == "Heavy cleaning"
 
 
-def test_empty_payloads_yield_no_keys(status_v2) -> None:
-    assert build_key_values({}, {}) == {}
+def test_empty_payloads_yield_no_vendor_keys(status_v2) -> None:
+    assert build({}, {}) == {
+        "api_connected": True,
+        "connector_version": "2.0.0",
+        "display_name": "Robot Alpha",
+        "model_family": "S",
+        "model_type": "Scrubber 50H",
+        "software_version": "5.10.2",
+        "executable_tasks": [],
+        "nav_points": [],
+    }
     # A v2-only tick still yields the v2-sourced keys and nothing else
-    key_values = build_key_values({}, status_v2)
+    key_values = build({}, status_v2)
     assert key_values["manual_control"] is False
     assert "battery_pct" not in key_values

@@ -258,6 +258,11 @@ Sourced from `GET /openapi/v2alpha1/robots/{sn}/taskReports`.
 rename: the sample report shows `durationSeconds: 2904` against an `endTime - startTime`
 of 2941 s.
 
+Report field extraction, including this timestamp delta, should live in one
+transport-agnostic place rather than inline in the poll path. The push callback in
+section 11 delivers the same fields with epoch-millisecond timestamps instead of ISO 8601
+strings, and that is the only difference it needs to absorb.
+
 `estimatedDurationSecs` on the InOrbit mission object changes from `durationSeconds` to
 `duration_s`, wall time being the honest figure for a finished mission.
 
@@ -344,7 +349,7 @@ that drops `None` only.
 |---|---|
 | `POST /openapi/v1/map/robotMap/list` | Returns exactly one map, identical to the current one, with all geometry fields zero. Nothing to publish until a multi-map robot exists |
 | `POST /openapi/v1/map/subareas/get` | Returns `partitions: []`. Would be the `submit_task` area catalog once areas are defined |
-| Task Report Push and Incident Push webhooks | The highest-value item in the whole API surface, deferred by decision. Gausium POSTs completed reports and incidents to a callback URL we register, which would retire the 0.5 s report busy-poll and expose an entire alerting stream we publish nothing from today (`incidentCode`, `incidentName`, `incidentLevel` H0-H7, start/end times, task and map context). Requires a public HTTPS receiver and an `appId` registered with Gausium, so it is an infrastructure commitment beyond this connector |
+| Task Report Push and Incident Push webhooks | Planned as its own follow-up task, specified in section 11 |
 | Batch status (`status:batchGet`) | Only relevant to a fleet-connector refactor, which the `claude/gausium-fleet-connector-6de7f6` branch already implements |
 | Per-zone coverage (`zone_<slug>_*`) | The contract defers it to its own platform-side design. `area_names` is published raw so the dimension exists |
 
@@ -420,3 +425,71 @@ The captured payloads become fixtures: `B1_status_v1.json`, `B2_status_v2_S.json
 | 7 | Terminal state reported as success and failure; timeout path does not hang the command handler |
 | 8 | URLs land in `report_map_image_urls`; a failing query does not break report completion |
 | 9 | `cac_examples` YAML parses; ids match the keys layers 3-8 publish |
+
+## 11. Follow-up task: push callbacks replacing polling
+
+Not part of this work. Captured here because it changes how several things specified
+above are sourced, and because the design decisions in sections 5 and 6 should not
+foreclose it.
+
+Gausium's Robot Push Service can POST to a callback URL we register, replacing polling
+for the data it covers. Two subscriptions exist:
+
+**Task Report Push.** Delivers a completed task report with the same field set as the
+polled v2 `taskReports` response, wrapped as
+`{appId, payload: {serialNumber, modelTypeCode, taskReport: {...}}}`.
+
+**Incident Push.** Delivers robot incidents as
+`{appId, payload: {serialNumber, modelTypeCode, content: {...}}}`, with `incidentCode`,
+`incidentName`, `incidentLevel`, `incidentId`, `incidentStatus` (`1` alarm, `0` recover),
+`startTime`, `endTime`, and the task and map context the incident occurred in (`taskId`,
+`subTaskId`, `taskInstanceId`, `taskName`, `mapId`, `mapName`, `navInstanceId`,
+`navName`). `incidentLevel` is a documented severity scale:
+
+| Level | Meaning |
+|---|---|
+| H0 | Event notification, not an alarm |
+| H1 | Buried point statistics |
+| H2 | Routine robot state, user-resolvable without guidance |
+| H3 | Warning, does not affect the task, user-resolvable |
+| H4 | Affects the task, user-resolvable |
+| H5 | Hidden danger, does not affect the task, not user-resolvable |
+| H6 | Fault, affects the task, not user-resolvable |
+| H7 | Quality issue, serious failure |
+
+### What it replaces
+
+| Polling | Push status |
+|---|---|
+| `_wait_for_task_report_async` in `mission.py`: polls `taskReports` every 0.5 s for up to 10 minutes after every mission ends | Fully replaceable by Task Report Push, and the biggest single reduction in API traffic this connector makes |
+| Status polling for live key-values (section 3) | Not replaceable. There is no status push; the two status endpoints stay |
+| Command state (section 6) | Not replaceable. No command push exists |
+
+Incident Push replaces nothing: it is pure addition. No status field or report field
+exposes incidents today, so this is an alerting surface the connector currently cannot
+see at all.
+
+### Constraints that shape the design
+
+- **Push cannot be the only path.** Gausium documents no acknowledgement contract, no
+  retry or backoff behaviour, no delivery guarantee and no signature verification for
+  either callback. The report path must stay hybrid: push as the fast path, the existing
+  poll as fallback after a timeout, so a dropped delivery degrades to today's behaviour
+  rather than losing a mission.
+- **Timestamps differ between transports.** The push payload sends `startTime` and
+  `endTime` as epoch milliseconds (integers); the polled v2 API sends ISO 8601 strings.
+  Report parsing must accept both. Section 5.3 derives `duration_s` from these fields, so
+  keeping that derivation in one place, transport-agnostic, is what makes the push path a
+  small change later rather than a second parser.
+- **Inbound HTTP is new to this connector.** It is an outbound-only process today.
+  A receiver means a listening port, TLS termination, and a route from the payload's
+  `serialNumber` to the InOrbit robot id, which matters more once the connector is
+  fleet-shaped.
+- **Auth is a body-level `appId`**, not the OAuth bearer used everywhere else, so it
+  becomes its own config secret. Registration of the URL and `appId` pair is done through
+  Gausium, not through an API.
+- **Documentation gap.** Subscriptions created or re-saved on or after 2025-05-15 are
+  stated to carry new top-level fields alongside `appId` and `payload`, but the docs never
+  enumerate them. A receiver should tolerate unknown top-level fields.
+- The InOrbit surface for incidents (key-values, events, or both) is left to that task's
+  own design.

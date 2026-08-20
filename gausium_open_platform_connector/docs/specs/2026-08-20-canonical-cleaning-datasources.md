@@ -352,7 +352,7 @@ Sourced from `GET /openapi/v2alpha1/robots/{sn}/taskReports`.
 | `consumable_brush_pct` | `consumablesResidualPercentage.brush` | / 100, residual (remaining) |
 | `consumable_filter_pct` | `consumablesResidualPercentage.filter` | / 100, residual |
 | `consumable_suction_blade_pct` | `consumablesResidualPercentage.suctionBlade` | / 100, residual |
-| `report_map_image_urls` | report map-images query | see 6 |
+| `report_map_image_<n>_url` | report map-images query | one scalar key per returned image, see 5.8 |
 
 `duration_s` and `active_cleaning_time_s` are genuinely different quantities, not a
 rename: the sample report shows `durationSeconds: 2904` against an `endTime - startTime`
@@ -450,6 +450,37 @@ value. Under canonical keys that silently deletes `interruptions_count: 0`,
 an unstable key set that appears and disappears per mission. Replace it with a filter
 that drops `None` only.
 
+### 5.8 Report map images
+
+The map-images query returns a `data` array whose entries carry `url`, `map_image_id`,
+`task_queue_id` and `product_id`. The count is not fixed: entries are indexed from zero by
+`map_image_id`, and the URL's last path segment is that index.
+
+These are a different artifact from `report_image_url`. The fetched map image is a
+2144x2670 colormap PNG, a coverage map; `taskReportPngUri` renders a 1080x6684 RGBA page,
+the whole report as an image.
+
+**Published as one scalar key per image**, `report_map_image_<n>_url`, where `<n>` is the
+vendor's `map_image_id`. Scalar keys rather than a JSON list, so each image is
+individually addressable by dashboards and mission-data consumers, consistent with the
+rest of the contract.
+
+**Keyed on the vendor index, not paired to sub-tasks.** Pairing images onto the
+`map_<slug>_*` keys from 5.6 would be more useful and is probably how it works, since the
+sample task had one sub-task and produced exactly one image. But the sample gives n = 1,
+which cannot distinguish one-image-per-map from one-per-report or one-per-loop, and a
+wrong positional pairing would attribute a floor's coverage image to a different floor
+silently. A multi-map report settles it; if the ordering holds, these graduate to
+slug-keyed names.
+
+**Open: whether the URLs need authentication.** The probe fetched one successfully, but
+its HTTP client carried the bearer token globally, so a bare URL handed to a browser is
+unverified. The same caveat technically applies to `taskReportPngUri`, though that one is
+already published today under a legacy label key and evidently works for users. If the map
+image URLs turn out to require the bearer, publishing the raw URL is not useful on its own
+and the connector would have to proxy or re-sign them; that is worth checking before
+building layer 8.
+
 ## 6. Endpoints
 
 ### Added
@@ -457,7 +488,7 @@ that drops `None` only.
 | Endpoint | Purpose |
 |---|---|
 | `GET /v1alpha1/robots/{sn}/commands/{id}` | Command lifecycle state. Today `submit_task` and `task_command` report `CommandResultCode.SUCCESS` as soon as the POST is accepted. Capture the command id from the POST response, poll to a terminal state, report the real outcome. Response shape is unverified: the sample listing was `{"robotCommands": [], "total": "0"}` because no command had ever been issued, so the implementation must tolerate an unknown state vocabulary and time out rather than assume one |
-| `POST /openapi-server/v1/api/task/report/map-images/query` | Verified working, returns `data[].url` per report. Feeds `report_map_image_urls` |
+| `POST /openapi-server/v1/api/task/report/map-images/query` | Verified working, returns a vendor-indexed `data[]` of image URLs per report. Feeds `report_map_image_<n>_url`, see 5.8 |
 
 ### Removed
 
@@ -526,7 +557,7 @@ Stacked PRs (gh-stack), based on `main`, each layer one scope. Paths are relativ
 | 5 | `gausium/task-end-status` | `src/mission.py` | `task_outcome` from `taskEndStatus` (5.5). Isolated because it is the only behaviour change, so it can be reverted alone |
 | 6 | `gausium/interruptions-count` | `src/mission.py` | Per-instance transition counter (5.4) |
 | 7 | `gausium/command-feedback` | `src/robot/robot_api.py`, `src/connector.py` | Command-state polling and real result codes (6) |
-| 8 | `gausium/report-map-images` | `src/robot/robot_api.py`, `src/mission.py` | Report map-images query and `report_map_image_urls` (6) |
+| 8 | `gausium/report-map-images` | `src/robot/robot_api.py`, `src/mission.py` | Report map-images query and `report_map_image_<n>_url` (5.8, 6) |
 | 9 | `gausium/cac-examples` | `../cac_examples/` | Section 7. Last, because it locks in the key names layers 3-8 settle |
 
 Layers 7 and 8 are independent of 2-6 and could ship as standalone PRs off `main`
@@ -561,7 +592,7 @@ The captured payloads become fixtures: `B1_status_v1.json`, `B2_status_v2_S.json
 | 5 | One case per row of the `task_outcome` table, including the `-1`/absent fallback and the no-report path |
 | 6 | Counter increments only on `RUNNING -> PAUSED`, resets on a new `taskInstanceId` |
 | 7 | Terminal state reported as success and failure; timeout path does not hang the command handler |
-| 8 | URLs land in `report_map_image_urls`; a failing query does not break report completion |
+| 8 | A one-entry response yields exactly `report_map_image_0_url`; a three-entry response yields three keys at the vendor's indices, not positional ones; an empty `data` yields no keys; a failing or slow query does not break report completion |
 | 9 | `cac_examples` YAML parses; ids match the keys layers 3-8 publish |
 
 ## 11. Follow-up task: push callbacks replacing polling

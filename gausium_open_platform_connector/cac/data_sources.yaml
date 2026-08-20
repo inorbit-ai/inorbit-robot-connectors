@@ -1,0 +1,182 @@
+# SPDX-FileCopyrightText: 2026 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
+# DataSourceDefinitions for the key-values published by the connector.
+# The connector also splats the raw vendor status payload; only the curated
+# keys below get a definition.
+# Replace <ACCOUNT_ID> and <TAG_ID> with real values before applying.
+
+# --- Battery -----------------------------------------------------------------
+# Published as the raw vendor value, 0-100. No scale needed.
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: battery-percentage
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Battery
+  unit: "%"
+  timeline:
+    fieldType: number
+  source:
+    keyValue:
+      key: battery_percentage
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: charging
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Charging
+  timeline:
+    fieldType: boolean
+  source:
+    keyValue:
+      key: charging
+
+# --- Connectivity ------------------------------------------------------------
+# api_connected: last batch status call to the Gausium API succeeded.
+# online: vendor-reported robot online flag.
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: api-connected
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: API Connected
+  timeline:
+    fieldType: boolean
+  source:
+    keyValue:
+      key: api_connected
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: online
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Online
+  timeline:
+    fieldType: boolean
+  source:
+    keyValue:
+      key: online
+
+# --- Robot identity ----------------------------------------------------------
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: connector-version
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Connector Version
+  timeline: {}
+  source:
+    keyValue:
+      key: connector_version
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: display-name
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Display Name
+  timeline: {}
+  source:
+    keyValue:
+      key: display_name
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: model-family
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Model Family
+  timeline: {}
+  source:
+    keyValue:
+      key: model_family
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: model-type
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Model Type
+  timeline: {}
+  source:
+    keyValue:
+      key: model_type
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: software-version
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Software Version
+  timeline: {}
+  source:
+    keyValue:
+      key: software_version
+
+# --- Operation ---------------------------------------------------------------
+# taskState: OTHER | IDLE | RUNNING | PAUSED
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: task-state
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Task State
+  timeline: {}
+  source:
+    keyValue:
+      key: taskState
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: speed
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Speed
+  unit: km/h
+  timeline:
+    fieldType: number
+  source:
+    keyValue:
+      key: speedKilometerPerHour
+
+# --- Localization ------------------------------------------------------------
+# Raw vendor localization object: current map (id, name, version), map position
+# and localization state.
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: localization-info
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Localization
+  timeline: {}
+  source:
+    keyValue:
+      key: localizationInfo

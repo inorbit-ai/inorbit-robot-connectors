@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
+version = 1
+SPDX-PackageName = "gausium-open-platform-connector"
+SPDX-PackageSupplier = "InOrbit, Inc. <support@inorbit.ai>"
+SPDX-PackageDownloadLocation = "https://github.com/inorbit-ai/inorbit-robot-connectors"
+
+# Configuration files that don't require copyright/license headers in the file itself
+# These are annotated here with MIT (same as the rest of the project)
+[[annotations]]
+path = "uv.lock"
+SPDX-FileCopyrightText = "N/A"
+SPDX-License-Identifier = "MIT"
+SPDX-FileComment = "uv.lock file"
+
+[[annotations]]
+path = ".python-version"
+SPDX-FileCopyrightText = "N/A"
+SPDX-License-Identifier = "MIT"
+SPDX-FileComment = "Python version file"
+
+[[annotations]]
+path = ".gitattributes"
+SPDX-FileCopyrightText = "N/A"
+SPDX-License-Identifier = "MIT"
+SPDX-FileComment = "Git attributes file"

@@ -1,0 +1,37 @@
+# SPDX-FileCopyrightText: 2026 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
+# Mission tracking driven by the `mission_tracking` event published by the connector.
+# The event carries: missionId, label, state, status, inProgress, completedPercent,
+# startTs, endTs, estimatedDurationSecs and a `data` object with task details.
+# States emitted: in-progress, paused, completed, incomplete, abandoned,
+# not-reported, unknown. `status` is set by the connector, so no stateDefinitions
+# are needed here.
+# Replace <ACCOUNT_ID> and <TAG_ID> with real values before applying.
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: mission-tracking
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Mission Tracking
+  timeline: {}
+  source:
+    keyValue:
+      key: mission_tracking
+
+---
+kind: MissionTracking
+apiVersion: v0.1
+metadata:
+  id: all
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  processingType:
+    - api
+  attributes:
+    mission_tracking:
+      - type: missionApi

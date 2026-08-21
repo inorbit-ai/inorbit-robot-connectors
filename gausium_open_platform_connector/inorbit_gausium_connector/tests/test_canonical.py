@@ -70,6 +70,10 @@ def test_cleaning_mode_label_falls_back_to_the_stripped_vendor_value():
     assert keys["cleaning_mode_label"] == "未知模式"
 
 
+def test_cleaning_mode_labels_are_spelled_out():
+    assert cleaning_mode_keys("静音推尘")["cleaning_mode_label"] == "Silent dust mopping"
+
+
 def test_cleaning_mode_keys_without_a_value():
     assert cleaning_mode_keys("") == {}
     assert cleaning_mode_keys(None) == {}

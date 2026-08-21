@@ -44,7 +44,7 @@ CLEANING_MODE_LABELS = {
     "低速尘推": "Low-speed dust mop",
     "结晶模式": "Crystallization mode",
     "地毯清洁": "Carpet cleaning",
-    "静音推尘": "Slient dust mopping",
+    "静音推尘": "Silent dust mopping",
     "喷雾消毒": "Disinfection spray",
     "滚刷洗地": "Roller brush scrubbing",
     "布刷尘推": "Cloth brush dust mopping",

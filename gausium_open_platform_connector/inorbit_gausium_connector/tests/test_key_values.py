@@ -39,6 +39,24 @@ def test_additional_keys(key_values):
     assert key_values["work_modes"][0]["strength"] == "custom"
 
 
+def test_work_modes_carry_only_the_contract_fields(status_v1, status_v2):
+    status_v1["workModes"] = [
+        {"id": "1", "name": "__洗地", "strength": "custom", "type": "1", "subType": "surprise"}
+    ]
+    key_values = build_key_values(status_v1, status_v2, {}, True, "9.9.9")
+
+    assert key_values["work_modes"] == [
+        {"id": "1", "name": "__洗地", "strength": "custom", "type": "1"}
+    ]
+
+
+def test_work_modes_omitted_when_neither_payload_reports_them(status_v1, status_v2):
+    del status_v1["workModes"]
+    del status_v2["workModes"]
+
+    assert "work_modes" not in build_key_values(status_v1, status_v2, {}, True, "9.9.9")
+
+
 def test_actuator_flags_are_booleans(key_values):
     for key in (
         "spray_active",

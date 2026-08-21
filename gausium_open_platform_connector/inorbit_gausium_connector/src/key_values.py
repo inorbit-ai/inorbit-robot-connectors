@@ -68,7 +68,7 @@ def build_key_values(
         "side_brush_right_down": device.get("rightSideBrush", {}).get("ifPutDown"),
         "executable_tasks": _executable_tasks(status),
         "nav_points": _nav_points(status_v2),
-        "work_modes": status.get("workModes") or status_v2.get("workModes"),
+        "work_modes": _work_modes(status, status_v2),
         "mission_status": _mission_status(status, status_v2),
         **_task_state(status),
         **cleaning_mode_keys(current_task.get("workMode", {}).get("name")),
@@ -106,6 +106,22 @@ def _executable_tasks(status: dict[str, Any]) -> list[dict[str, Any]]:
 def _nav_points(status_v2: dict[str, Any]) -> list[str]:
     points = status_v2.get("navigationPoints", {}).get("naviPoints", [])
     return [point.get("naviPointName") for point in points if point.get("naviPointName")]
+
+
+def _work_modes(status: dict[str, Any], status_v2: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """The modes the robot can be commanded into, one object per mode."""
+    modes = status.get("workModes") or status_v2.get("workModes")
+    if modes is None:
+        return None
+    return [
+        {
+            "id": mode.get("id"),
+            "name": mode.get("name"),
+            "strength": mode.get("strength"),
+            "type": mode.get("type"),
+        }
+        for mode in modes
+    ]
 
 
 def _task_state(status: dict[str, Any]) -> dict[str, str]:

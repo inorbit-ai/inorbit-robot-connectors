@@ -104,6 +104,8 @@ To release a new version:
 
 > [!IMPORTANT]
 > The message of the last commit must match the configured pattern, e.g. "Bump gausium-open-platform-connector version: 2.0.0 → 2.0.1", for the publish job to run.
+> When the bump reaches `main` through a pull request, GitHub Actions reads the squash commit
+> message, so the pull request title must carry the pattern as well.
 
 New releases are built and published to the Docker repository automatically by GitHub Actions when a new version bump commit is pushed.
 

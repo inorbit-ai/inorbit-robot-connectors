@@ -228,10 +228,10 @@ async def test_vendor_offline_mirror(connector, robot_state, session) -> None:
     connector.publish_robot_key_values.assert_not_called()
     assert connector._is_fleet_robot_online(ROBOT_ID) is False
 
-    # Still offline: the offline status is re-asserted every tick (the edge SDK re-sends
-    # a retained online=True on MQTT reconnects), still no publishing
+    # Still offline: the offline status is not re-sent (it would refresh updateStamp,
+    # hiding how long the robot has been offline), still no publishing
     await connector._execution_loop()
-    assert session._send_robot_status.call_args_list == [call(online=False), call(online=False)]
+    assert session._send_robot_status.call_args_list == [call(online=False)]
     connector.publish_robot_key_values.assert_not_called()
 
     # Vendor comes back: status is mirrored and publishing resumes

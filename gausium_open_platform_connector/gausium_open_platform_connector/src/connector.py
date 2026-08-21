@@ -138,14 +138,15 @@ class GausiumOpenPlatformConnector(FleetConnector):
         # TODO: move this into inorbit-connector; _send_robot_status is a private SDK API.
         online = status.get("online")
         if isinstance(online, bool) and online != self._vendor_online.get(robot_id):
-            # Skip the initial online report: connect already published it
-            if robot_id in self._vendor_online and online:
-                self._send_robot_online_status(robot_id, True)
+            # Skip the initial online report: connect already published it. Only report
+            # transitions: re-sending offline would keep refreshing the robot's
+            # updateStamp, hiding how long it has been offline. On MQTT reconnect the
+            # edge SDK re-sends a retained online=True, but InOrbit then asks for a
+            # state update and _is_fleet_robot_online corrects it.
+            if robot_id in self._vendor_online or not online:
+                self._send_robot_online_status(robot_id, online)
             self._vendor_online[robot_id] = online
         if self._vendor_online.get(robot_id) is False:
-            # Re-assert every tick: the edge SDK re-sends a retained online=True on every
-            # MQTT reconnect, which would otherwise mask the vendor-offline state
-            self._send_robot_online_status(robot_id, False)
             # Publishing while vendor-offline would keep refreshing the robot's
             # updateStamp with stale data; keep polling and resume on reconnect
             return

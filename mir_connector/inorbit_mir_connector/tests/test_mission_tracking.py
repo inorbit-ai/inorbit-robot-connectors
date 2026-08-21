@@ -27,19 +27,123 @@ def mission_tracking():
 
 @pytest.mark.asyncio
 async def test_get_current_mission(mission_tracking):
-    # Only missions with "Executing" state should be stored in executing_mission_id
     assert mission_tracking.executing_mission_id is None
-    dummy_data = {"state": "Executing"}
-    id = 1
-    mission_tracking.mir_api.get_executing_mission_id = AsyncMock(return_value=id)
-    mission_tracking.mir_api.get_mission = AsyncMock(return_value=dummy_data)
-    assert await mission_tracking.get_current_mission() == dummy_data
-    assert mission_tracking.executing_mission_id == 1
+    entry = {"state": "Executing", "id": 1, "mission_id": "def-guid", "finished": None}
+    definition = {"guid": "def-guid", "name": "Charge"}
+    def_actions = [
+        {"guid": "a1", "action_type": "charging", "parameters": [], "mission_id": "def-guid"}
+    ]
+    mission_tracking.mir_api.get_executing_mission_id = AsyncMock(return_value=1)
+    mission_tracking.mir_api.get_mission_queue_entry = AsyncMock(return_value=dict(entry))
+    mission_tracking.mir_api.get_mission_definition = AsyncMock(return_value=dict(definition))
+    mission_tracking.mir_api.get_mission_actions = AsyncMock(return_value=def_actions)
+    mission_tracking.mir_api.get_action_definitions = AsyncMock(
+        return_value=[{"action_type": "charging", "name": "Charging"}]
+    )
 
-    dummy_data = {"state": "Completed"}
-    mission_tracking.mir_api.get_mission = AsyncMock(return_value=dummy_data)
-    assert await mission_tracking.get_current_mission() == dummy_data
+    mission = await mission_tracking.get_current_mission()
+    assert mission["id"] == 1
+    assert mission["definition"]["name"] == "Charge"
+    assert mission["definition"]["actions"] == def_actions
+    assert mission_tracking.executing_mission_id == 1
+    assert mission_tracking._tasks_tracker is not None
+
+    # The definition is cached per queue entry: a second tick refetches only the entry.
+    await mission_tracking.get_current_mission()
+    assert mission_tracking.mir_api.get_mission_definition.await_count == 1
+    assert mission_tracking.mir_api.get_mission_actions.await_count == 1
+    assert mission_tracking.mir_api.get_mission_queue_entry.await_count == 2
+
+    # A non-executing state clears executing_mission_id but still returns the mission
+    # (the just-finished mission is reported exactly once).
+    mission_tracking.mir_api.get_mission_queue_entry = AsyncMock(
+        return_value={**entry, "state": "Done", "finished": "2026-08-10T10:00:00"}
+    )
+    mission = await mission_tracking.get_current_mission()
+    assert mission["state"] == "Done"
     assert mission_tracking.executing_mission_id is None
+
+    # With no next executing mission, the next tick returns None and drops the tracker.
+    mission_tracking.mir_api.get_executing_mission_id = AsyncMock(return_value=None)
+    assert await mission_tracking.get_current_mission() is None
+    assert mission_tracking._tasks_tracker is None
+
+
+@pytest.mark.asyncio
+async def test_executing_mission_id_comes_from_status(mission_tracking):
+    """/status already carries mission_queue_id and is already fetched every tick.
+
+    The queue endpoint is unbounded (2 MB on a robot with history) and polling it once a
+    second cannot keep up, so it is only a fallback for when the field is absent.
+    """
+    mission_tracking.mir_api.get_executing_mission_id = AsyncMock(side_effect=AssertionError)
+    assert await mission_tracking._find_executing_mission_id({"mission_queue_id": 7}) == 7
+    # Idle robot: the field is present and null, which is an answer, not a gap.
+    assert await mission_tracking._find_executing_mission_id({"mission_queue_id": None}) is None
+
+    mission_tracking.mir_api.get_executing_mission_id = AsyncMock(return_value=9)
+    assert await mission_tracking._find_executing_mission_id({}) == 9
+    assert await mission_tracking._find_executing_mission_id(None) == 9
+
+
+@pytest.mark.asyncio
+async def test_finished_mission_is_not_readopted(mission_tracking):
+    # mission_queue_id clears when a mission ends; a firmware that left it set would make
+    # the finished entry republish on every tick.
+    entry = {
+        "state": "Done",
+        "id": 5,
+        "mission_id": None,
+        "started": "2026-08-10T10:00:00",
+        "finished": "2026-08-10T10:01:00",
+    }
+    mission_tracking.mir_api.get_mission_queue_entry = AsyncMock(return_value=dict(entry))
+    status = {"mission_queue_id": 5}
+
+    assert (await mission_tracking.get_current_mission(status))["id"] == 5
+    assert mission_tracking.executing_mission_id is None
+    assert await mission_tracking.get_current_mission(status) is None
+
+
+@pytest.mark.asyncio
+async def test_fleet_action_list_without_mission_id(
+    mission_tracking, sample_metrics_data, sample_status_data
+):
+    """Fleet-dispatched ActionLists have mission_id None: no definition, no tasks, no crash.
+
+    GET /missions/None is a 400, and executing_mission_id is only reassigned when it is
+    None, so a raise here leaves the entry pinned and stops tracking for good.
+    """
+    status = {**sample_status_data, "mission_queue_id": 42}
+    mission_tracking.mir_api.get_executing_mission_id = AsyncMock(side_effect=AssertionError)
+    mission_tracking.mir_api.get_mission_queue_entry = AsyncMock(
+        return_value={
+            "state": "Executing",
+            "id": 42,
+            "mission_id": None,
+            "started": "2026-08-10T10:00:00",
+            "finished": None,
+        }
+    )
+    mission_tracking.mir_api.get_mission_definition = AsyncMock(side_effect=AssertionError)
+    mission_tracking.mir_api.get_mission_actions = AsyncMock(side_effect=AssertionError)
+
+    await mission_tracking.report_mission(status, sample_metrics_data)
+
+    reported = mission_tracking.inorbit_sess.publish_key_values.call_args.kwargs["key_values"][
+        "mission_tracking"
+    ]
+    assert reported["missionId"] == 42
+    assert reported["inProgress"] is True
+    # Definition-derived fields are absent rather than fabricated.
+    assert "label" not in reported
+    assert "tasks" not in reported
+    assert "Mission Steps" not in reported["data"]
+    assert mission_tracking._tasks_tracker is None
+
+    # The next tick still tracks the same entry and still does not fetch a definition.
+    await mission_tracking.report_mission(status, sample_metrics_data)
+    assert mission_tracking.executing_mission_id == 42
 
 
 @pytest.mark.asyncio
@@ -80,6 +184,7 @@ async def test_report_mission(
             "missionId": 14026,
             "inProgress": True,
             "state": "Executing",
+            "status": "OK",
             "label": "Charge",
             "startTs": 1701946471000.0,
             "data": {
@@ -92,10 +197,11 @@ async def test_report_mission(
                 "Battery Time Remaning (s)": 89725,
                 "WiFi RSSI (dbm)": -46.0,
             },
-            "completedPercent": 1.0,
         }
     }
 
+    # get_current_mission is mocked out, so there is no task tracker and no progress to
+    # report: completedPercent is omitted rather than estimated.
     assert DeepDiff(reported_mission, should_be) == {}
 
 

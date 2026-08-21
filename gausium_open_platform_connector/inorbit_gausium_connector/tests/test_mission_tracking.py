@@ -287,6 +287,7 @@ class TestMissionTracking:
 
         completion_data = {
             "task_instance_id": task_instance_id,
+            "interruptions_count": 2,
             "last_inorbit_report": {
                 "missionId": task_instance_id,
                 "status": InOrbitMissionStatus.ok.value,
@@ -304,6 +305,8 @@ class TestMissionTracking:
         published_report = mock_publish_callback.call_args[0][0]
         assert published_report["inProgress"] is False
         assert published_report["state"] == MissionState.completed.value["state"]
+        # The count captured when the mission ended, not the live one
+        assert published_report["data"]["interruptions_count"] == 2
 
     @pytest.mark.asyncio
     async def test_handle_mission_completion_no_report(
@@ -363,9 +366,9 @@ class TestMissionTracking:
         assert mission_tracking._shutdown_event.is_set()
         assert real_task.cancelled()
 
-    def test_update_mission_static_method(self, sample_robot_status, sample_robot_status_v2):
-        """Test the static _update_mission method."""
-        result = MissionTracking._update_mission(sample_robot_status, sample_robot_status_v2)
+    def test_update_mission(self, mission_tracking, sample_robot_status, sample_robot_status_v2):
+        """Test the _update_mission method."""
+        result = mission_tracking._update_mission(sample_robot_status, sample_robot_status_v2)
 
         expected = {
             "missionId": "task-123",
@@ -383,45 +386,50 @@ class TestMissionTracking:
                 "active_cleaning_time_s": 300,
                 "task_state": "cleaning",
                 "task_state_raw": TaskState.RUNNING.value,
+                "interruptions_count": 0,
             },
         }
 
         assert result == expected
 
     def test_update_mission_publishes_cleaning_mode(
-        self, sample_robot_status, sample_robot_status_v2
+        self, mission_tracking, sample_robot_status, sample_robot_status_v2
     ):
         """Test that the live cleaning mode is published while a task runs."""
         sample_robot_status_v2["currentTask"]["workMode"] = {"name": "__洗地"}
 
-        result = MissionTracking._update_mission(sample_robot_status, sample_robot_status_v2)
+        result = mission_tracking._update_mission(sample_robot_status, sample_robot_status_v2)
 
         assert result["data"]["cleaning_mode"] == "scrub"
         assert result["data"]["cleaning_mode_raw"] == "__洗地"
         assert result["data"]["cleaning_mode_label"] == "Wash the floor"
 
-    def test_update_mission_zero_progress(self, sample_robot_status, sample_robot_status_v2):
+    def test_update_mission_zero_progress(
+        self, mission_tracking, sample_robot_status, sample_robot_status_v2
+    ):
         """Test _update_mission with zero progress."""
         zero_progress_status = deepcopy(sample_robot_status)
         zero_progress_status["executingTask"]["progress"] = 0
 
-        result = MissionTracking._update_mission(zero_progress_status, sample_robot_status_v2)
+        result = mission_tracking._update_mission(zero_progress_status, sample_robot_status_v2)
 
         assert result["completedPercent"] == 0.0
         assert result["estimatedDurationSecs"] is None
 
-    def test_update_mission_complete_progress(self, sample_robot_status, sample_robot_status_v2):
+    def test_update_mission_complete_progress(
+        self, mission_tracking, sample_robot_status, sample_robot_status_v2
+    ):
         """Test _update_mission with 100% progress."""
         complete_status = deepcopy(sample_robot_status)
         complete_status["executingTask"]["progress"] = 100
 
-        result = MissionTracking._update_mission(complete_status, sample_robot_status_v2)
+        result = mission_tracking._update_mission(complete_status, sample_robot_status_v2)
 
         assert result["completedPercent"] == 1.0
         assert result["estimatedDurationSecs"] == 300
 
     def test_update_mission_preserve_progress_when_paused(
-        self, sample_robot_status, sample_robot_status_v2
+        self, mission_tracking, sample_robot_status, sample_robot_status_v2
     ):
         """Test that progress is preserved when robot is paused."""
         paused_status = deepcopy(sample_robot_status)
@@ -432,7 +440,7 @@ class TestMissionTracking:
         # Previous progress was 50%
         previous_report = {"completedPercent": 0.5}
 
-        result = MissionTracking._update_mission(
+        result = mission_tracking._update_mission(
             paused_status, sample_robot_status_v2, previous_report
         )
 
@@ -458,7 +466,7 @@ class TestMissionTracking:
         assert result["label"] == "clean areas 1 and 2"
         assert result["state"] == MissionState.completed.value["state"]
         assert result["status"] == MissionState.completed.value["status"]
-        assert result["completedPercent"] == 1
+        assert result["completedPercent"] == 0.9169
         # Wall time, not the vendor's active cleaning time of 8915 s
         assert result["estimatedDurationSecs"] == 9803
         assert "startTs" in result
@@ -524,3 +532,108 @@ class TestUtilityFunctions:
             "zero": 0,
             "false": False,
         }
+
+
+class TestTaskEndStatus:
+    """Test cases for the mission outcome derived from the vendor task end status."""
+
+    @pytest.mark.parametrize(
+        "end_status, coverage, expected",
+        [
+            (0, 0.95, MissionState.completed),
+            (0, 0.10, MissionState.incomplete),
+            (0, None, MissionState.completed),
+            (1, 0.95, MissionState.abandoned),
+            (2, 0.95, MissionState.abandoned),
+            (3, 0.10, MissionState.abandoned),
+            (-1, 0.95, None),
+            (None, 0.95, None),
+        ],
+    )
+    def test_get_from_end_status(self, end_status, coverage, expected):
+        assert MissionState.get_from_end_status(end_status, coverage, 0.9) is expected
+
+    def test_completed_mission_publishes_task_outcome(self, mission_tracking, sample_task_report):
+        sample_task_report["taskEndStatus"] = 0
+        sample_task_report["actualCleaningAreaSquareMeter"] = sample_task_report[
+            "plannedCleaningAreaSquareMeter"
+        ]
+
+        result = mission_tracking._complete_mission(sample_task_report, {"completedPercent": 0.95})
+
+        assert result["state"] == MissionState.completed.value["state"]
+        assert result["data"]["task_outcome"] == "completed"
+        assert result["completedPercent"] == 1.0
+
+    def test_manual_stop_is_abandoned_whatever_the_coverage(
+        self, mission_tracking, sample_task_report
+    ):
+        sample_task_report["taskEndStatus"] = 1
+        sample_task_report["actualCleaningAreaSquareMeter"] = sample_task_report[
+            "plannedCleaningAreaSquareMeter"
+        ]
+
+        result = mission_tracking._complete_mission(sample_task_report, {"completedPercent": 0.95})
+
+        assert result["state"] == MissionState.abandoned.value["state"]
+        assert result["data"]["task_outcome"] == "abandoned"
+        assert "1" in result["data"]["Error"]
+
+    def test_unknown_end_status_omits_the_key_and_falls_back(
+        self, mission_tracking, sample_task_report
+    ):
+        sample_task_report["taskEndStatus"] = -1
+
+        result = mission_tracking._complete_mission(sample_task_report, {"completedPercent": 0.95})
+
+        assert "task_outcome" not in result["data"]
+        assert result["state"] == MissionState.completed.value["state"]
+
+    def test_completed_percent_reflects_coverage(self, mission_tracking, sample_task_report):
+        sample_task_report["taskEndStatus"] = 0
+
+        result = mission_tracking._complete_mission(sample_task_report, {"completedPercent": 0.95})
+
+        assert result["completedPercent"] == 0.9169
+
+
+class TestInterruptionsCount:
+    """Test cases for the per task instance interruptions counter."""
+
+    def _tick(self, mission_tracking, task_state, task_instance_id, progress=10):
+        mission_tracking.update(
+            {
+                "taskState": task_state,
+                "executingTask": {"id": "task-1", "progress": progress, "timeRemaining": 1},
+                "emergencyStop": {"enabled": False},
+            },
+            {"currentTask": {"taskInstanceId": task_instance_id}},
+        )
+
+    def test_increments_on_pause(self, mission_tracking):
+        self._tick(mission_tracking, "RUNNING", "instance-1")
+        self._tick(mission_tracking, "PAUSED", "instance-1")
+        self._tick(mission_tracking, "PAUSED", "instance-1")
+        self._tick(mission_tracking, "RUNNING", "instance-1")
+        self._tick(mission_tracking, "PAUSED", "instance-1")
+
+        assert mission_tracking._interruptions_count == 2
+
+    @pytest.mark.asyncio
+    async def test_resets_on_a_new_task_instance(self, mission_tracking):
+        self._tick(mission_tracking, "RUNNING", "instance-1")
+        self._tick(mission_tracking, "PAUSED", "instance-1")
+        self._tick(mission_tracking, "RUNNING", "instance-2")
+
+        assert mission_tracking._interruptions_count == 0
+
+        await mission_tracking.shutdown()
+
+    def test_is_published_in_progress_and_on_completion(self, mission_tracking, sample_task_report):
+        self._tick(mission_tracking, "RUNNING", "instance-1", progress=10)
+        self._tick(mission_tracking, "PAUSED", "instance-1", progress=20)
+
+        assert mission_tracking._last_inorbit_report["data"]["interruptions_count"] == 1
+
+        result = mission_tracking._complete_mission(sample_task_report, {"completedPercent": 0.3})
+        assert result["data"]["interruptions_count"] == 1

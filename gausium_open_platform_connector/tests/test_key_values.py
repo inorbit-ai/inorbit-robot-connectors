@@ -42,6 +42,23 @@ def status_v2() -> dict:
     return load_fixture("status_v2.json")
 
 
+def test_work_modes_carry_only_the_contract_fields(status_v1, status_v2) -> None:
+    status_v1["workModes"] = [
+        {"id": "1", "name": "__洗地", "strength": "custom", "type": "1", "subType": "surprise"}
+    ]
+
+    assert build(status_v1, status_v2)["work_modes"] == [
+        {"id": "1", "name": "__洗地", "strength": "custom", "type": "1"}
+    ]
+
+
+def test_work_modes_omitted_when_neither_payload_reports_them(status_v1, status_v2) -> None:
+    del status_v1["workModes"]
+    del status_v2["workModes"]
+
+    assert "work_modes" not in build(status_v1, status_v2)
+
+
 def test_full_key_value_set(status_v1, status_v2) -> None:
     assert build(status_v1, status_v2) == {
         "api_connected": True,

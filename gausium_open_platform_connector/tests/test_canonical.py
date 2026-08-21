@@ -49,6 +49,7 @@ def test_cleaning_mode_keys() -> None:
         "cleaning_mode_raw": "未知模式",
         "cleaning_mode_label": "未知模式",
     }
+    assert cleaning_mode_keys("静音推尘")["cleaning_mode_label"] == "Silent dust mopping"
     assert cleaning_mode_keys("") == {}
     assert cleaning_mode_keys(None) == {}
 

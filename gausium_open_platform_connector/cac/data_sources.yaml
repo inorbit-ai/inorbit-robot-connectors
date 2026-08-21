@@ -1,0 +1,625 @@
+# SPDX-FileCopyrightText: 2026 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
+# DataSourceDefinitions for the canonical cleaning-vertical key-values published by the
+# connector. Keys are snake_case and OEM-agnostic; percentages are published as 0-1, so
+# percent datasources set `scale: 1` explicitly (omitting it with `unit: "%"` would
+# default to 0.01 and re-scale an already-normalized value).
+# Normalized enums have a `<key>_raw` twin carrying the untouched vendor value.
+# Replace <ACCOUNT_ID> and <TAG_ID> with real values before applying.
+
+# --- Battery -------------------------------------------------------------------
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: battery_pct
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Battery
+  unit: "%"
+  scale: 1
+  timeline:
+    fieldType: number
+  source:
+    keyValue:
+      key: battery_pct
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: charging
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Charging
+  timeline:
+    fieldType: boolean
+  source:
+    keyValue:
+      key: charging
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: battery_soh
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Battery Health
+  timeline: {}
+  source:
+    keyValue:
+      key: battery_soh
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: battery_cycles
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Battery Cycles
+  timeline:
+    fieldType: number
+  source:
+    keyValue:
+      key: battery_cycles
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: battery_temp_c
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Battery Temperature
+  unit: "°C"
+  timeline:
+    fieldType: number
+  source:
+    keyValue:
+      key: battery_temp_c
+
+# --- Operation -------------------------------------------------------------------
+# mission_status supplies the datasource the platform-side Modes configuration maps.
+# The values (Error / Mission / Charging / Idle) are homogeneous across cleaning-robot
+# connectors; the connector derives them, so this is a plain binding with no transform.
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: mission_status
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Mission status
+  timeline: {}
+  source:
+    keyValue:
+      key: mission_status
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: task_state
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Task State
+  timeline: {}
+  source:
+    keyValue:
+      key: task_state
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: task_state_raw
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Task State (vendor)
+  timeline: {}
+  source:
+    keyValue:
+      key: task_state_raw
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: cleaning_mode
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Cleaning Mode
+  timeline: {}
+  source:
+    keyValue:
+      key: cleaning_mode
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: cleaning_mode_raw
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Cleaning Mode (vendor)
+  timeline: {}
+  source:
+    keyValue:
+      key: cleaning_mode_raw
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: cleaning_mode_label
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Cleaning Mode (English)
+  timeline: {}
+  source:
+    keyValue:
+      key: cleaning_mode_label
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: speed_kmph
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Speed
+  unit: km/h
+  timeline:
+    fieldType: number
+  source:
+    keyValue:
+      key: speed_kmph
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: emergency_stop
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Emergency Stop
+  timeline:
+    fieldType: boolean
+  source:
+    keyValue:
+      key: emergency_stop
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: manual_control
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Manual Control
+  timeline:
+    fieldType: boolean
+  source:
+    keyValue:
+      key: manual_control
+
+# --- Localization / navigation ----------------------------------------------------
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: current_map_name
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Current Map
+  timeline: {}
+  source:
+    keyValue:
+      key: current_map_name
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: localization_state
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Localization State
+  timeline: {}
+  source:
+    keyValue:
+      key: localization_state
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: nav_status
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Navigation Status
+  timeline: {}
+  source:
+    keyValue:
+      key: nav_status
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: elevator_status
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Elevator Status
+  timeline: {}
+  source:
+    keyValue:
+      key: elevator_status
+
+# --- Tanks and cleaning devices -----------------------------------------------------
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: clean_water_tank_pct
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Clean Water Tank
+  unit: "%"
+  scale: 1
+  timeline:
+    fieldType: number
+  source:
+    keyValue:
+      key: clean_water_tank_pct
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: recovery_tank_pct
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Recovery Tank
+  unit: "%"
+  scale: 1
+  timeline:
+    fieldType: number
+  source:
+    keyValue:
+      key: recovery_tank_pct
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: spray_active
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Spray Active
+  timeline:
+    fieldType: boolean
+  source:
+    keyValue:
+      key: spray_active
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: spray_water_level
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Spray Water Level
+  timeline:
+    fieldType: number
+  source:
+    keyValue:
+      key: spray_water_level
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: vacuum_active
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Vacuum Active
+  timeline:
+    fieldType: boolean
+  source:
+    keyValue:
+      key: vacuum_active
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: vacuum_level
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Vacuum Level
+  timeline:
+    fieldType: number
+  source:
+    keyValue:
+      key: vacuum_level
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: filter_active
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Filter Active
+  timeline:
+    fieldType: boolean
+  source:
+    keyValue:
+      key: filter_active
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: scrubber_brush_active
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Scrubber Brush Active
+  timeline:
+    fieldType: boolean
+  source:
+    keyValue:
+      key: scrubber_brush_active
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: scrubber_brush_down
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Scrubber Brush Down
+  timeline:
+    fieldType: boolean
+  source:
+    keyValue:
+      key: scrubber_brush_down
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: soft_squeegee_down
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Soft Squeegee Down
+  timeline:
+    fieldType: boolean
+  source:
+    keyValue:
+      key: soft_squeegee_down
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: rolling_squeegee_down
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Rolling Squeegee Down
+  timeline:
+    fieldType: boolean
+  source:
+    keyValue:
+      key: rolling_squeegee_down
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: side_brush_left_down
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Left Side Brush Down
+  timeline:
+    fieldType: boolean
+  source:
+    keyValue:
+      key: side_brush_left_down
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: side_brush_right_down
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Right Side Brush Down
+  timeline:
+    fieldType: boolean
+  source:
+    keyValue:
+      key: side_brush_right_down
+
+# --- Consumable wear ----------------------------------------------------------------
+# consumable_<part>_wear_pct is generated for every device part reporting a life span,
+# so the key set varies by robot model. These two cover the common scrubber parts; add
+# more by copying the pattern (e.g. consumable_filter_wear_pct, consumable_rolling_brush_wear_pct).
+# Wear is the consumed fraction (0-1), unlike the mission consumable_*_pct residuals.
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: consumable_scrubber_brush_wear_pct
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Scrubber Brush Wear
+  unit: "%"
+  scale: 1
+  timeline:
+    fieldType: number
+  source:
+    keyValue:
+      key: consumable_scrubber_brush_wear_pct
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: consumable_soft_squeegee_wear_pct
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Soft Squeegee Wear
+  unit: "%"
+  scale: 1
+  timeline:
+    fieldType: number
+  source:
+    keyValue:
+      key: consumable_soft_squeegee_wear_pct
+
+# --- Catalogs (JSON lists) ------------------------------------------------------------
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: executable_tasks
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Executable Tasks
+  type: json
+  timeline: {}
+  source:
+    keyValue:
+      key: executable_tasks
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: nav_points
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Navigation Points
+  type: json
+  timeline: {}
+  source:
+    keyValue:
+      key: nav_points
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: work_modes
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Work Modes
+  type: json
+  timeline: {}
+  source:
+    keyValue:
+      key: work_modes
+
+# --- Connectivity -----------------------------------------------------------------
+# api_connected: the connector can reach the Gausium Open Platform API.
+# robot_online: vendor-reported robot reachability.
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: api_connected
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: API Connected
+  timeline:
+    fieldType: boolean
+  source:
+    keyValue:
+      key: api_connected
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: robot_online
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Robot Online
+  timeline:
+    fieldType: boolean
+  source:
+    keyValue:
+      key: robot_online
+
+# --- Robot identity ----------------------------------------------------------------
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: connector_version
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Connector Version
+  timeline: {}
+  source:
+    keyValue:
+      key: connector_version
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: display_name
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Display Name
+  timeline: {}
+  source:
+    keyValue:
+      key: display_name
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: model_family
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Model Family
+  timeline: {}
+  source:
+    keyValue:
+      key: model_family
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: model_type
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Model Type
+  timeline: {}
+  source:
+    keyValue:
+      key: model_type
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: software_version
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Software Version
+  timeline: {}
+  source:
+    keyValue:
+      key: software_version

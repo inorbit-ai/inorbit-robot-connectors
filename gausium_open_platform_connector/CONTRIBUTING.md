@@ -13,7 +13,7 @@ Contributions are encouraged, and they are greatly appreciated! Every little bit
 
 ## Get Started
 
-Ready to contribute? Here's how to set up `inorbit_gausium_connector` for local development.
+Ready to contribute? Here's how to set up `gausium-open-platform-connector` for local development.
 
 1. Fork the `inorbit-robot-connectors` repo on [GitHub](https://github.com/inorbit-ai/inorbit-robot-connectors).
 
@@ -23,17 +23,15 @@ Ready to contribute? Here's how to set up `inorbit_gausium_connector` for local 
    git clone git@github.com:{your_username_here}/inorbit-robot-connectors.git
    ```
 
-3. CD into the `gausium_open_platform_connector` directory and create a virtual environment:
+3. CD into the `gausium_open_platform_connector` directory:
    ```bash
    cd gausium_open_platform_connector
-   python -m venv venv
-   source venv/bin/activate
    ```
 
-4. Install the project in editable mode:
+4. Install the project with [`uv`](https://github.com/astral-sh/uv):
 
    ```bash
-   pip install -e .[dev]
+   uv sync --extra dev
    ```
 
 5. Create a branch for local development:
@@ -48,7 +46,7 @@ Ready to contribute? Here's how to set up `inorbit_gausium_connector` for local 
 6. When you're done making changes, check that your changes pass linting and tests with tox:
 
    ```bash
-   tox
+   uv run tox
    ```
 
 7. Commit your changes and push your branch to GitHub:
@@ -88,13 +86,13 @@ To release a new version:
    git pull
    ```
 
-2. Bump the version using `bump-my-version`. This automatically increments the version number in the
-   places specified in the `pyproject.toml` file:
+2. Bump the version using the Make target. It runs `uv version --bump` (updating
+   `pyproject.toml` and `uv.lock`), commits and tags:
 
    ```bash
-   # Use major, minor, or patch to increment the version number
-   bump-my-version patch --dry-run --verbose
-   bump-my-version patch
+   # Use PART=major, minor, or patch. Add DRY=1 to preview.
+   make bump PART=patch DRY=1
+   make bump PART=patch
    ```
 
 3. Push both the commit and the tag:
@@ -105,7 +103,7 @@ To release a new version:
    ```
 
 > [!IMPORTANT]
-> The message of the last commit must match the configured pattern, e.g. "Bump inorbit_gausium_open_platform_connector version: 0.1.0 → 0.1.1", for the publish job to run.
+> The message of the last commit must match the configured pattern, e.g. "Bump gausium-open-platform-connector version: 2.0.0 → 2.0.1", for the publish job to run.
 
 New releases are built and published to the Docker repository automatically by GitHub Actions when a new version bump commit is pushed.
 

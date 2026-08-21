@@ -1,27 +1,46 @@
 #!/bin/bash
 
-# SPDX-FileCopyrightText: 2025 InOrbit, Inc.
+# SPDX-FileCopyrightText: 2026 InOrbit, Inc.
 #
 # SPDX-License-Identifier: MIT
 
-# This script builds the Docker image for the Gausium Connector.
+# This script builds the Docker image for the Gausium Open Platform Connector.
 # The image is tagged with the current version of the connector.
 
 # (maintainers only) the image is pushed to the Google Cloud Registry if the --push flag is provided.
-# Remember to first run `gcloud auth configure-docker us-west2-docker.pkg.dev to authenticate
+# Remember to first run `gcloud auth configure-docker us-central1-docker.pkg.dev` to authenticate
 # with the Google Cloud Registry.
+
+# Please note that for release purposes GitHub workflows will build and push the image automatically
+# on version bumps.
 
 # Exit on error
 set -e
 
-CONNECTOR_VERSION=$(grep -oP '(?<=current_version = ")[^"]*' ../pyproject.toml | head -1)
+REPO_ROOT_DIR="$(dirname "$0")/.."
 
 IMAGE_NAME="us-central1-docker.pkg.dev/inorbit-integrations/connectors/gausium_open_platform_connector"
-IMAGE_NAME_SHORT="gausium_connector"
+IMAGE_NAME_SHORT="gausium_open_platform_connector"
 
-echo "Building Docker image '$IMAGE_NAME:$CONNECTOR_VERSION'..."
+echo "Building Docker image '$IMAGE_NAME'..."
 
-cd "$(dirname "$0")/../"
+cd "$REPO_ROOT_DIR"
+
+set +e
+CONNECTOR_VERSION=$(
+python - <<'PY'
+import pathlib
+import tomllib
+
+pyproject = pathlib.Path("pyproject.toml")
+data = tomllib.loads(pyproject.read_text())
+print(data["project"]["version"])
+PY
+)-rc4
+if [ $? -ne 0 ]; then
+    CONNECTOR_VERSION="latest"
+fi
+set -e
 
 docker build \
     -t $IMAGE_NAME:latest \

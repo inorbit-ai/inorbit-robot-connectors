@@ -2,6 +2,4 @@
 #
 # SPDX-License-Identifier: MIT
 
-*
-!.gitignore
-!*example*
+"""Configuration models for Gausium Open Platform connector."""

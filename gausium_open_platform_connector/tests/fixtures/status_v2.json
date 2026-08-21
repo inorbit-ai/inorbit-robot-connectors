@@ -1,0 +1,42 @@
+{
+  "serialNumber": "GS000-0000-000-0001",
+  "taskState": "IDLE",
+  "online": true,
+  "speedKilometerPerHour": 0,
+  "battery": {"charging": false, "powerPercentage": 100, "soc": 100, "soh": "HEALTHY"},
+  "emergencyStop": {"enabled": false},
+  "localizationInfo": {
+    "localizationState": "LOST",
+    "map": {"id": "map-1", "name": "floor_1", "version": "maps/map-1/versions/version-1"}
+  },
+  "cleanModes": [{"name": "__尘推"}, {"name": "__洗地"}],
+  "supportSite": true,
+  "navigationPoints": {
+    "naviPoints": [
+      {"naviPointName": "Maintenance", "navPointGridX": 1811, "navPointGridY": 1803}
+    ]
+  },
+  "workModes": [
+    {"id": "mode-1", "name": "__尘推", "strength": "custom", "type": "1"},
+    {"id": "mode-2", "name": "__洗地", "strength": "custom", "type": "1"},
+    {"id": "inspect", "name": "inspect", "strength": "middle", "type": "5"}
+  ],
+  "currentTask": {
+    "workMode": {"id": "", "name": "", "type": 0, "subType": "", "strength": ""},
+    "taskInstanceId": "",
+    "manualControlling": false
+  },
+  "device": {
+    "cleanWaterTank": {"level": 60},
+    "recoveryWaterTank": {"level": 0},
+    "rollingBrush": {"lifeSpan": 300, "usedLife": 0},
+    "scrubberBrush": {"enabled": false, "ifPutDown": false, "lifeSpan": 300, "usedLife": 0},
+    "softSqueegee": {"ifPutDown": false, "lifeSpan": 250, "usedLife": 22.106201},
+    "filter": {"isRunning": false, "lifeSpan": 201, "usedLife": 0},
+    "spray": {"isRunning": false, "waterLevel": 0},
+    "vacuum": {"enabled": false, "level": 0}
+  },
+  "navStatus": "NAVI_IDLE",
+  "currentElevatorStatus": "ELEVATOR_CONTROLLER_IDLE",
+  "latestReportTime": "1786912977060"
+}

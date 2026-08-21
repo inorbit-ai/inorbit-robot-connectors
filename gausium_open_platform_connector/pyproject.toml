@@ -1,140 +1,99 @@
-# SPDX-FileCopyrightText: 2025 InOrbit, Inc.
+# SPDX-FileCopyrightText: 2026 InOrbit, Inc.
 #
 # SPDX-License-Identifier: MIT
 
 [project]
-name = "inorbit_gausium_connector"
-version = "1.0.9"
-description = "InOrbit Connector for Gausium robots managed by Gausium Open Platform."
+name = "gausium-open-platform-connector"
+version = "2.0.0"
+description = "InOrbit Edge connector for robots managed by the Gausium Open Platform"
 readme = "README.md"
-requires-python = ">=3.12"
-authors = [{ name = "InOrbit Inc.", email = "support@inorbit.ai" }]
-keywords = [
-    "connector",
-    "edge-sdk",
-    "inorbit",
-    "robops",
-    "inorbit_gausium_connector",
-    "Gausium",
-    "Phantas",
+requires-python = ">=3.13"
+license = { text = "MIT" }
+authors = [
+    { name = "InOrbit, Inc.", email = "support@inorbit.ai" },
 ]
+maintainers = [
+    { name = "InOrbit, Inc.", email = "support@inorbit.ai" },
+]
+keywords = ["inorbit", "connector", "edge-connector", "robotics", "robops", "gausium_open_platform"]
 classifiers = [
-    "Intended Audience :: Other Audience",
+    "Topic :: Scientific/Engineering",
+    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Natural Language :: English",
+    "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "inorbit-connector~=1.3.1",
-    "httpx>=0.28.1",
-    "tenacity>=9.1.2",
-    "pytz>=2022.7",
-    "ruamel.yaml>=0.18,<0.19",
-    "pydantic>=2.6,<3.0",
-    "pydantic-settings>=2.6,<3.0",
-    "python-dotenv==1",
-    "Pillow>=10.0.0",
-]
-
-[project.optional-dependencies]
-dev = [
-    "twine==4.0",
-    "build==1.0",
-    "bump-my-version==0.15",
-    "black",
-    "flake8",
-    "pytest>=3",
-    "pytest-asyncio>=1.0.0",
-    "pytest-httpx>=0.35.0",
-    "pytest-cov>=6",
-    "tox>=4.11.3",
+    "inorbit-connector[system-stats]~=3.2.1",
+    "httpx~=0.28",
+    "tenacity~=9.0",
+    "pydantic-settings~=2.13",
 ]
 
 [project.urls]
 Homepage = "https://github.com/inorbit-ai/inorbit-robot-connectors/tree/main/gausium_open_platform_connector"
+Repository = "https://github.com/inorbit-ai/inorbit-robot-connectors"
+Issues = "https://github.com/inorbit-ai/inorbit-robot-connectors/issues"
+
+[project.optional-dependencies]
+dev = [
+    "coverage~=7.11",
+    "pytest~=8.4",
+    "pytest-asyncio~=1.2",
+    "pytest-httpx~=0.35",
+    "tox~=4.32",
+    "tox-uv~=1.29",
+    "colorlog~=6.10.1",
+    "ruff~=0.16.0",
+]
 
 [project.scripts]
-inorbit_gausium_connector = "inorbit_gausium_connector.inorbit_gausium_connector:start"
+gausium-open-platform-connector = "gausium_open_platform_connector.gausium_open_platform_connector:start"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["inorbit_gausium_connector"]
+packages = ["gausium_open_platform_connector"]
 
 [tool.coverage.run]
-source = ["inorbit_gausium_connector/"]
+source = ["gausium_open_platform_connector/"]
 
 [tool.coverage.report]
 fail_under = 0
 
-[tool.flake8]
-exclude = [".venv*", "venv", ".tox/"]
-max-line-length = 100
-show-source = true
-statistics = true
+[tool.ruff]
+line-length = 100
 
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "function"
 
-[tool.black]
-line-length = 100
-target-version = ["py312", "py313"]
-
 [tool.tox]
-env_list = ["py312", "py313"]
+env_list = ["py313"]
 
 [tool.tox.gh]
-python = { "3.12" = "py312", "3.13" = "py313" }
+python = { "3.13" = "py313" }
 
 [tool.tox.env_run_base]
 extras = ["dev"]
-allowlist_externals = ["flake8", "black", "pytest", "coverage"]
 commands = [
     [
-        "flake8",
-        "inorbit_gausium_connector",
-        "--max-line-length",
-        "100",
+        "ruff",
+        "check",
     ],
     [
-        "black",
-        "--check",
-        "--diff",
-        "--line-length",
-        "100",
-        ".",
-    ],
-    [
+        "coverage",
+        "run",
+        "-m",
         "pytest",
-        "--cov=.",
+    ],
+    [
+        "coverage",
+        "html",
+        "-d",
+        "{envlogdir}/coverage",
     ],
 ]
-
-[tool.bumpversion]
-current_version = "1.0.9"
-commit = true
-tag = true
-message = "Bump inorbit_gausium_open_platform_connector version: {current_version} → {new_version}"
-tag_name = "inorbit_gausium_open_platform_connector-v{new_version}"
-tag_message = "Bump inorbit_gausium_open_platform_connector version: {current_version} → {new_version}"
-
-[[tool.bumpversion.files]]
-filename = "pyproject.toml"
-search = 'version = "{current_version}"'
-replace = 'version = "{new_version}"'
-
-[[tool.bumpversion.files]]
-filename = "inorbit_gausium_connector/__init__.py"
-search = '__version__ = "{current_version}"'
-replace = '__version__ = "{new_version}"'
-
-[[tool.bumpversion.files]]
-filename = "docker/examples/run.sh"
-search = 'CONNECTOR_VERSION="${{CONNECTOR_VERSION:-"{current_version}"}}"'
-replace = 'CONNECTOR_VERSION="${{CONNECTOR_VERSION:-"{new_version}"}}"'
-
-[[tool.bumpversion.files]]
-filename = "docker/README.md"
-search = '{current_version}'
-replace = '{new_version}'
+# The SDK and this project are not typed for pyright; CI checks are ruff + pytest
+[tool.basedpyright]
+typeCheckingMode = "off"

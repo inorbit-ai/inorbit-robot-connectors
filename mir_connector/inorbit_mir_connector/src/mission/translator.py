@@ -36,6 +36,15 @@
 #     step (actionTaskIds, parallel to actions) and the original tasks_list is preserved, so
 #     InOrbit per-task tracking still reports each task as its MiR action runs while the
 #     whole group compiles into a single native mission.
+#   - 2026-07-23 Tomás Badenes: InOrbit routes -> MiR guided_move: corridor-to-radius
+#     mapping (edge = incoming leg, node = min of adjacent legs, goal arrival radius is
+#     fixed, not corridor-derived); consecutive same-routeId waypoint steps with a
+#     straight-line routeSegment collapse into one MirGuidedMove inside the native group,
+#     any other step flushes the run first; non-straight trajectories rejected at
+#     translate time; nonzero intermediate thetas and route properties (maxSpeed) dropped
+#     with a warning; missing waypoint theta warned and sent as orientation 0.
+#   - 2026-07-29 Tomás Badenes: default missing step labels to "" (dispatched steps may
+#     omit label, and MissionStep.label rejects an explicit None).
 
 """Mission translator that compiles consecutive InOrbit waypoint and
 nestable action steps into single native MiR missions.
@@ -63,7 +72,9 @@ from inorbit_edge_executor.datatypes import (
 from inorbit_edge_executor.mission import Mission
 
 from .datatypes import (
+    GuidedMoveWaypoint,
     MirAction,
+    MirGuidedMove,
     MirInOrbitMission,
     MirStepsList,
     MirWaypoint,
@@ -132,6 +143,36 @@ def _seconds_to_mir_duration(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:09.6f}"
 
 
+# MiR guided_move radius fields accept [0.0, 5.0] m.
+GUIDED_MOVE_MAX_RADIUS = 5.0
+
+
+def _theta_to_mir_orientation(theta: float) -> float:
+    """Convert an unbounded InOrbit radian angle to MiR degrees in [-180, 180].
+
+    MiR move actions reject orientation outside that range with HTTP 400
+    (input_number_out_of_range).
+    """
+    return (math.degrees(theta) + 180) % 360 - 180
+
+
+def _corridor_to_radius(corridor) -> Union[float, None]:
+    """Map an InOrbit route corridor to a MiR guided-move radius (meters).
+
+    InOrbit corridor is total width; MiR radius is per side, so width/2. An
+    asymmetric corridor cannot be expressed symmetrically: use the
+    conservative min(leftWidth, rightWidth). None means no corridor (MiR
+    defaults apply).
+    """
+    if corridor is None:
+        return None
+    if corridor.width is not None:
+        radius = corridor.width / 2
+    else:
+        radius = min(corridor.leftWidth, corridor.rightWidth)
+    return min(radius, GUIDED_MOVE_MAX_RADIUS)
+
+
 class InOrbitToMirTranslator:
     """Translates InOrbit missions by compiling consecutive waypoint and
     nestable action steps into native MiR missions.
@@ -161,6 +202,62 @@ class InOrbitToMirTranslator:
         # complete_task of each grouped step (None if untracked), parallel to
         # pending_actions, so the native step can report each task as its MiR action runs.
         pending_task_ids: list[Union[str, None]] = []
+        # Buffered consecutive route steps (step, leg_radius), collapsed into one
+        # MirGuidedMove when the run ends.
+        pending_route_steps: list[tuple[MissionStepPoseWaypoint, Union[float, None]]] = []
+
+        def flush_route_run():
+            """Collapse buffered route steps into one MirGuidedMove.
+
+            The last step is the goal: its corridor maps to the goal EDGE radius
+            only (arrival tolerance is not a corridor property). The rest become
+            guided-move waypoints, each carrying its incoming leg's radius as
+            edge radius and the min of its adjacent legs as node radius (a node
+            radius rounds the path on both sides of the waypoint). Task ids ride
+            as one nested list entry parallel to [*waypoints, goal]. A no-op
+            when nothing is buffered.
+            """
+            if not pending_route_steps:
+                return
+            goal_step, goal_radius = pending_route_steps[-1]
+            waypoints = []
+            for i, (s, radius) in enumerate(pending_route_steps[:-1]):
+                if s.waypoint.theta:
+                    logger.warning(
+                        f"Route step {s.label!r}: intermediate waypoint theta is dropped "
+                        f"(MiR guided-move waypoints carry no orientation)"
+                    )
+                out_radius = pending_route_steps[i + 1][1]
+                node_radius = (
+                    min(radius, out_radius)
+                    if radius is not None and out_radius is not None
+                    else None
+                )
+                waypoints.append(
+                    GuidedMoveWaypoint(
+                        x=s.waypoint.x, y=s.waypoint.y, node_radius=node_radius, edge_radius=radius
+                    )
+                )
+            wp = goal_step.waypoint
+            orientation_deg = _theta_to_mir_orientation(wp.theta or 0.0)
+            n_route_steps = len(pending_route_steps)
+            label = goal_step.label or f"Route ({n_route_steps} waypoints)"
+            pending_actions.append(
+                MirGuidedMove(
+                    label=label,
+                    goal_x=wp.x,
+                    goal_y=wp.y,
+                    goal_orientation=orientation_deg,
+                    waypoints=waypoints,
+                    goal_edge_radius=goal_radius,
+                )
+            )
+            pending_labels.append(label)
+            timeouts = [s.timeout_secs for s, _ in pending_route_steps]
+            pending_timeouts.append(sum(timeouts) if all(t is not None for t in timeouts) else None)
+            # Nested entry: per-run-step task ids, parallel to [*waypoints, goal].
+            pending_task_ids.append([s.complete_task for s, _ in pending_route_steps])
+            pending_route_steps.clear()
 
         def flush_actions():
             """Emit the buffered actions as one native MiR mission step.
@@ -171,6 +268,7 @@ class InOrbitToMirTranslator:
             action runs), appends it to ``translated_steps``, and clears the
             buffers. A no-op when nothing is buffered.
             """
+            flush_route_run()
             if not pending_actions:
                 pending_timeouts.clear()
                 pending_task_ids.clear()
@@ -210,18 +308,44 @@ class InOrbitToMirTranslator:
             pending_task_ids.clear()
 
         for step in mission.definition.steps:
+            is_route_step = isinstance(step, MissionStepPoseWaypoint) and step.routeSegment
+            if not is_route_step:
+                # Anything that does not extend the current route run ends it, so the
+                # buffered MirGuidedMove lands in order before this step's action.
+                flush_route_run()
             if isinstance(step, MissionStepPoseWaypoint):
-                wp = step.waypoint
-                x, y, theta = wp.x, wp.y, wp.theta
+                route_segment = step.routeSegment
+                if route_segment is not None:
+                    if route_segment.trajectory is not None and route_segment.trajectory.type:
+                        raise ValueError(
+                            f"Route step {step.label!r}: trajectory type "
+                            f"{route_segment.trajectory.type!r} is not supported by the MiR "
+                            f"connector (v1 supports straight-line segments only)"
+                        )
+                    if route_segment.properties:
+                        logger.warning(
+                            f"Route step {step.label!r}: route properties "
+                            f"{sorted(route_segment.properties)} are not supported and ignored"
+                        )
+                    if (
+                        pending_route_steps
+                        and pending_route_steps[-1][0].routeSegment.routeId != route_segment.routeId
+                    ):
+                        # A different route starts here: its first waypoint must be a
+                        # guided-move goal (oriented arrival), not an intermediate.
+                        flush_route_run()
+                    pending_route_steps.append((step, _corridor_to_radius(route_segment.corridor)))
+                    continue
 
-                # MiR expects orientation in degrees, wrapped to [-180, 180]:
-                # move_to_position rejects anything outside that range with HTTP 400
-                # (input_number_out_of_range). InOrbit theta is an unbounded radian
-                # angle, so normalize after converting.
-                orientation_deg = (math.degrees(theta) + 180) % 360 - 180
+                wp = step.waypoint
+                if wp.theta is None:
+                    logger.warning(
+                        f"Waypoint step {step.label!r} has no theta; sending orientation 0"
+                    )
+                orientation_deg = _theta_to_mir_orientation(wp.theta or 0.0)
 
                 pending_actions.append(
-                    MirWaypoint(label=step.label, x=x, y=y, orientation=orientation_deg)
+                    MirWaypoint(label=step.label or "", x=wp.x, y=wp.y, orientation=orientation_deg)
                 )
                 pending_labels.append(step.label or "")
                 pending_timeouts.append(step.timeout_secs)
@@ -231,7 +355,7 @@ class InOrbitToMirTranslator:
             if isinstance(step, MissionStepWait):
                 pending_actions.append(
                     MirAction(
-                        label=step.label,
+                        label=step.label or "",
                         action_type="wait",
                         parameters={"time": _seconds_to_mir_duration(step.timeout_secs or 0)},
                     )
@@ -269,7 +393,7 @@ class InOrbitToMirTranslator:
                         )
                     pending_actions.append(
                         MirAction(
-                            label=step.label,
+                            label=step.label or "",
                             action_type=action_type,
                             parameters=parameters,
                         )

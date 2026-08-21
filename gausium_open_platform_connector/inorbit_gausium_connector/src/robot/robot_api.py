@@ -138,44 +138,12 @@ class RobotAPI(BaseAPIClient):
         response = await self._get(f"openapi/v2alpha1/s/robots/{self.serial_number}/status")
         return response.json()
 
-    async def get_task_reports(self, page: int = 1, page_size: int = 10) -> dict:
-        """Get a list of task reports for the robot"""
-        endpoint = (
-            f"v1alpha1/robots/{self.serial_number}/taskReports?page={page}&pageSize={page_size}"
-        )
-        response = await self._get(endpoint)
-        return response.json()
-
     async def get_task_reports_v2(self, page: int = 1, page_size: int = 10) -> dict:
         """Get a list of task reports for the robot"""
         endpoint = (
             f"openapi/v2alpha1/robots/{self.serial_number}/taskReports?"
             f"page={page}&pageSize={page_size}"
         )
-        response = await self._get(endpoint)
-        return response.json()
-
-    async def get_robot_details(self):
-        """Get details of the robot.
-
-        Returns:
-            dict: A dictionary containing robot details with the following structure:
-                {
-                    "data": {
-                        "firstReportDate": str,  # First report date in YYYY-MM-DD format
-                        "totalMileage": float,   # Total distance traveled in ft
-                        "totalDuration": int     # Total operation time in seconds
-                    },
-                    "errorCode": int,           # Error code, 0 indicates success
-                    "code": Any,                # Additional code info
-                    "msg": str,                 # Message string
-                    "success": bool,            # Whether request was successful
-                    "count": int,               # Count value
-                    "page": int,                # Page number
-                    "pagesize": int             # Page size
-                }
-        """
-        endpoint = f"https://bot.gs-robot.com/robot-task/robot/details/{self.serial_number}"
         response = await self._get(endpoint)
         return response.json()
 

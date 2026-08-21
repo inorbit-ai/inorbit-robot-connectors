@@ -123,3 +123,15 @@ def test_default_config_matches_example():
     assert (
         example_config["my-example-robot"] == default_config
     ), "Default config doesn't match the example"
+
+
+def test_map_resolution_defaults_and_overrides(example_connector_configuration):
+    """
+    Test that the map resolution can be configured and defaults to the map image resolution
+    """
+    config = ConnectorConfig(**example_connector_configuration)
+    assert config.connector_config.map_resolution == 0.05
+
+    example_connector_configuration["connector_config"]["map_resolution"] = 0.1
+    config = ConnectorConfig(**example_connector_configuration)
+    assert config.connector_config.map_resolution == 0.1

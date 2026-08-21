@@ -18,6 +18,10 @@ DEFAULT_BASE_URL = "https://openapi.gs-robot.com/"
 # The mission is considered successful if the completion percentage is greater than this threshold
 DEFAULT_MISSION_SUCCESS_PERCENTAGE_THRESHOLD = 0.90
 
+# Meters per pixel of the map images published by the robot. Pose is reported in pixels, so the
+# same value converts pose and describes the published map image
+DEFAULT_MAP_RESOLUTION = 0.05
+
 # TODO: leverate ruamel.yaml capabilities to add comments to
 # the yaml and improve how the default configuration section
 # that gets added automatically looks.
@@ -59,6 +63,7 @@ class PhantasConnectorConfig(BaseSettings):
         ge=0.0,
         le=1.0,
     )
+    map_resolution: float = Field(default=DEFAULT_MAP_RESOLUTION, gt=0.0)
 
 
 class ConnectorConfig(InorbitConnectorConfig):

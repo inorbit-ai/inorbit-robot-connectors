@@ -5,7 +5,6 @@
 import asyncio
 import logging
 from copy import deepcopy
-from datetime import datetime
 from enum import Enum
 from numbers import Number
 from time import time
@@ -13,6 +12,10 @@ from typing import Any
 from typing import Callable
 
 from ..config.connector_model import DEFAULT_MISSION_SUCCESS_PERCENTAGE_THRESHOLD
+from .canonical import cleaning_mode_keys
+from .canonical import normalize_task_state
+from .report import report_time_to_millis
+from .report import report_to_data
 from .robot import RobotAPI
 from .robot import TaskState
 
@@ -21,29 +24,6 @@ MISSION_PROGRESS_BAR_ADVANCED_PERCENTAGE_THRESHOLD = 0.90
 
 # Max time to wait for a task report to be available
 MAX_TASK_REPORT_WAIT_TIME_SECS = 10 * 60  # 10 minutes
-
-# Cleaning modes in reports are in Chinese
-CLEANING_MODE_TRANSLATION = {
-    "尘推": "Dust mop",
-    "抛光": "Polish",
-    "快速尘推": "High-speed dust mop",
-    "深度抛光": "Deep polish",
-    "低速尘推": "Low-speed dust mop",
-    "结晶模式": "Crystallization mode",
-    "地毯清洁": "Carpet cleaning",
-    "静音推尘": "Slient dust mopping",
-    "喷雾消毒": "Disinfection spray",
-    "滚刷洗地": "Roller brush scrubbing",
-    "布刷尘推": "Cloth brush dust mopping",
-    "轻度清洁": "Light cleaning",
-    "中度清洁": "Middle cleaning",
-    "重度清洁": "Heavy cleaning",
-    "吸风清洁": "Suction cleaning",
-    "测试": "Test",
-    "扫地": "Sweep the floor",
-    "洗地": "Wash the floor",
-    "吸尘": "Vacuum",
-}
 
 
 class InOrbitMissionStatus(Enum):
@@ -132,14 +112,9 @@ class MissionState(Enum):
             return MissionState.abandoned
 
 
-def filter_truthy(data: dict[str, Any]) -> dict[str, Any]:
-    """Filter out values that are not truthy from a dictionary."""
-    return {k: v for k, v in data.items() if bool(v)}
-
-
-def gausium_date_to_inorbit_millis(date: datetime) -> int:
-    """Converts a date from Gausium reports to a date for InOrbit missions."""
-    return int(datetime.fromisoformat(date.replace("Z", "+00:00")).timestamp() * 1000)
+def filter_none(data: dict[str, Any]) -> dict[str, Any]:
+    """Filter out values without data. Zeroes and False are meaningful under canonical keys."""
+    return {k: v for k, v in data.items() if v is not None}
 
 
 class MissionTracking:
@@ -404,12 +379,18 @@ class MissionTracking:
             )
 
         details = {
-            "Map name": robot_status.get("localizationInfo", {}).get("map", {}).get("name"),
-            "Task ID": executing_task.get("id"),
-            "Task instance ID": robot_status_v2.get("currentTask", {}).get("taskInstanceId"),
-            "Task state": task_state,  # Reset when the mission finishes
-            "Cleaning mileage": cleaning_mileage,
-            "Time elapsed [s]": time_elapsed,
+            "map_name": robot_status.get("localizationInfo", {}).get("map", {}).get("name"),
+            "task_id": executing_task.get("id"),
+            "task_instance_id": task_id,
+            "distance_m": cleaning_mileage,
+            "active_cleaning_time_s": (
+                round(time_elapsed) if isinstance(time_elapsed, Number) else None
+            ),
+            "task_state": normalize_task_state(task_state) if task_state else None,
+            "task_state_raw": task_state,
+            **cleaning_mode_keys(
+                robot_status_v2.get("currentTask", {}).get("workMode", {}).get("name")
+            ),
         }
 
         return {
@@ -418,7 +399,7 @@ class MissionTracking:
             "label": label,
             "completedPercent": completed_percent,
             "estimatedDurationSecs": estimated_duration_secs,
-            "data": filter_truthy(details),
+            "data": filter_none(details),
         }
 
     def _complete_mission(
@@ -427,69 +408,28 @@ class MissionTracking:
         """Completes a previous mission based on its report data"""
         inorbit_report = deepcopy(last_inorbit_report)
 
-        # Relevant task report data
         report_id = task_report.get("id")
-        start_time = task_report.get("startTime")
-        end_time = task_report.get("endTime")
-        display_name = task_report.get("displayName")
-        completion_percentage = task_report.get("completionPercentage", 0)  # From 0 to 1
-        operator = task_report.get("operator")
-        duration_secs = task_report.get("durationSeconds", 0)
-        planned_cleaning_area_square_meter = task_report.get("plannedCleaningAreaSquareMeter")
-        actual_cleaning_area_square_meter = task_report.get("actualCleaningAreaSquareMeter")
-        efficiency_square_meter_per_hour = task_report.get("efficiencySquareMeterPerHour")
-        planned_polishing_area_square_meter = task_report.get("plannedPolishingAreaSquareMeter")
-        actual_polishing_area_square_meter = task_report.get("actualPolishingAreaSquareMeter")
-        water_consumption_liter = task_report.get("waterConsumptionLiter")
-        start_battery_percentage = task_report.get("startBatteryPercentage")
-        end_battery_percentage = task_report.get("endBatteryPercentage")
-        consumables_residual_percentage = task_report.get("consumablesResidualPercentage", {})
-        brush_residual_percentage = consumables_residual_percentage.get("brush")
-        filter_residual_percentage = consumables_residual_percentage.get("filter")
-        suction_blade_residual_percentage = consumables_residual_percentage.get("suctionBlade")
-        cleaning_mode = task_report.get("cleaningMode", "")
-
-        details = {
-            "Report image URI": task_report.get("taskReportPngUri"),
-            "Planned cleaning area [m2]": planned_cleaning_area_square_meter,
-            "Actual cleaning area [m2]": actual_cleaning_area_square_meter,
-            "Cleaned area percentage [%]": (
-                actual_cleaning_area_square_meter / planned_cleaning_area_square_meter * 100
-                if actual_cleaning_area_square_meter and planned_cleaning_area_square_meter
-                else None
-            ),
-            "Efficiency [m2/h]": efficiency_square_meter_per_hour,
-            "Planned polishing area [m2]": planned_polishing_area_square_meter,
-            "Actual polishing area [m2]": actual_polishing_area_square_meter,
-            "Water consumption [L]": water_consumption_liter,
-            "Start battery percentage [%]": start_battery_percentage,
-            "End battery percentage [%]": end_battery_percentage,
-            "Brush residual percentage [%]": brush_residual_percentage,
-            "Filter residual percentage [%]": filter_residual_percentage,
-            "Suction blade residual percentage [%]": suction_blade_residual_percentage,
-            "Cleaning mode": self._translate_cleaning_mode(cleaning_mode),
-            "Operator": operator,
-            "Report ID": report_id,
-            "Start time": start_time,
-            "End time": end_time,
-            # Reset the task state
-            "Task state": None,
-        }
+        data = report_to_data(
+            task_report,
+            current_map_name=self._last_robot_status.get("localizationInfo", {})
+            .get("map", {})
+            .get("name"),
+        )
 
         # Calculated InOrbit mission data
         inorbit_report["inProgress"] = False
-        inorbit_report["label"] = display_name
+        inorbit_report["label"] = task_report.get("displayName")
 
         # Set the state and status based on the completion percentage (area cleaned)
         # and the progress percentage (progress bar).
         last_progress_bar_percentage = last_inorbit_report.get("completedPercent", 0)
         state = MissionState.get_for_completion(
-            completion_percentage,
+            task_report.get("completionPercentage", 0),
             self._mission_success_percentage_threshold,
             last_progress_bar_percentage,
         )
         if state is MissionState.incomplete:
-            details["Error"] = (
+            data["Error"] = (
                 f"Mission failed to achieve a completion percentage of "
                 f"{self._mission_success_percentage_threshold * 100}%"
             )
@@ -512,14 +452,11 @@ class MissionTracking:
             )
             inorbit_report["completedPercent"] = last_progress_bar_percentage
 
-        inorbit_report["estimatedDurationSecs"] = duration_secs
-        inorbit_report["startTs"] = (
-            gausium_date_to_inorbit_millis(start_time) if start_time else None
-        )
-        inorbit_report["endTs"] = gausium_date_to_inorbit_millis(end_time) if end_time else None
-
-        # Filter out None or zero values
-        inorbit_report["data"] = filter_truthy(details)
+        # Wall time is the honest figure for a finished mission
+        inorbit_report["estimatedDurationSecs"] = data.get("duration_s")
+        inorbit_report["startTs"] = report_time_to_millis(task_report.get("startTime"))
+        inorbit_report["endTs"] = report_time_to_millis(task_report.get("endTime"))
+        inorbit_report["data"] = filter_none(data)
 
         return inorbit_report
 
@@ -530,14 +467,4 @@ class MissionTracking:
         inorbit_report = deepcopy(last_inorbit_report)
         inorbit_report.update(MissionState.not_reported.value)
         inorbit_report["data"] = {"Error": "Unable to find task report."}
-        inorbit_report["data"]["Task state"] = None  # Reset the task state
         return inorbit_report
-
-    @staticmethod
-    def _translate_cleaning_mode(cleaning_mode: str) -> str:
-        """Translate the reported cleaning mode to english"""
-
-        # Remove special characters
-        cleaning_mode_name = cleaning_mode.replace("_", "")
-
-        return CLEANING_MODE_TRANSLATION.get(cleaning_mode_name, cleaning_mode_name)

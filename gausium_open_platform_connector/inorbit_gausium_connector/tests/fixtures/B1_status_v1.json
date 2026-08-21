@@ -1,0 +1,215 @@
+{
+  "serialNumber": "GS000-0000-000-0000",
+  "name": "robots/GS000-0000-000-0000",
+  "position": {
+    "latitude": 0,
+    "longitude": 0,
+    "angle": 0
+  },
+  "taskState": "IDLE",
+  "online": true,
+  "speedKilometerPerHour": 0,
+  "battery": {
+    "charging": false,
+    "powerPercentage": 100,
+    "totalVoltage": 27450,
+    "current": 20,
+    "fullCapacity": 60252,
+    "soc": 100,
+    "soh": "HEALTHY",
+    "cycleTimes": 9,
+    "protectorStatus": [
+      "CELL_HIGH_VOLTAGE_PROTECTION"
+    ],
+    "temperature1": 27,
+    "temperature2": 27,
+    "temperature3": 27,
+    "temperature4": 27,
+    "temperature5": 26,
+    "temperature6": 26,
+    "temperature7": 26,
+    "cellVoltage1": 3409,
+    "cellVoltage2": 3493,
+    "cellVoltage3": 3451,
+    "cellVoltage4": 3457,
+    "cellVoltage5": 3497,
+    "cellVoltage6": 3497,
+    "cellVoltage7": 3402
+  },
+  "emergencyStop": {
+    "enabled": false
+  },
+  "localizationInfo": {
+    "localizationState": "LOST",
+    "map": {
+      "id": "4fbbc4b3-138d-4923-b432-6c4d7ffd04da",
+      "name": "map1"
+    }
+  },
+  "navStatus": "NAVI_IDLE",
+  "currentElevatorStatus": "ELEVATOR_CONTROLLER_IDLE",
+  "latestReportTime": "1786912977060",
+  "executableTasks": [
+    {
+      "id": "433d33e9-814b-4731-9191-fb2ae01b55d9",
+      "name": "Task1",
+      "map": {
+        "id": "4fbbc4b3-138d-4923-b432-6c4d7ffd04da",
+        "name": "map1"
+      }
+    },
+    {
+      "id": "cc702e7a-9f71-4795-9085-efd0490ee314",
+      "name": "Task2",
+      "map": {
+        "id": "4fbbc4b3-138d-4923-b432-6c4d7ffd04da",
+        "name": "map1"
+      }
+    },
+    {
+      "id": "e7a1d09f-c67e-49fb-8b62-7445f9d20104",
+      "name": "Task3",
+      "map": {
+        "id": "4fbbc4b3-138d-4923-b432-6c4d7ffd04da",
+        "name": "map1"
+      }
+    },
+    {
+      "id": "cb90b45a-30df-4b5d-aadd-c95f32299bbe",
+      "name": "Task4",
+      "map": {
+        "id": "4fbbc4b3-138d-4923-b432-6c4d7ffd04da",
+        "name": "map1"
+      }
+    },
+    {
+      "id": "0e6a8fd3-2033-421c-9ac5-b1a80815fbd8",
+      "name": "Task5",
+      "map": {
+        "id": "4fbbc4b3-138d-4923-b432-6c4d7ffd04da",
+        "name": "map1"
+      }
+    },
+    {
+      "id": "9c20f8ac-db9b-4f29-87c2-d2d2e4f88f50",
+      "name": "Task6",
+      "map": {
+        "id": "4fbbc4b3-138d-4923-b432-6c4d7ffd04da",
+        "name": "map1"
+      }
+    },
+    {
+      "id": "c3c4b46f-0db9-4438-9405-5daae4ccd7e9",
+      "name": "Task7",
+      "map": {
+        "id": "4fbbc4b3-138d-4923-b432-6c4d7ffd04da",
+        "name": "map1"
+      }
+    },
+    {
+      "id": "fb33ae29-b590-456d-853b-0c4670882a87",
+      "name": "Task8",
+      "map": {
+        "id": "4fbbc4b3-138d-4923-b432-6c4d7ffd04da",
+        "name": "map1"
+      }
+    },
+    {
+      "id": "abdaecb1-5776-4938-911b-2496daeb9c5d",
+      "name": "Task9",
+      "map": {
+        "id": "4fbbc4b3-138d-4923-b432-6c4d7ffd04da",
+        "name": "map1"
+      }
+    }
+  ],
+  "executingTask": {
+    "id": "",
+    "name": "",
+    "progress": 0,
+    "timeRemaining": 0,
+    "cleaningMileage": 0
+  },
+  "cleanModes": [
+    {
+      "name": "__尘推"
+    },
+    {
+      "name": "__洗地"
+    }
+  ],
+  "device": {
+    "vacuum": {
+      "enabled": false
+    },
+    "cleanWaterTank": {
+      "level": 60
+    },
+    "recoveryWaterTank": {
+      "level": 0
+    },
+    "rollingBrush": {
+      "lifeSpan": 300,
+      "usedLife": 0
+    },
+    "scrubberBrush": {
+      "enabled": false,
+      "ifPutDown": false,
+      "lifeSpan": 300,
+      "usedLife": 0
+    },
+    "leftSideBrush": {
+      "ifPutDown": false
+    },
+    "rightSideBrush": {
+      "ifPutDown": false
+    },
+    "softSqueegee": {
+      "ifPutDown": false,
+      "lifeSpan": 250,
+      "usedLife": 22.106201
+    },
+    "rollingSqueegee": {
+      "ifPutDown": false,
+      "lifeSpan": 200,
+      "usedLife": 0
+    },
+    "ordinaryDustPush": {
+      "lifeSpan": 20,
+      "usedLife": 0
+    },
+    "rollingDustPush": {
+      "lifeSpan": 20,
+      "usedLife": 0
+    },
+    "filter": {
+      "isRunning": false,
+      "lifeSpan": 201,
+      "usedLife": 0
+    },
+    "spray": {
+      "isRunning": false,
+      "waterLevel": 0
+    }
+  },
+  "workModes": [
+    {
+      "id": "ee678a00028040f5a4cd3421168b7bb3",
+      "name": "__尘推",
+      "strength": "custom",
+      "type": "1"
+    },
+    {
+      "id": "43e87701a9a64e6cac2dff5e63ec0d28",
+      "name": "__洗地",
+      "strength": "custom",
+      "type": "1"
+    },
+    {
+      "id": "inspect",
+      "name": "inspect",
+      "strength": "middle",
+      "type": "5"
+    }
+  ]
+}

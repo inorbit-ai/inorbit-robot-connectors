@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import math
 from unittest.mock import AsyncMock, call
 
 import pytest
@@ -29,6 +30,12 @@ def poller(client: AsyncMock) -> DataPoller:
     return DataPoller(client, [SN_1, SN_2])
 
 
+def test_api_is_unreachable_until_the_first_successful_poll(poller: DataPoller) -> None:
+    # A connector starting against a dead API must report its robots offline on the first
+    # tick, not wait out a grace period measured from a success that never happened
+    assert poller.api_unreachable_secs == math.inf
+
+
 @pytest.mark.asyncio
 async def test_poll_status_fans_out_per_robot(client: AsyncMock, poller: DataPoller) -> None:
     client.batch_status_v1.return_value = {
@@ -46,8 +53,8 @@ async def test_poll_status_fans_out_per_robot(client: AsyncMock, poller: DataPol
     assert poller.get_state(SN_2).status == {"taskState": "RUNNING"}
     # SN_2 absent from the v2 response keeps its (empty) cache
     assert poller.get_state(SN_2).status_v2 == {}
-    assert poller.get_state(SN_1).api_connected is True
-    assert poller.get_state(SN_2).api_connected is True
+    assert poller.api_connected is True
+    assert poller.api_unreachable_secs == 0.0
 
 
 @pytest.mark.asyncio
@@ -62,8 +69,8 @@ async def test_poll_status_failure_keeps_cache(client: AsyncMock, poller: DataPo
 
     assert poller.get_state(SN_1).status == {"taskState": "IDLE"}
     assert poller.get_state(SN_1).status_v2 == {"cleanModes": []}
-    assert poller.get_state(SN_1).api_connected is False
-    assert poller.get_state(SN_2).api_connected is False
+    assert poller.api_connected is False
+    assert 0.0 < poller.api_unreachable_secs < 1.0
 
 
 @pytest.mark.asyncio
@@ -76,7 +83,7 @@ async def test_poll_status_partial_failure(client: AsyncMock, poller: DataPoller
     assert poller.get_state(SN_1).status == {}
     assert poller.get_state(SN_1).status_v2 == {"cleanModes": []}
     # At least one batch call succeeded, so the API is reachable
-    assert poller.get_state(SN_1).api_connected is True
+    assert poller.api_connected is True
 
 
 @pytest.mark.asyncio

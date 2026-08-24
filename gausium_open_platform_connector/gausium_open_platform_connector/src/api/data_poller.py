@@ -7,6 +7,8 @@
 # Standard
 import asyncio
 import logging
+import math
+import time
 from dataclasses import dataclass, field
 
 # Local
@@ -26,13 +28,11 @@ class RobotState:
         status: Per-robot status from the v1 batch status endpoint.
         status_v2: Per-robot status from the v2 batch status endpoint.
         robot_data: Entry from the robots list (displayName, model codes, softwareVersion).
-        api_connected: Whether the last batch status poll succeeded.
     """
 
     status: dict = field(default_factory=dict)
     status_v2: dict = field(default_factory=dict)
     robot_data: dict = field(default_factory=dict)
-    api_connected: bool = False
 
 
 class DataPoller:
@@ -52,6 +52,26 @@ class DataPoller:
         self._client = client
         self._serial_numbers = list(serial_numbers)
         self._states = {sn: RobotState() for sn in self._serial_numbers}
+        self._api_connected = False
+        self._last_status_success: float | None = None
+
+    @property
+    def api_connected(self) -> bool:
+        """Whether the last status poll reached the API."""
+        return self._api_connected
+
+    @property
+    def api_unreachable_secs(self) -> float:
+        """Seconds since the last status poll that reached the API.
+
+        ``0.0`` while connected, ``inf`` until the first success, so a connector starting
+        against a dead API reports its robots offline on the first tick.
+        """
+        if self._api_connected:
+            return 0.0
+        if self._last_status_success is None:
+            return math.inf
+        return time.monotonic() - self._last_status_success
 
     def get_state(self, serial_number: str) -> RobotState:
         """Return the cached state for one robot."""
@@ -67,9 +87,9 @@ class DataPoller:
             self._client.batch_status_v1(self._serial_numbers),
             self._client.batch_status_v2(self._serial_numbers),
         )
-        connected = status_v1 is not None or status_v2 is not None
-        for state in self._states.values():
-            state.api_connected = connected
+        self._api_connected = status_v1 is not None or status_v2 is not None
+        if self._api_connected:
+            self._last_status_success = time.monotonic()
         self._fan_out(status_v1, "status")
         self._fan_out(status_v2, "status_v2")
 

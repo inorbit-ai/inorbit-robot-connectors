@@ -11,7 +11,10 @@ from pathlib import Path
 
 import yaml
 
-from gausium_open_platform_connector.src.key_values import build_key_values
+from gausium_open_platform_connector.src.key_values import (
+    build_health_key_values,
+    build_key_values,
+)
 
 CAC_DIR = Path(__file__).parent.parent / "cac"
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -35,8 +38,9 @@ def published_keys() -> set[str]:
     status_v1 = json.loads((FIXTURES / "status_v1.json").read_text())
     status_v2 = json.loads((FIXTURES / "status_v2.json").read_text())
     status_v2["currentTask"]["workMode"]["name"] = "__洗地"  # Expose the cleaning_mode keys
-    key_values = build_key_values(status_v1, status_v2, ROBOT_DATA, True, "2.0.0")
-    return set(key_values) | EXTRA_KEYS
+    key_values = build_key_values(status_v1, status_v2, ROBOT_DATA)
+    health = build_health_key_values(True, status_v1, "2.0.0")
+    return set(key_values) | set(health) | EXTRA_KEYS
 
 
 def test_all_cac_files_parse() -> None:

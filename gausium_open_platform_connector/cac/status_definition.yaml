@@ -66,3 +66,20 @@ spec:
       params:
         - false
       status: ERROR
+
+
+# --- Data freshness ---------------------------------------------------------------------
+# The floor scales with fleet size: the batch status endpoints loop per robot server-side,
+# so a large fleet's normal age is tens of seconds. Tune per account.
+---
+kind: StatusDefinition
+apiVersion: v0.1
+metadata:
+  id: data_age_secs
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  rules:
+    - function: ABOVE
+      params:
+        - 300
+      status: WARNING

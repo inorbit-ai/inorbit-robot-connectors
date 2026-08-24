@@ -19,8 +19,9 @@ from gausium_open_platform_connector.src.canonical import (
     TaskState,
     cleaning_mode_keys,
     normalize_task_state,
+    report_time_to_millis,
 )
-from gausium_open_platform_connector.src.report import report_time_to_millis, report_to_data
+from gausium_open_platform_connector.src.report import report_to_data
 
 # The progress bar is advanced to 100% if the progress percentage is greater than this threshold
 MISSION_PROGRESS_BAR_ADVANCED_PERCENTAGE_THRESHOLD = 0.90

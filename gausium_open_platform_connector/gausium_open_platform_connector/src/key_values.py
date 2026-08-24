@@ -5,6 +5,7 @@
 """Canonical live key-values built from the v1 and v2 status payloads."""
 
 # Standard
+import time
 from typing import Any
 
 # Local
@@ -14,6 +15,8 @@ from gausium_open_platform_connector.src.canonical import (
     cleaning_mode_keys,
     normalize_task_state,
     pct,
+    report_time_to_millis,
+    report_times,
 )
 
 # Task states that mean a mission is under way
@@ -24,7 +27,10 @@ LEVEL_UNAVAILABLE = -1
 
 
 def build_health_key_values(
-    api_connected: bool, status: dict[str, Any], connector_version: str
+    api_connected: bool,
+    status: dict[str, Any],
+    status_v2: dict[str, Any],
+    connector_version: str,
 ) -> dict[str, Any]:
     """Connector-view key-values, published every tick even while nothing is reachable.
 
@@ -37,8 +43,19 @@ def build_health_key_values(
         # Vendor reachability is only knowable while the API is reachable: omit it otherwise
         # so the datasource keeps its last known value instead of restating a stale one
         "robot_online": status.get("online") if api_connected else None,
+        "data_age_secs": _data_age_secs(status, status_v2),
     }
     return {key: value for key, value in key_values.items() if value is not None}
+
+
+def _data_age_secs(status: dict[str, Any], status_v2: dict[str, Any]) -> int | None:
+    """Seconds since the vendor last reported anything for this robot.
+
+    `api_connected` covers "we cannot reach the vendor"; this covers "the vendor cannot
+    reach the robot". Neither is derivable from the other.
+    """
+    millis = [m for m in map(report_time_to_millis, report_times(status, status_v2)) if m]
+    return round(time.time() - max(millis) / 1000) if millis else None
 
 
 def build_key_values(

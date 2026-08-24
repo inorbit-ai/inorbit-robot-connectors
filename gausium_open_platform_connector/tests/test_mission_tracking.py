@@ -12,9 +12,11 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from gausium_open_platform_connector.src.canonical import TaskState
+from gausium_open_platform_connector.src.canonical import (
+    TaskState,
+    report_time_to_millis,
+)
 from gausium_open_platform_connector.src.mission import MissionState, MissionTracker, filter_none
-from gausium_open_platform_connector.src.report import report_time_to_millis
 
 SN = "GS000-0000-000-0001"
 

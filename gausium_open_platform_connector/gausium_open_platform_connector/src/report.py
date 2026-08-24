@@ -9,20 +9,15 @@ sends epoch milliseconds, and both are accepted.
 """
 
 # Standard
-from datetime import datetime
 from typing import Any
 
 # Local
-from gausium_open_platform_connector.src.canonical import cleaning_mode_keys, pct, slug
-
-
-def report_time_to_millis(value: str | int | None) -> int | None:
-    """Report timestamp as epoch milliseconds. Accepts ISO 8601 and epoch milliseconds."""
-    if value is None or value == "":
-        return None
-    if isinstance(value, str) and not value.isdigit():
-        return int(datetime.fromisoformat(value).timestamp() * 1000)
-    return int(value)
+from gausium_open_platform_connector.src.canonical import (
+    cleaning_mode_keys,
+    pct,
+    report_time_to_millis,
+    slug,
+)
 
 
 def report_to_data(

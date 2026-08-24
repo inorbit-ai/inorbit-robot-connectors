@@ -530,6 +530,9 @@ spec:
 # --- Connectivity -----------------------------------------------------------------
 # api_connected: the connector can reach the Gausium Open Platform API.
 # robot_online: vendor-reported robot reachability.
+# data_age_secs: how long ago the vendor last reported anything for this robot. The three
+# are independent: the connector can be cut off from the API, the API can be cut off from
+# the robot, and neither is derivable from the other.
 ---
 kind: DataSourceDefinition
 apiVersion: v0.1
@@ -557,6 +560,21 @@ spec:
   source:
     keyValue:
       key: robot_online
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
+  id: data_age_secs
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Data Age
+  unit: s
+  timeline:
+    fieldType: number
+  source:
+    keyValue:
+      key: data_age_secs
 
 # --- Robot identity ----------------------------------------------------------------
 ---

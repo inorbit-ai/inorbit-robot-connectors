@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 
 import httpx
 import pytest
 import pytest_asyncio
 from pytest_httpx import HTTPXMock
 
+from gausium_open_platform_connector.src.api.auth import REFETCH_MIN_INTERVAL_SECS
 from gausium_open_platform_connector.src.api.client import GausiumApiClient
 from gausium_open_platform_connector.src.commands import (
     RemoteNavigationCommandType,
@@ -25,7 +27,8 @@ SN_1 = "GS000-0000-000-0001"
 SN_2 = "GS000-0000-000-0002"
 
 OAUTH_URL = f"{BASE_URL}gas/api/v1alpha1/oauth/token"
-TOKEN_RESPONSE = {"access_token": "tok-1", "refresh_token": "ref-1", "expires_in": 3600}
+# `expires_in` is the value the live API returns: an absolute epoch-ms deadline, ignored
+TOKEN_RESPONSE = {"access_token": "tok-1", "refresh_token": "ref-1", "expires_in": 1787665295159}
 
 STATUS_V1 = {
     "robotStatuses": [
@@ -98,34 +101,29 @@ async def test_requests_inject_bearer_header(
 
 
 @pytest.mark.asyncio
-async def test_token_refetch_on_expiry(client: GausiumApiClient, httpx_mock: HTTPXMock) -> None:
-    client._token_expiry = 0.0
-    httpx_mock.add_response(
-        method="POST",
-        url=OAUTH_URL,
-        json={"access_token": "tok-2", "refresh_token": "ref-2", "expires_in": 3600},
-    )
-    httpx_mock.add_response(json=STATUS_V1)
+async def test_token_is_not_refetched_on_a_schedule(
+    client: GausiumApiClient, httpx_mock: HTTPXMock
+) -> None:
+    # The vendor's `expires_in` is an absolute epoch-ms deadline, so a client-side expiry
+    # computed from it can only ever disagree with the server. Nothing but a 401 refetches.
+    httpx_mock.add_response(json=STATUS_V1, is_reusable=True)
 
     await client.batch_status_v1([SN_1])
+    await client.batch_status_v1([SN_1])
 
-    refetch_request = httpx_mock.get_requests(url=OAUTH_URL)[-1]
-    assert json.loads(refetch_request.content)["grant_type"] == (
-        "urn:gaussian:params:oauth:grant-type:open-access-token"
-    )
-    status_request = httpx_mock.get_requests()[-1]
-    assert status_request.headers["Authorization"] == "Bearer tok-2"
+    assert len(httpx_mock.get_requests(url=OAUTH_URL)) == 1
+    assert httpx_mock.get_requests()[-1].headers["Authorization"] == "Bearer tok-1"
 
 
 @pytest.mark.asyncio
 async def test_concurrent_requests_fetch_token_once(
     client: GausiumApiClient, httpx_mock: HTTPXMock
 ) -> None:
-    client._token_expiry = 0.0
+    client._auth._token = None
     httpx_mock.add_response(
         method="POST",
         url=OAUTH_URL,
-        json={"access_token": "tok-2", "refresh_token": "ref-2", "expires_in": 3600},
+        json={"access_token": "tok-2", "refresh_token": "ref-2"},
     )
     httpx_mock.add_response(json=STATUS_V1, is_reusable=True)
 
@@ -133,6 +131,62 @@ async def test_concurrent_requests_fetch_token_once(
 
     # One request from the fixture's connect() plus exactly one shared refetch
     assert len(httpx_mock.get_requests(url=OAUTH_URL)) == 2
+    refetch_request = httpx_mock.get_requests(url=OAUTH_URL)[-1]
+    assert json.loads(refetch_request.content)["grant_type"] == (
+        "urn:gaussian:params:oauth:grant-type:open-access-token"
+    )
+
+
+@pytest.mark.asyncio
+async def test_401_refetches_token_and_retries(
+    client: GausiumApiClient, httpx_mock: HTTPXMock
+) -> None:
+    # The server can drop a token the client still considers valid
+    client._auth._last_fetch -= REFETCH_MIN_INTERVAL_SECS
+    httpx_mock.add_response(status_code=401)
+    httpx_mock.add_response(method="POST", url=OAUTH_URL, json={"access_token": "tok-2"})
+    httpx_mock.add_response(json=STATUS_V1)
+
+    result = await client.batch_status_v1([SN_1])
+
+    assert result is not None
+    assert httpx_mock.get_requests()[-1].headers["Authorization"] == "Bearer tok-2"
+
+
+@pytest.mark.asyncio
+async def test_401_refetch_is_rate_limited(client: GausiumApiClient, httpx_mock: HTTPXMock) -> None:
+    client._auth._last_fetch -= REFETCH_MIN_INTERVAL_SECS
+    httpx_mock.add_response(method="POST", url=OAUTH_URL, json={"access_token": "tok-2"})
+    httpx_mock.add_response(status_code=401, is_reusable=True)
+
+    assert await client.batch_status_v1([SN_1]) is None
+    assert await client.batch_status_v1([SN_1]) is None
+
+    # A 401 a new token cannot fix must not spin the OAuth endpoint
+    assert len(httpx_mock.get_requests(url=OAUTH_URL)) == 2  # connect + one refetch
+
+
+@pytest.mark.asyncio
+async def test_repeated_failures_log_only_state_changes(
+    client: GausiumApiClient, httpx_mock: HTTPXMock, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.WARNING):
+        httpx_mock.add_response(status_code=500, is_reusable=True)
+        for _ in range(3):
+            await client.batch_status_v1([SN_1])
+        httpx_mock.reset()
+        httpx_mock.add_response(status_code=503)
+        await client.batch_status_v1([SN_1])
+        httpx_mock.reset()
+        httpx_mock.add_response(json=STATUS_V1)
+        await client.batch_status_v1([SN_1])
+
+    # No URL in the line: its `names=` parameter per robot is what made this unbounded
+    assert [record.getMessage() for record in caplog.records] == [
+        "status_v1_batch failed: 500",
+        "status_v1_batch failed: 503",
+        "status_v1_batch recovered after 4 failures over 0:00:00",
+    ]
 
 
 @pytest.mark.asyncio

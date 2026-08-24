@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 import threading
@@ -153,6 +154,33 @@ def robot_state(connector):
     }
     mark_api(connector, 0.0)
     return state
+
+
+# --- Polling ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_status_loop_backs_off_while_the_api_is_down(connector, monkeypatch) -> None:
+    delays: list[float] = []
+    polls = {"count": 0}
+
+    async def poll_status_once() -> None:
+        polls["count"] += 1
+        connector._poller.api_connected = polls["count"] >= 3
+
+    async def fake_sleep(delay: float) -> None:
+        delays.append(delay)
+        if len(delays) == 3:
+            raise asyncio.CancelledError
+
+    connector._poller = Mock(api_connected=False, poll_status_once=poll_status_once)
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+
+    with pytest.raises(asyncio.CancelledError):
+        await connector._poll_status_loop()
+
+    tick = 1.0 / connector.config.update_freq
+    assert delays == [tick + 1.0, tick + 2.0, tick]
 
 
 # --- Publishing ---------------------------------------------------------------

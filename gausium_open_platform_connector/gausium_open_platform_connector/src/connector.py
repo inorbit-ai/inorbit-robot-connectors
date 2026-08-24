@@ -38,6 +38,9 @@ ROBOT_DATA_POLL_INTERVAL_SECS = 60.0
 # deliberately not retried, so one gateway error fails both batch endpoints on the same tick
 # and would otherwise flap the whole fleet.
 API_OFFLINE_GRACE_SECS = 60.0
+# Extra delay added to the status poll interval while the API is unreachable
+API_BACKOFF_START_SECS = 1.0
+API_BACKOFF_MAX_SECS = 30.0
 
 
 class GausiumOpenPlatformConnector(FleetConnector):
@@ -114,9 +117,15 @@ class GausiumOpenPlatformConnector(FleetConnector):
         self._create_supervised_task("robot-data-poll", self._poll_robot_data_loop)
 
     async def _poll_status_loop(self) -> None:
+        """Poll status at ``update_freq``, backing off while the API is unreachable."""
+        backoff = 0.0
         while True:
             await self._poller.poll_status_once()
-            await asyncio.sleep(1.0 / self.config.update_freq)
+            if self._poller.api_connected:
+                backoff = 0.0
+            else:
+                backoff = min(max(2 * backoff, API_BACKOFF_START_SECS), API_BACKOFF_MAX_SECS)
+            await asyncio.sleep(1.0 / self.config.update_freq + backoff)
 
     async def _poll_robot_data_loop(self) -> None:
         while True:

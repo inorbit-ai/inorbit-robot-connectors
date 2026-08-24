@@ -5,10 +5,11 @@
 """Async HTTP client for the Gausium Open Platform API."""
 
 # Standard
-import asyncio
 import logging
 import re
 import time
+from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import Any
 
 # Third-party
@@ -23,6 +24,7 @@ from inorbit_connector.metrics.http import (
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 # Local
+from gausium_open_platform_connector.src.api.auth import TokenAuth
 from gausium_open_platform_connector.src.commands import (
     RemoteNavigationCommandType,
     RemoteTaskCommandType,
@@ -50,6 +52,27 @@ _ENDPOINT = EndpointMapper(
         ("openapi-server/v1/api/task/report/map-images/query", "report_map_images"),
     ]
 )
+
+
+def _endpoint_label(path: str) -> str:
+    """Map a request path to its stable metrics and log label."""
+    return _ENDPOINT(_SERIAL_RE.sub("robots/-/", path))
+
+
+def _error_kind(error: httpx.HTTPError) -> str:
+    """Log label for a failure: the status code, or the exception type."""
+    if isinstance(error, httpx.HTTPStatusError):
+        return str(error.response.status_code)
+    return type(error).__name__
+
+
+@dataclass
+class _Failure:
+    """An endpoint's ongoing failure streak, from the first failure to the recovery."""
+
+    kind: str
+    count: int = 1
+    since: float = field(default_factory=time.monotonic)
 
 
 class GausiumApiClient:
@@ -81,25 +104,27 @@ class GausiumApiClient:
         self._client_secret = client_secret
         self._access_key_secret = access_key_secret
         self._timeout = timeout
-        self._client = httpx.AsyncClient(base_url=base_url, timeout=timeout)
-        self._access_token: str | None = None
-        self._token_expiry: float = 0.0
-        self._token_lock = asyncio.Lock()
+        self._auth = TokenAuth(self._fetch_token)
+        self._client = httpx.AsyncClient(base_url=base_url, timeout=timeout, auth=self._auth)
+        # Ongoing failure streak per endpoint, cleared on recovery
+        self._failures: dict[str, _Failure] = {}
 
     async def connect(self) -> None:
         """Fetch the initial OAuth token."""
-        await self._fetch_token()
+        await self._auth.token()
 
     async def close(self) -> None:
         """Close the underlying HTTP client."""
         await self._client.aclose()
 
-    async def _fetch_token(self) -> None:
+    async def _fetch_token(self) -> str:
+        """Fetch an access token; ``auth=None`` keeps this call out of the auth flow."""
         # Always the open-access grant: it is non-interactive, so a refresh-token flow
         # only adds a way to get permanently stuck when the stored token goes stale
         response = await self._request(
             "POST",
             OAUTH_PATH,
+            auth=None,
             json={
                 "grant_type": "urn:gaussian:params:oauth:grant-type:open-access-token",
                 "client_id": self._client_id,
@@ -107,17 +132,10 @@ class GausiumApiClient:
                 "open_access_key": self._access_key_secret,
             },
         )
-        data = response.json()
-        self._access_token = data["access_token"]
-        self._token_expiry = time.monotonic() + data["expires_in"] - 60
-
-    async def _ensure_token(self) -> None:
-        if time.monotonic() < self._token_expiry:
-            return
-        # Concurrent callers (the two batch polls run gathered) must not both fetch
-        async with self._token_lock:
-            if time.monotonic() >= self._token_expiry:
-                await self._fetch_token()
+        # `expires_in` is ignored: the vendor returns an absolute epoch-millisecond deadline
+        # rather than the OAuth2 duration its name promises (measured 1787665295159, 23.9 h
+        # out), and TokenAuth replaces the token when the server rejects it anyway
+        return response.json()["access_token"]
 
     @retry(
         # Connect-phase failures only: a ReadTimeout may mean the request was delivered,
@@ -128,16 +146,11 @@ class GausiumApiClient:
         reraise=True,
     )
     async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
-        """Send one request with Bearer auth, token refresh and metrics recording."""
-        if path != OAUTH_PATH:
-            await self._ensure_token()
-        headers = kwargs.pop("headers", {})
-        if self._access_token and path != OAUTH_PATH:
-            headers["Authorization"] = f"Bearer {self._access_token}"
-        endpoint = _ENDPOINT(_SERIAL_RE.sub("robots/-/", path))
+        """Send one request and record its metrics; TokenAuth adds the Bearer header."""
+        endpoint = _endpoint_label(path)
         start = time.monotonic()
         try:
-            response = await self._client.request(method, path, headers=headers, **kwargs)
+            response = await self._client.request(method, path, **kwargs)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             kind = "http_5xx" if e.response.status_code >= 500 else "http_4xx"
@@ -171,12 +184,36 @@ class GausiumApiClient:
         )
 
     async def _fetch(self, method: str, path: str, **kwargs: Any) -> httpx.Response | None:
-        """Like ``_request`` but returns ``None`` on failure instead of raising."""
+        """Like ``_request`` but returns ``None`` on failure instead of raising.
+
+        Logs a state change, not a request: the first failure, a change of failure kind, and
+        the recovery with the streak it closes. An endpoint failing at the poll rate would
+        otherwise flood the log and evict its own history; per-request volume belongs in
+        ``upstream.http.errors``.
+        """
+        endpoint = _endpoint_label(path)
         try:
-            return await self._request(method, path, **kwargs)
+            response = await self._request(method, path, **kwargs)
         except httpx.HTTPError as e:
-            self.logger.warning("Request %s %s failed: %s", method, path, e)
+            kind = _error_kind(e)
+            failure = self._failures.get(endpoint)
+            if failure is None:
+                self._failures[endpoint] = _Failure(kind)
+            else:
+                failure.count += 1
+                if failure.kind == kind:
+                    return None
+                failure.kind = kind
+            self.logger.warning("%s failed: %s", endpoint, kind)
             return None
+        if failure := self._failures.pop(endpoint, None):
+            self.logger.warning(
+                "%s recovered after %d failures over %s",
+                endpoint,
+                failure.count,
+                timedelta(seconds=round(time.monotonic() - failure.since)),
+            )
+        return response
 
     # --- Data methods (None on failure) ------------------------------------
 

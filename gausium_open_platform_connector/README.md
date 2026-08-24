@@ -66,9 +66,10 @@ Top level (see [`config/fleet.example.yaml`](config/fleet.example.yaml)):
 |-------|-------------|
 | `location_tz` | Timezone of the robots' location |
 | `connector_type` | Must be `gausium_open_platform` |
-| `update_freq` | Status polling and publishing frequency in Hz |
+| `update_freq` | Publish rate and status poll pacing in Hz. The poll period is `max(fleet status read, 1/update_freq)` |
 | `connector_config` | Gausium API settings (below) |
 | `fleet` | List of robots to manage |
+| `metrics` | Prometheus endpoint for connector and API health (see [Monitoring](#monitoring)) |
 
 `connector_config` fields (each can also be set via the environment with the
 `INORBIT_GAUSIUM_OPEN_PLATFORM_` prefix, e.g. `INORBIT_GAUSIUM_OPEN_PLATFORM_CLIENT_ID`):
@@ -114,6 +115,19 @@ docker compose -f docker/docker-compose.yaml up -d
 Images are published to
 `us-central1-docker.pkg.dev/inorbit-integrations/connectors/gausium_open_platform_connector`
 on version bumps. `docker/build.sh` builds (and optionally pushes) the image locally.
+
+## Monitoring
+
+With `metrics.enabled` the connector serves Prometheus metrics on `metrics.bind_port`
+(9090 by default):
+
+- connector health: process up, per-robot session status, execution loop ticks and errors
+- Gausium API requests, errors and latency, per endpoint
+- `inorbit_connector_gausium_open_platform_status_poll_duration_seconds`: how long one read
+  of the whole fleet's status takes, for each of the two status endpoints
+
+That last one sets how often robot data can change. The fleet is read in concurrent chunks,
+so the API latency metric covers one chunk, not the full read.
 
 ## Development
 

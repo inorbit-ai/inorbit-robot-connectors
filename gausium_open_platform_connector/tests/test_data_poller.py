@@ -13,11 +13,19 @@ import pytest
 
 from gausium_open_platform_connector.src.api.data_poller import (
     ROBOTS_PAGE_SIZE,
+    STATUS_CHUNK_SIZE,
     DataPoller,
 )
 
 SN_1 = "GS000-0000-000-0001"
 SN_2 = "GS000-0000-000-0002"
+# A fleet size that splits into 5 chunks
+FLEET = [f"GS000-0000-000-{index:04d}" for index in range(55)]
+
+
+def echo_status(taskState: str):
+    """Batch status side effect answering every requested serial number."""
+    return lambda serial_numbers, chunk: {sn: {"taskState": taskState} for sn in serial_numbers}
 
 
 @pytest.fixture()
@@ -44,10 +52,11 @@ async def test_poll_status_fans_out_per_robot(client: AsyncMock, poller: DataPol
     }
     client.batch_status_v2.return_value = {SN_1: {"cleanModes": []}}
 
-    await poller.poll_status_once()
+    await poller.poll_status_v1_once()
+    await poller.poll_status_v2_once()
 
-    client.batch_status_v1.assert_awaited_once_with([SN_1, SN_2])
-    client.batch_status_v2.assert_awaited_once_with([SN_1, SN_2])
+    client.batch_status_v1.assert_awaited_once_with([SN_1, SN_2], chunk=0)
+    client.batch_status_v2.assert_awaited_once_with([SN_1, SN_2], chunk=0)
     assert poller.get_state(SN_1).status == {"taskState": "IDLE"}
     assert poller.get_state(SN_1).status_v2 == {"cleanModes": []}
     assert poller.get_state(SN_2).status == {"taskState": "RUNNING"}
@@ -61,11 +70,13 @@ async def test_poll_status_fans_out_per_robot(client: AsyncMock, poller: DataPol
 async def test_poll_status_failure_keeps_cache(client: AsyncMock, poller: DataPoller) -> None:
     client.batch_status_v1.return_value = {SN_1: {"taskState": "IDLE"}}
     client.batch_status_v2.return_value = {SN_1: {"cleanModes": []}}
-    await poller.poll_status_once()
+    await poller.poll_status_v1_once()
+    await poller.poll_status_v2_once()
 
     client.batch_status_v1.return_value = None
     client.batch_status_v2.return_value = None
-    await poller.poll_status_once()
+    await poller.poll_status_v1_once()
+    await poller.poll_status_v2_once()
 
     assert poller.get_state(SN_1).status == {"taskState": "IDLE"}
     assert poller.get_state(SN_1).status_v2 == {"cleanModes": []}
@@ -78,11 +89,12 @@ async def test_poll_status_partial_failure(client: AsyncMock, poller: DataPoller
     client.batch_status_v1.return_value = None
     client.batch_status_v2.return_value = {SN_1: {"cleanModes": []}}
 
-    await poller.poll_status_once()
+    await poller.poll_status_v1_once()
+    await poller.poll_status_v2_once()
 
     assert poller.get_state(SN_1).status == {}
     assert poller.get_state(SN_1).status_v2 == {"cleanModes": []}
-    # At least one batch call succeeded, so the API is reachable
+    # One endpoint answered: the flag gates fleet-wide online status and commands
     assert poller.api_connected is True
 
 
@@ -91,11 +103,42 @@ async def test_poll_status_ignores_unknown_serial_numbers(
     client: AsyncMock, poller: DataPoller
 ) -> None:
     client.batch_status_v1.return_value = {"GS999-9999-999-9999": {"taskState": "IDLE"}}
-    client.batch_status_v2.return_value = {}
 
-    await poller.poll_status_once()
+    await poller.poll_status_v1_once()
 
     assert poller.get_state(SN_1).status == {}
+
+
+@pytest.mark.asyncio
+async def test_status_sweep_is_chunked_and_reassembled(client: AsyncMock) -> None:
+    poller = DataPoller(client, FLEET)
+    client.batch_status_v1.side_effect = echo_status("IDLE")
+
+    await poller.poll_status_v1_once()
+
+    requested = [call.args[0] for call in client.batch_status_v1.await_args_list]
+    assert [len(chunk) for chunk in requested] == [11, 11, 11, 11, 11]
+    # Every serial number is requested exactly once and every robot gets its row back
+    assert [sn for chunk in requested for sn in chunk] == FLEET
+    assert all(poller.get_state(sn).status == {"taskState": "IDLE"} for sn in FLEET)
+
+
+@pytest.mark.asyncio
+async def test_one_failed_chunk_only_costs_its_own_robots(client: AsyncMock) -> None:
+    poller = DataPoller(client, FLEET)
+    client.batch_status_v1.side_effect = echo_status("IDLE")
+    await poller.poll_status_v1_once()
+
+    def fail_first_chunk(serial_numbers: list[str], chunk: int) -> dict | None:
+        return None if chunk == 0 else echo_status("RUNNING")(serial_numbers, chunk)
+
+    client.batch_status_v1.side_effect = fail_first_chunk
+    await poller.poll_status_v1_once()
+
+    # The failed chunk's robots keep their cached data; the rest of the fleet updates
+    assert poller.get_state(FLEET[0]).status == {"taskState": "IDLE"}
+    assert poller.get_state(FLEET[STATUS_CHUNK_SIZE]).status == {"taskState": "RUNNING"}
+    assert poller.api_connected is True
 
 
 @pytest.mark.asyncio

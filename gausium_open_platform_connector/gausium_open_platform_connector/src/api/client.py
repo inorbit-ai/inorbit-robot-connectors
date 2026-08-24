@@ -183,33 +183,41 @@ class GausiumApiClient:
             duration_seconds=time.monotonic() - start,
         )
 
-    async def _fetch(self, method: str, path: str, **kwargs: Any) -> httpx.Response | None:
+    async def _fetch(
+        self, method: str, path: str, chunk: int | None = None, **kwargs: Any
+    ) -> httpx.Response | None:
         """Like ``_request`` but returns ``None`` on failure instead of raising.
 
         Logs a state change, not a request: the first failure, a change of failure kind, and
         the recovery with the streak it closes. An endpoint failing at the poll rate would
         otherwise flood the log and evict its own history; per-request volume belongs in
         ``upstream.http.errors``.
+
+        ``chunk`` keys the streak per request of a chunked sweep: all chunks share one
+        endpoint label, so without it one failing chunk logs a failure and a recovery on
+        every cycle.
         """
-        endpoint = _endpoint_label(path)
+        streak = _endpoint_label(path)
+        if chunk is not None:
+            streak = f"{streak}#{chunk}"
         try:
             response = await self._request(method, path, **kwargs)
         except httpx.HTTPError as e:
             kind = _error_kind(e)
-            failure = self._failures.get(endpoint)
+            failure = self._failures.get(streak)
             if failure is None:
-                self._failures[endpoint] = _Failure(kind)
+                self._failures[streak] = _Failure(kind)
             else:
                 failure.count += 1
                 if failure.kind == kind:
                     return None
                 failure.kind = kind
-            self.logger.warning("%s failed: %s", endpoint, kind)
+            self.logger.warning("%s failed: %s", streak, kind)
             return None
-        if failure := self._failures.pop(endpoint, None):
+        if failure := self._failures.pop(streak, None):
             self.logger.warning(
                 "%s recovered after %d failures over %s",
-                endpoint,
+                streak,
                 failure.count,
                 timedelta(seconds=round(time.monotonic() - failure.since)),
             )
@@ -217,24 +225,30 @@ class GausiumApiClient:
 
     # --- Data methods (None on failure) ------------------------------------
 
-    async def batch_status_v1(self, serial_numbers: list[str]) -> dict[str, dict] | None:
+    async def batch_status_v1(
+        self, serial_numbers: list[str], chunk: int | None = None
+    ) -> dict[str, dict] | None:
         """Fetch v1 batch status; returns per-serial-number status dicts."""
         # `names` is a repeated query param; a comma-joined list is read as one name and 403s
         response = await self._fetch(
             "GET",
             "v1alpha1/robots/-/status:batchGet",
+            chunk=chunk,
             params=[("names", serial_number) for serial_number in serial_numbers],
         )
         if response is None:
             return None
         return {s["serialNumber"]: s for s in response.json().get("robotStatuses", [])}
 
-    async def batch_status_v2(self, serial_numbers: list[str]) -> dict[str, dict] | None:
+    async def batch_status_v2(
+        self, serial_numbers: list[str], chunk: int | None = None
+    ) -> dict[str, dict] | None:
         """Fetch v2 batch status; returns per-serial-number status dicts."""
         # Vendor quirk: GET with a JSON body; `names` must be a list (verified working live)
         response = await self._fetch(
             "GET",
             "openapi/v2alpha1/s/robots/*/status:batchGet",
+            chunk=chunk,
             json={"names": serial_numbers},
         )
         if response is None:

@@ -15,8 +15,19 @@ location_tz: America/Los_Angeles
 # Connector type identifier
 connector_type: gausium_open_platform
 
-# Update frequency in Hz for status polling and the execution loop
+# Publish rate and status poll pacing, in Hz. Reading the status of the whole fleet takes a
+# few seconds, so the poll period is max(that read, 1/update_freq): values above ~0.3 Hz do
+# not make data arrive sooner.
 update_freq: 0.5
+
+# Prometheus metrics endpoint, served on bind_port: connector health, Gausium API latency
+# and errors per endpoint, and how long each fleet status read takes. With host networking
+# (see docker/docker-compose.example.yaml) it is served at http://localhost:9090/metrics.
+metrics:
+  enabled: true
+  bind_port: 9090
+  # No Prometheus discovery file: the scraper already knows the host and port
+  discovery_dir: null
 
 # Gausium Open Platform-specific configuration
 # Credentials are account-scoped and shared across all robots in the fleet.

@@ -190,6 +190,26 @@ async def test_repeated_failures_log_only_state_changes(
 
 
 @pytest.mark.asyncio
+async def test_failure_streaks_are_keyed_per_chunk(
+    client: GausiumApiClient, httpx_mock: HTTPXMock, caplog: pytest.LogCaptureFixture
+) -> None:
+    # All chunks share one endpoint label, so a streak keyed by the label alone turns one
+    # bad chunk into a failure and a recovery on every cycle
+    def respond(request: httpx.Request) -> httpx.Response:
+        failing = SN_1 in request.url.query.decode()
+        return httpx.Response(500 if failing else 200, json=STATUS_V1)
+
+    httpx_mock.add_callback(respond, is_reusable=True)
+
+    with caplog.at_level(logging.WARNING):
+        for _ in range(3):
+            await client.batch_status_v1([SN_1], chunk=0)
+            await client.batch_status_v1([SN_2], chunk=1)
+
+    assert [record.getMessage() for record in caplog.records] == ["status_v1_batch#0 failed: 500"]
+
+
+@pytest.mark.asyncio
 async def test_batch_status_v1(client: GausiumApiClient, httpx_mock: HTTPXMock) -> None:
     # `names` must be a repeated query param: a comma-joined list 403s on the live API
     url = f"{BASE_URL}v1alpha1/robots/-/status:batchGet?names={SN_1}&names={SN_2}"

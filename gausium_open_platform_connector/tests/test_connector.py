@@ -116,8 +116,8 @@ def connector(monkeypatch, config, session) -> GausiumOpenPlatformConnector:
 
 
 def mark_api(connector, unreachable_secs: float) -> None:
-    """Leave the poller in the state a status poll would: 0.0 means the last one reached it."""
-    connector._poller._api_connected = unreachable_secs == 0.0
+    """Leave the poller in the state a status sweep would: 0.0 means the last one reached it."""
+    connector._poller._reached = {"v1": unreachable_secs == 0.0}
     connector._poller._last_status_success = time.monotonic() - unreachable_secs
 
 
@@ -160,27 +160,37 @@ def robot_state(connector):
 
 
 @pytest.mark.asyncio
-async def test_status_loop_backs_off_while_the_api_is_down(connector, monkeypatch) -> None:
-    delays: list[float] = []
-    polls = {"count": 0}
+async def test_status_loop_period_is_the_max_of_sweep_and_pacing(connector, monkeypatch) -> None:
+    # asyncio.sleep is stubbed to a no-op yield (conftest), so time here is virtual: a sleep
+    # advances the clock from the instant it began, so concurrent sleeps overlap and
+    # sequential ones add up
+    yield_control = asyncio.sleep
+    clock = {"now": 0.0}
+    starts: list[float] = []
+    connector.config.update_freq = 0.5  # 2 s pacing tick
+    sweep_secs = 3.0
 
-    async def poll_status_once() -> None:
-        polls["count"] += 1
-        connector._poller.api_connected = polls["count"] >= 3
+    async def sleep(delay: float) -> None:
+        started = clock["now"]
+        await yield_control(0)
+        clock["now"] = max(clock["now"], started + delay)
 
-    async def fake_sleep(delay: float) -> None:
-        delays.append(delay)
-        if len(delays) == 3:
+    async def poll_status_v1_once() -> None:
+        starts.append(clock["now"])
+        if len(starts) == 4:
             raise asyncio.CancelledError
+        # The API is unreachable until the third sweep
+        connector._poller.api_connected = len(starts) == 3
+        await sleep(sweep_secs)
 
-    connector._poller = Mock(api_connected=False, poll_status_once=poll_status_once)
-    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+    connector._poller = Mock(api_connected=False, poll_status_v1_once=poll_status_v1_once)
+    monkeypatch.setattr(asyncio, "sleep", sleep)
 
     with pytest.raises(asyncio.CancelledError):
         await connector._poll_status_loop()
 
-    tick = 1.0 / connector.config.update_freq
-    assert delays == [tick + 1.0, tick + 2.0, tick]
+    # A 3 s sweep against a 2 s tick costs 3 s, not 5 s; the last period is 2+2 s of pacing
+    assert starts == [0.0, 3.0, 6.0, 10.0]
 
 
 # --- Publishing ---------------------------------------------------------------

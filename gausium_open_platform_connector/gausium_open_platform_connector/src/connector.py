@@ -35,9 +35,12 @@ from gausium_open_platform_connector.src.key_values import (
 from gausium_open_platform_connector.src.mission import MissionTracker
 
 ROBOT_DATA_POLL_INTERVAL_SECS = 60.0
+# Nominal v2 status interval; the real period is max(v2 sweep, this). Only the v2 payload
+# carries the mission id, so it bounds mission-event latency, not the pose rate.
+STATUS_V2_POLL_INTERVAL_SECS = 5.0
 # How long the API may stay unreachable before robots are reported offline. 4xx and 5xx are
-# deliberately not retried, so one gateway error fails both batch endpoints on the same tick
-# and would otherwise flap the whole fleet.
+# deliberately not retried, so one gateway error fails every chunk of a sweep and would
+# otherwise flap the whole fleet.
 API_OFFLINE_GRACE_SECS = 60.0
 # Extra delay added to the status poll interval while the API is unreachable
 API_BACKOFF_START_SECS = 1.0
@@ -114,21 +117,41 @@ class GausiumOpenPlatformConnector(FleetConnector):
     async def _connect(self) -> None:
         """Connect to the Gausium Open Platform API and start the polling loops."""
         await self._client.connect()
-        await self._poller.poll_status_once()
+        # Prime both payloads: the v2 keys are missing from the first ticks otherwise
+        await asyncio.gather(self._poller.poll_status_v1_once(), self._poller.poll_status_v2_once())
         await self._poller.poll_robot_data_once()
         self._create_supervised_task("status-poll", self._poll_status_loop)
+        self._create_supervised_task("status-v2-poll", self._poll_status_v2_loop)
         self._create_supervised_task("robot-data-poll", self._poll_robot_data_loop)
 
     async def _poll_status_loop(self) -> None:
-        """Poll status at ``update_freq``, backing off while the API is unreachable."""
+        """Poll v1 status at ``update_freq``, backing off while the API is unreachable.
+
+        The pacing sleep runs alongside the poll, not after it, so the period is
+        ``max(sweep, pacing)``.
+        """
         backoff = 0.0
         while True:
-            await self._poller.poll_status_once()
+            await asyncio.gather(
+                self._poller.poll_status_v1_once(),
+                asyncio.sleep(1.0 / self.config.update_freq + backoff),
+            )
             if self._poller.api_connected:
                 backoff = 0.0
             else:
                 backoff = min(max(2 * backoff, API_BACKOFF_START_SECS), API_BACKOFF_MAX_SECS)
-            await asyncio.sleep(1.0 / self.config.update_freq + backoff)
+
+    async def _poll_status_v2_loop(self) -> None:
+        """Poll v2 status on its own loop, off the pose path.
+
+        It is the slower sweep and nothing time-critical reads it, so it gets a fixed
+        interval instead of `update_freq` and the unreachable-API backoff.
+        """
+        while True:
+            await asyncio.gather(
+                self._poller.poll_status_v2_once(),
+                asyncio.sleep(STATUS_V2_POLL_INTERVAL_SECS),
+            )
 
     async def _poll_robot_data_loop(self) -> None:
         while True:

@@ -49,7 +49,9 @@ x-gausium-open-platform-connector:
     #- data:/app/data
 
   # Use host networking to access the Gausium Open Platform API easily by IP address.
-  # Customize as needed.
+  # Customize as needed. It also serves the Prometheus endpoint (metrics.bind_port in the
+  # fleet config) on the host, with no `ports:` entry, which docker ignores in this mode.
+  # Give each instance its own port when running more than one on a host.
   network_mode: host
 
   # Auto-restart policy

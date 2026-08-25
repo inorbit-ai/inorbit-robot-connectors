@@ -190,9 +190,10 @@ async def test_status_loop_backs_off_while_the_api_is_down(connector, monkeypatc
 async def test_canonical_key_values_are_published(connector, robot_state) -> None:
     await connector._execution_loop()
 
-    assert health_calls(connector) == [
-        {"api_connected": True, "connector_version": __version__, "robot_online": True}
-    ]
+    (health,) = health_calls(connector)
+    assert health["api_connected"] is True
+    assert health["robot_online"] is True
+    assert health["connector_version"] == __version__
     (kwargs,) = telemetry_calls(connector)
     assert kwargs == build_key_values(
         robot_state.status, robot_state.status_v2, robot_state.robot_data
@@ -270,6 +271,57 @@ async def test_robot_without_status_is_skipped(connector) -> None:
     assert health_calls(connector) == [{"api_connected": True, "connector_version": __version__}]
 
 
+# --- Data freshness -----------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_telemetry_is_republished_only_when_the_vendor_reports_again(
+    connector, robot_state
+) -> None:
+    # The poll cycle is far slower than the publish tick, so most ticks have nothing new
+    await connector._execution_loop()
+    await connector._execution_loop()
+    assert len(telemetry_calls(connector)) == 1
+    connector.publish_robot_pose.assert_called_once()
+    # Health carries the growing age, so a frozen cache is visible without the telemetry
+    assert len(health_calls(connector)) == 2
+
+    robot_state.status["latestReportTime"] = "1786912999999"
+    await connector._execution_loop()
+    assert len(telemetry_calls(connector)) == 2
+
+    # A v2-only advance counts too: the two payloads report independently
+    robot_state.status_v2["latestReportTime"] = "1786913000000"
+    await connector._execution_loop()
+    assert len(telemetry_calls(connector)) == 3
+
+
+@pytest.mark.asyncio
+async def test_telemetry_publishes_every_tick_without_a_report_time(connector, robot_state) -> None:
+    # Not every model reports one, and staleness is not knowable without it
+    del robot_state.status["latestReportTime"]
+
+    await connector._execution_loop()
+    await connector._execution_loop()
+
+    assert len(telemetry_calls(connector)) == 2
+
+
+@pytest.mark.asyncio
+async def test_recovery_republishes_even_without_a_newer_report(connector, robot_state) -> None:
+    await connector._execution_loop()
+    mark_api(connector, API_OFFLINE_GRACE_SECS + 1)
+    await connector._execution_loop()
+
+    # The vendor has nothing newer than before the outage, but the platform still needs
+    # the state it stopped receiving
+    mark_api(connector, 0.0)
+    connector.publish_robot_key_values.reset_mock()
+    await connector._execution_loop()
+
+    assert len(telemetry_calls(connector)) == 1
+
+
 # --- Reachability mirror ------------------------------------------------------
 
 
@@ -303,8 +355,12 @@ async def test_api_unreachable_mirror(connector, robot_state, session) -> None:
     assert telemetry_calls(connector) == []
     connector.publish_robot_pose.assert_not_called()
     assert connector._is_fleet_robot_online(ROBOT_ID) is False
-    # Health keeps going out, so the api_connected alert can fire on the account
-    assert health_calls(connector) == [{"api_connected": False, "connector_version": __version__}]
+    # Health keeps going out, so the api_connected alert can fire on the account, and the
+    # data age keeps growing off the frozen cache
+    (health,) = health_calls(connector)
+    assert health["api_connected"] is False
+    assert health["data_age_secs"] > 0
+    assert "robot_online" not in health
 
     # Still unreachable: the offline status is not re-sent
     connector.publish_robot_key_values.reset_mock()
@@ -335,9 +391,9 @@ async def test_vendor_offline_mirror(connector, robot_state, session) -> None:
     session._send_robot_status.assert_called_once_with(online=False)
     assert telemetry_calls(connector) == []
     # The API is still reachable, so health carries the vendor's own verdict
-    assert health_calls(connector) == [
-        {"api_connected": True, "connector_version": __version__, "robot_online": False}
-    ]
+    (health,) = health_calls(connector)
+    assert health["api_connected"] is True
+    assert health["robot_online"] is False
     assert connector._is_fleet_robot_online(ROBOT_ID) is False
 
     # Still offline: the offline status is not re-sent (it would refresh updateStamp,

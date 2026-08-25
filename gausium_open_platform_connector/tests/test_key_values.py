@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -273,18 +274,36 @@ def test_empty_payloads_yield_no_vendor_keys(status_v2) -> None:
 # --- Health key-values --------------------------------------------------------
 
 
-def test_health_key_values_carry_vendor_reachability_while_connected(status_v1) -> None:
-    assert build_health_key_values(True, status_v1, "2.0.0") == {
-        "api_connected": True,
-        "connector_version": "2.0.0",
-        "robot_online": True,
-    }
+def test_health_key_values_carry_vendor_reachability_while_connected(status_v1, status_v2) -> None:
+    key_values = build_health_key_values(True, status_v1, status_v2, "2.0.0")
+
+    assert key_values["api_connected"] is True
+    assert key_values["robot_online"] is True
+    assert key_values["connector_version"] == "2.0.0"
 
 
-def test_health_key_values_omit_vendor_reachability_while_disconnected(status_v1) -> None:
+def test_health_key_values_omit_vendor_reachability_while_disconnected(
+    status_v1, status_v2
+) -> None:
+    key_values = build_health_key_values(False, status_v1, status_v2, "2.0.0")
+
     # The cached `online` flag is unknowable while the API is unreachable: leave the
     # datasource on its last known value instead of restating a stale one
-    assert build_health_key_values(False, status_v1, "2.0.0") == {
-        "api_connected": False,
-        "connector_version": "2.0.0",
-    }
+    assert "robot_online" not in key_values
+    assert key_values["api_connected"] is False
+    # The age keeps growing off the frozen cache, which is what makes the outage visible
+    assert key_values["data_age_secs"] > 0
+
+
+def test_data_age_follows_the_most_recent_of_the_two_payloads(status_v1, status_v2) -> None:
+    status_v1["latestReportTime"] = str(round((time.time() - 60) * 1000))
+    status_v2["latestReportTime"] = str(round((time.time() - 5) * 1000))
+
+    assert build_health_key_values(True, status_v1, status_v2, "2.0.0")["data_age_secs"] == 5
+
+
+def test_data_age_omitted_when_neither_payload_reports_one(status_v1, status_v2) -> None:
+    del status_v1["latestReportTime"]
+    del status_v2["latestReportTime"]
+
+    assert "data_age_secs" not in build_health_key_values(True, status_v1, status_v2, "2.0.0")

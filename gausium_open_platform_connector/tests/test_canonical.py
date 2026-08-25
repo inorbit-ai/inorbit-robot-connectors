@@ -13,9 +13,9 @@ from gausium_open_platform_connector.src.canonical import (
     cleaning_mode_keys,
     normalize_task_state,
     pct,
+    report_time_to_millis,
     slug,
 )
-from gausium_open_platform_connector.src.report import report_time_to_millis
 
 
 def test_normalize_task_state() -> None:

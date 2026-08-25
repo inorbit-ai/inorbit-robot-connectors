@@ -6,6 +6,7 @@
 
 # Standard
 import re
+from datetime import datetime
 from enum import StrEnum
 
 
@@ -79,6 +80,25 @@ CLEANING_MODE_LABELS = {
     "heavy_cleaning": "Heavy cleaning",
     "suction_cleaning": "Suction cleaning",
 }
+
+
+def report_time_to_millis(value: str | int | None) -> int | None:
+    """Report timestamp as epoch milliseconds. Accepts ISO 8601 and epoch milliseconds."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, str) and not value.isdigit():
+        return int(datetime.fromisoformat(value).timestamp() * 1000)
+    return int(value)
+
+
+def report_times(status: dict, status_v2: dict) -> tuple[str, ...]:
+    """The report timestamps present in the v1 and v2 status payloads.
+
+    Doubles as a change token: the vendor advances these whenever it has new data for the
+    robot. Empty for a model that reports neither, where staleness is not knowable.
+    """
+    times = (status.get("latestReportTime"), status_v2.get("latestReportTime"))
+    return tuple(time for time in times if time)
 
 
 def pct(value: float | None) -> float | None:

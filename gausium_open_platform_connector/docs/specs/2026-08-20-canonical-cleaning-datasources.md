@@ -250,8 +250,9 @@ current behaviour of treating e-stop as a paused mission.
 ### 3.5 Unchanged keys
 
 `api_connected` (API reachability, deliberately distinct from `robot_online` which is
-vendor-reported robot reachability), `connector_version`, `display_name`, `model_family`,
-`model_type`, `software_version`.
+vendor-reported robot reachability, and from `data_age_secs` which is how long ago the
+vendor last reported anything for the robot), `connector_version`, `display_name`,
+`model_family`, `model_type`, `software_version`.
 
 ### 3.6 Active cleaning versus transit within `Mission`
 

@@ -11,7 +11,11 @@ from pathlib import Path
 
 import pytest
 
-from gausium_open_platform_connector.src.key_values import _mission_status, build_key_values
+from gausium_open_platform_connector.src.key_values import (
+    _mission_status,
+    build_health_key_values,
+    build_key_values,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -24,8 +28,8 @@ ROBOT_DATA = {
 
 
 def build(status: dict, status_v2: dict) -> dict:
-    """`build_key_values` with the identity arguments fixed, which every case shares."""
-    return build_key_values(status, status_v2, ROBOT_DATA, True, "2.0.0")
+    """`build_key_values` with the robot-list data fixed, which every case shares."""
+    return build_key_values(status, status_v2, ROBOT_DATA)
 
 
 def load_fixture(name: str) -> dict:
@@ -61,8 +65,6 @@ def test_work_modes_omitted_when_neither_payload_reports_them(status_v1, status_
 
 def test_full_key_value_set(status_v1, status_v2) -> None:
     assert build(status_v1, status_v2) == {
-        "api_connected": True,
-        "connector_version": "2.0.0",
         "display_name": "Robot Alpha",
         "model_family": "S",
         "model_type": "Scrubber 50H",
@@ -71,7 +73,6 @@ def test_full_key_value_set(status_v1, status_v2) -> None:
         "charging": False,
         "task_state": "idle",
         "task_state_raw": "IDLE",
-        "robot_online": True,
         "current_map_name": "floor_1",
         "clean_water_tank_pct": 0.6,
         "recovery_tank_pct": 0.0,
@@ -256,8 +257,6 @@ def test_unknown_cleaning_mode_is_other_with_raw_preserved(status_v1, status_v2)
 
 def test_empty_payloads_yield_no_vendor_keys(status_v2) -> None:
     assert build({}, {}) == {
-        "api_connected": True,
-        "connector_version": "2.0.0",
         "display_name": "Robot Alpha",
         "model_family": "S",
         "model_type": "Scrubber 50H",
@@ -269,3 +268,23 @@ def test_empty_payloads_yield_no_vendor_keys(status_v2) -> None:
     key_values = build({}, status_v2)
     assert key_values["manual_control"] is False
     assert "battery_pct" not in key_values
+
+
+# --- Health key-values --------------------------------------------------------
+
+
+def test_health_key_values_carry_vendor_reachability_while_connected(status_v1) -> None:
+    assert build_health_key_values(True, status_v1, "2.0.0") == {
+        "api_connected": True,
+        "connector_version": "2.0.0",
+        "robot_online": True,
+    }
+
+
+def test_health_key_values_omit_vendor_reachability_while_disconnected(status_v1) -> None:
+    # The cached `online` flag is unknowable while the API is unreachable: leave the
+    # datasource on its last known value instead of restating a stale one
+    assert build_health_key_values(False, status_v1, "2.0.0") == {
+        "api_connected": False,
+        "connector_version": "2.0.0",
+    }

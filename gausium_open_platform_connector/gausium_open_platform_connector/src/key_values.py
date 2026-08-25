@@ -23,12 +23,28 @@ MISSION_TASK_STATES = (TaskState.RUNNING.value, TaskState.PAUSED.value, TaskStat
 LEVEL_UNAVAILABLE = -1
 
 
+def build_health_key_values(
+    api_connected: bool, status: dict[str, Any], connector_version: str
+) -> dict[str, Any]:
+    """Connector-view key-values, published every tick even while nothing is reachable.
+
+    Distinct from `build_key_values`, which carries robot data and is only published while
+    that data is current. Keys without a value are omitted.
+    """
+    key_values = {
+        "api_connected": api_connected,
+        "connector_version": connector_version,
+        # Vendor reachability is only knowable while the API is reachable: omit it otherwise
+        # so the datasource keeps its last known value instead of restating a stale one
+        "robot_online": status.get("online") if api_connected else None,
+    }
+    return {key: value for key, value in key_values.items() if value is not None}
+
+
 def build_key_values(
     status: dict[str, Any],
     status_v2: dict[str, Any],
     robot_data: dict[str, Any],
-    api_connected: bool,
-    connector_version: str,
 ) -> dict[str, Any]:
     """Canonical key-values for one execution loop tick. Keys without a value are omitted."""
     battery = status.get("battery", {})
@@ -38,8 +54,6 @@ def build_key_values(
     current_task = status_v2.get("currentTask", {})
 
     key_values = {
-        "api_connected": api_connected,
-        "connector_version": connector_version,
         "display_name": robot_data.get("displayName", ""),
         "model_family": robot_data.get("modelFamilyCode", ""),
         "model_type": robot_data.get("modelTypeCode", ""),
@@ -49,7 +63,6 @@ def build_key_values(
         "battery_soh": battery.get("soh"),
         "battery_cycles": battery.get("cycleTimes"),
         "battery_temp_c": _max_battery_temperature(battery),
-        "robot_online": status.get("online"),
         "emergency_stop": status.get("emergencyStop", {}).get("enabled"),
         "speed_kmph": status.get("speedKilometerPerHour"),
         "current_map_name": localization.get("map", {}).get("name"),

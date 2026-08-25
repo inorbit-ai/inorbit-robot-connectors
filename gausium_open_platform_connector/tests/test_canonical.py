@@ -39,6 +39,9 @@ def test_cleaning_mode_keys() -> None:
     assert cleaning_mode_keys("吸尘")["cleaning_mode"] == "vacuum"
     assert cleaning_mode_keys("扫地")["cleaning_mode"] == "sweep"
     assert cleaning_mode_keys("喷雾消毒")["cleaning_mode"] == "disinfect"
+    # S series names the scrub and sweep modes differently from the M series
+    assert cleaning_mode_keys("清洗")["cleaning_mode"] == "scrub"
+    assert cleaning_mode_keys("清扫")["cleaning_mode"] == "sweep"
     # Underscores inside the name survive, so suction_cleaning stays mappable
     assert cleaning_mode_keys("suction_cleaning")["cleaning_mode"] == "vacuum"
     # Intensity variants are not guessed into a category
@@ -50,6 +53,9 @@ def test_cleaning_mode_keys() -> None:
         "cleaning_mode_label": "未知模式",
     }
     assert cleaning_mode_keys("静音推尘")["cleaning_mode_label"] == "Silent dust mopping"
+    # ASCII vendor names get an English label too
+    assert cleaning_mode_keys("__suction_cleaning")["cleaning_mode_label"] == "Suction cleaning"
+    assert cleaning_mode_keys("扫洗")["cleaning_mode_label"] == "Sweep and wash"
     assert cleaning_mode_keys("") == {}
     assert cleaning_mode_keys(None) == {}
 

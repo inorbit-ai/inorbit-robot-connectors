@@ -31,6 +31,7 @@ TASK_STATE_MAP = {
 # guessed into a category.
 CLEANING_MODE_MAP = {
     "洗地": "scrub",
+    "清洗": "scrub",
     "滚刷洗地": "scrub",
     "尘推": "dust_mop",
     "快速尘推": "dust_mop",
@@ -44,6 +45,7 @@ CLEANING_MODE_MAP = {
     "吸风清洁": "vacuum",
     "suction_cleaning": "vacuum",
     "扫地": "sweep",
+    "清扫": "sweep",
     "喷雾消毒": "disinfect",
 }
 
@@ -68,6 +70,14 @@ CLEANING_MODE_LABELS = {
     "扫地": "Sweep the floor",
     "洗地": "Wash the floor",
     "吸尘": "Vacuum",
+    "清洗": "Wash",
+    "清扫": "Sweep",
+    "扫洗": "Sweep and wash",
+    "轻度": "Light",
+    "light_cleaning": "Light cleaning",
+    "middle_cleaning": "Middle cleaning",
+    "heavy_cleaning": "Heavy cleaning",
+    "suction_cleaning": "Suction cleaning",
 }
 
 

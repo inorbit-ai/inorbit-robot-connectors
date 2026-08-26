@@ -51,11 +51,35 @@ class RobotState:
         status: Per-robot status from the v1 batch status endpoint.
         status_v2: Per-robot status from the v2 batch status endpoint.
         robot_data: Entry from the robots list (displayName, model codes, softwareVersion).
+        status_at: Monotonic seconds when this robot last appeared in a status sweep, or
+            0.0 if it never has. Per-robot: a chunk can fail, or the vendor can leave a
+            robot out of a sweep that otherwise succeeded, and its cache then stops
+            moving while the fleet-wide view still looks healthy.
     """
 
     status: dict = field(default_factory=dict)
     status_v2: dict = field(default_factory=dict)
     robot_data: dict = field(default_factory=dict)
+    status_at: float = 0.0
+
+    def record_status(self, payload: dict, now: float | None = None) -> None:
+        """Store a status payload and stamp when it arrived.
+
+        The stamp belongs with the write: freshness is a property of this payload, and a
+        caller that assigns ``status`` directly would leave the robot looking permanently
+        stale.
+        """
+        self.status = payload
+        self.status_at = time.monotonic() if now is None else now
+
+    def is_stale(self, max_age_s: float, now: float | None = None) -> bool:
+        """Whether this robot's status is too old to describe it any more.
+
+        A robot never seen is stale: there is nothing to say about it.
+        """
+        if not self.status_at:
+            return True
+        return ((time.monotonic() if now is None else now) - self.status_at) > max_age_s
 
 
 class DataPoller:
@@ -152,9 +176,16 @@ class DataPoller:
     def _fan_out(self, result: dict[str, dict] | None, field_name: str) -> None:
         if result is None:
             return
+        now = time.monotonic()
         for serial_number, payload in result.items():
             state = self._states.get(serial_number)
-            if state is not None:
+            if state is None:
+                continue
+            # Stamped only for robots actually in this sweep, so one the vendor omitted
+            # ages out instead of riding on the fleet-wide reachability.
+            if field_name == "status":
+                state.record_status(payload, now)
+            else:
                 setattr(state, field_name, payload)
 
     async def poll_robot_data_once(self) -> None:

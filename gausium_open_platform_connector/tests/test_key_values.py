@@ -157,9 +157,27 @@ def test_mission_status_emergency_stop_is_error(status_v1, status_v2) -> None:
     assert _mission_status(status_v1, status_v2) == "Error"
 
 
-@pytest.mark.parametrize("vendor_state", ["RUNNING", "PAUSED", "OTHER"])
+def test_mission_status_paused_is_its_own_mode(status_v1, status_v2) -> None:
+    """A paused robot is stopped and waiting for someone, not running a mission."""
+    status_v1["taskState"] = "PAUSED"
+
+    assert _mission_status(status_v1, status_v2) == "Paused"
+
+
+def test_mission_status_paused_on_the_charger_is_still_paused(status_v1, status_v2) -> None:
+    """Observed on the fleet: a robot pauses mid-run to top up, then resumes.
+
+    The task is what the mode describes; drawing power is reported separately as
+    ``charging``, so the mode vocabulary does not need a combined value.
+    """
+    status_v1["taskState"] = "PAUSED"
+    status_v1["battery"] = {**status_v1.get("battery", {}), "charging": True}
+
+    assert _mission_status(status_v1, status_v2) == "Paused"
+
+
+@pytest.mark.parametrize("vendor_state", ["RUNNING", "OTHER"])
 def test_mission_status_active_states_are_mission(status_v1, status_v2, vendor_state) -> None:
-    # No fifth Paused value: a paused task stays Mission, visible via task_state
     status_v1["taskState"] = vendor_state
 
     assert _mission_status(status_v1, status_v2) == "Mission"

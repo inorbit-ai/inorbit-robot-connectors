@@ -205,6 +205,11 @@ def _mission_status(status: dict[str, Any], status_v2: dict[str, Any]) -> str | 
     | ``Charging``| On the charger, no task          | Occupied but not working.                |
     | ``Idle``   | Anything else                    | Reachable with nothing to do.            |
 
+    A robot on the charger with a task still open keeps the task's mode, not ``Charging``:
+    on this fleet a robot pauses mid-run to top up and then resumes, so it reads ``Paused``
+    throughout. Whether it is drawing power is a separate fact, published as ``charging``
+    and available to status rules and dashboards without splitting the mode vocabulary.
+
     Returns ``None``, publishing no mode at all, while the vendor reports no task state:
     the cloud then keeps the last known mode rather than being told the robot is idle,
     which is a claim we cannot make without knowing.

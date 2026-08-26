@@ -31,6 +31,11 @@ MAX_TASK_REPORT_WAIT_TIME_SECS = 10 * 60  # 10 minutes
 
 REPORT_POLL_INTERVAL_SECS = 0.5
 
+# The vendor writes a task's coverage renders after its report, so the query right at
+# completion comes back empty for most missions
+COVERAGE_HEATMAP_POLL_INTERVAL_SECS = 60
+COVERAGE_HEATMAP_POLL_ATTEMPTS = 60
+
 # Reported task end statuses: -1 unknown, 0 normal, 1 manual, 2 error, 3 startup failure
 TASK_END_STATUS_NORMAL = 0
 TASK_END_STATUS_ABNORMAL = (1, 2, 3)
@@ -137,6 +142,16 @@ class MissionState(Enum):
 def filter_none(data: dict[str, Any]) -> dict[str, Any]:
     """Drop ``None`` values from a dictionary, keeping falsy values like 0 and False."""
     return {k: v for k, v in data.items() if v is not None}
+
+
+def coverage_heatmap_url(map_images: list[dict] | None) -> str | None:
+    """Join a report's coverage render URLs in vendor index order, or ``None`` if it has none."""
+    urls = [
+        image.get("url")
+        for image in sorted(map_images or [], key=lambda image: image.get("map_image_id", 0))
+        if image.get("url")
+    ]
+    return ", ".join(urls) or None
 
 
 class MissionTracker:
@@ -277,14 +292,13 @@ class MissionTracker:
             )
             if last_task_report:
                 self._logger.info(f"Completing mission with report ID {last_task_report.get('id')}")
-                map_images = await self._fetch_report_map_images(last_task_report.get("id"))
                 completed_report = self._complete_mission(
                     last_task_report,
                     completion_data["last_inorbit_report"],
-                    map_images or [],
                     completion_data["interruptions"],
                 )
                 self._publish(completed_report)
+                await self._publish_coverage_heatmap(last_task_report.get("id"), completed_report)
             else:
                 self._logger.info(
                     "Could not find report for mission "
@@ -301,6 +315,23 @@ class MissionTracker:
             )
         except Exception as e:  # noqa: BLE001 -- a failed completion must not kill the task
             self._logger.error(f"Error handling mission completion: {e}")
+
+    async def _publish_coverage_heatmap(self, report_id: str, completed_report: dict) -> None:
+        """Republish a completed mission once its coverage renders are queryable.
+
+        The renders lag the task report, so the mission is published without them and
+        updated when they appear, rather than holding completion back.
+        """
+        for _ in range(COVERAGE_HEATMAP_POLL_ATTEMPTS):
+            heatmap_url = coverage_heatmap_url(await self._fetch_report_map_images(report_id))
+            if heatmap_url:
+                completed_report["data"]["coverage_heatmap_url"] = heatmap_url
+                self._publish(completed_report)
+                return
+            await asyncio.sleep(COVERAGE_HEATMAP_POLL_INTERVAL_SECS)
+            if self._shutdown_event.is_set():
+                return
+        self._logger.warning(f"No coverage renders available for report {report_id}")
 
     async def _wait_for_task_report_async(self, task_instance_id: str) -> dict[str, Any] | None:
         """Poll the reports API until a report matching ``task_instance_id`` is available."""
@@ -402,7 +433,6 @@ class MissionTracker:
         self,
         task_report: dict[str, Any],
         last_inorbit_report: dict[str, Any],
-        map_images: list[dict],
         interruptions: int,
     ) -> dict[str, Any]:
         """Complete a previous mission based on its report data."""
@@ -417,14 +447,6 @@ class MissionTracker:
             .get("name"),
             interruptions_count=interruptions,
         )
-        # Coverage renders, one key with the URLs joined in vendor index order
-        heatmap_urls = [
-            image.get("url")
-            for image in sorted(map_images, key=lambda image: image.get("map_image_id", 0))
-            if image.get("url")
-        ]
-        if heatmap_urls:
-            data["coverage_heatmap_url"] = ", ".join(heatmap_urls)
 
         # Calculated InOrbit mission data
         inorbit_report["inProgress"] = False

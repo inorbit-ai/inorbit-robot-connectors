@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from gausium_open_platform_connector.src import mission
 from gausium_open_platform_connector.src.canonical import (
     TaskState,
     report_time_to_millis,
@@ -24,6 +25,12 @@ SN = "GS000-0000-000-0001"
 @pytest.fixture()
 def fetch_reports() -> AsyncMock:
     return AsyncMock(return_value=[])
+
+
+@pytest.fixture(autouse=True)
+def _fast_heatmap_poll(monkeypatch) -> None:
+    monkeypatch.setattr(mission, "COVERAGE_HEATMAP_POLL_ATTEMPTS", 1)
+    monkeypatch.setattr(mission, "COVERAGE_HEATMAP_POLL_INTERVAL_SECS", 0)
 
 
 @pytest.fixture()
@@ -411,8 +418,35 @@ async def test_coverage_heatmap_urls_joined_in_vendor_order(
     await finish_mission(tracker, idle_status, idle_status_v2, spawned)
 
     fetch_report_map_images.assert_awaited_once_with("report-1")
+    # In-progress, completed, then the completed mission again with the renders
+    assert publish.call_count == 3
     data = publish.call_args[0][0]["data"]
     assert data["coverage_heatmap_url"] == "https://example.com/0, https://example.com/1"
+
+
+@pytest.mark.asyncio
+async def test_coverage_heatmap_retried_until_the_vendor_has_it(
+    tracker,
+    publish,
+    fetch_reports,
+    fetch_report_map_images,
+    spawned,
+    running_status,
+    running_status_v2,
+    idle_status,
+    idle_status_v2,
+    task_report,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(mission, "COVERAGE_HEATMAP_POLL_ATTEMPTS", 2)
+    tracker.update(running_status, running_status_v2)
+    fetch_reports.return_value = [task_report]
+    fetch_report_map_images.side_effect = [None, [{"url": "https://example.com/0"}]]
+
+    await finish_mission(tracker, idle_status, idle_status_v2, spawned)
+
+    assert fetch_report_map_images.await_count == 2
+    assert publish.call_args[0][0]["data"]["coverage_heatmap_url"] == "https://example.com/0"
 
 
 @pytest.mark.asyncio

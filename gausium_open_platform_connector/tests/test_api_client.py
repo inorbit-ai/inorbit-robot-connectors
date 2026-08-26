@@ -318,6 +318,28 @@ async def test_get_report_map_images_failure_returns_none(
 
 
 @pytest.mark.asyncio
+async def test_get_report_map_images_body_error_returns_none(
+    client: GausiumApiClient, httpx_mock: HTTPXMock
+) -> None:
+    """The endpoint answers 200 and reports failure in the body ``code``."""
+    httpx_mock.add_response(
+        method="POST",
+        json={"code": 500, "data": None, "msg": "Robot task query failed: Internal server error"},
+    )
+
+    assert await client.get_report_map_images(SN_1, "report-1") is None
+
+
+@pytest.mark.asyncio
+async def test_get_report_map_images_empty_is_not_a_failure(
+    client: GausiumApiClient, httpx_mock: HTTPXMock
+) -> None:
+    httpx_mock.add_response(method="POST", json={"code": 0, "data": None, "msg": "SUCCESS"})
+
+    assert await client.get_report_map_images(SN_1, "report-1") == []
+
+
+@pytest.mark.asyncio
 async def test_get_map_image(client: GausiumApiClient, httpx_mock: HTTPXMock) -> None:
     download_uri = "https://blob.example.com/maps/map.png?sig=abc"
     httpx_mock.add_response(

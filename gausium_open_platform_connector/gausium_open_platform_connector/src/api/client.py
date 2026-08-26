@@ -280,7 +280,11 @@ class GausiumApiClient:
     async def get_report_map_images(
         self, serial_number: str, task_report_id: str
     ) -> list[dict] | None:
-        """Fetch the coverage map image entries of one task report (RPC-style POST read)."""
+        """Fetch the coverage map image entries of one task report (RPC-style POST read).
+
+        This endpoint answers 200 for every outcome and reports failure in the body ``code``
+        with a null ``data``, so a non-zero code is a failure and not an empty result.
+        """
         response = await self._fetch(
             "POST",
             "openapi-server/v1/api/task/report/map-images/query",
@@ -288,7 +292,13 @@ class GausiumApiClient:
         )
         if response is None:
             return None
-        return response.json().get("data", [])
+        body = response.json()
+        if body.get("code"):
+            self.logger.debug(
+                "report_map_images returned code %s: %s", body["code"], body.get("msg")
+            )
+            return None
+        return body.get("data") or []
 
     async def get_map_image(
         self, serial_number: str, map_id: str, map_name: str, map_version: str

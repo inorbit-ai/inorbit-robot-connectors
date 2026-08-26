@@ -20,7 +20,7 @@ from gausium_open_platform_connector.src.canonical import (
 )
 
 # Task states that mean a mission is under way
-MISSION_TASK_STATES = (TaskState.RUNNING.value, TaskState.PAUSED.value, TaskState.OTHER.value)
+MISSION_TASK_STATES = (TaskState.RUNNING.value, TaskState.OTHER.value)
 
 # Level fields report -1 when the model does not support them
 LEVEL_UNAVAILABLE = -1
@@ -196,6 +196,11 @@ def _mission_status(status: dict[str, Any], status_v2: dict[str, Any]) -> str | 
         return None
     if status.get("emergencyStop", {}).get("enabled"):
         return "Error"
+    # Paused is its own mode. A paused robot is stopped and waiting for someone, which is
+    # the opposite of what Mission conveys, and reporting it as Mission hid a robot that had
+    # not moved for hours. The account already defines a Paused mode; nothing emitted it.
+    if task_state == TaskState.PAUSED.value:
+        return "Paused"
     if task_state in MISSION_TASK_STATES or status_v2.get("currentTask", {}).get("taskInstanceId"):
         return "Mission"
     if status.get("battery", {}).get("charging"):

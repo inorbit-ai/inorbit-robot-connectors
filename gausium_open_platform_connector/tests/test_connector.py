@@ -27,6 +27,7 @@ from gausium_open_platform_connector.src.commands import (
 from gausium_open_platform_connector.src.config.models import GausiumOpenPlatformConnectorConfig
 from gausium_open_platform_connector.src.connector import (
     API_OFFLINE_GRACE_SECS,
+    STATUS_MAX_AGE_SECS,
     GausiumOpenPlatformConnector,
 )
 from gausium_open_platform_connector.src.key_values import build_key_values
@@ -143,7 +144,7 @@ def telemetry_calls(connector, robot_id: str = ROBOT_ID) -> list[dict]:
 def robot_state(connector):
     """The cached poller state for ROBOT_ID, primed with realistic data."""
     state = connector._poller.get_state(SN_1)
-    state.status = sample_status()
+    state.record_status(sample_status())
     state.status_v2 = sample_status_v2()
     state.robot_data = {
         "serialNumber": SN_1,
@@ -247,7 +248,7 @@ async def test_map_resolution_config_moves_pose(monkeypatch, config, session) ->
     connector.publish_robot_odometry = Mock()
     connector.publish_robot_key_values = Mock()
     state = connector._poller.get_state(SN_1)
-    state.status = sample_status()
+    state.record_status(sample_status())
     state.status_v2 = sample_status_v2()
     mark_api(connector, 0.0)
 
@@ -347,6 +348,65 @@ async def test_a_single_failed_tick_does_not_flap_the_fleet(
     session._send_robot_status.assert_not_called()
     assert connector._is_fleet_robot_online(ROBOT_ID) is True
     assert len(telemetry_calls(connector)) == 1
+
+
+@pytest.mark.asyncio
+async def test_one_robot_going_stale_is_reported_offline(connector, robot_state, session) -> None:
+    """The API answers for the fleet while one robot stops appearing in the sweeps.
+
+    Observed on a 55-robot fleet: the vendor rate-limits and times out, and can omit a
+    robot from a sweep that otherwise succeeded. 49 of 55 robots held values up to ten
+    hours old while still reading as online, so a robot that stopped reporting mid-task
+    kept showing that task. `_api_reachable` cannot see this: the API is reachable.
+    """
+    await connector._execution_loop()
+    assert connector._is_fleet_robot_online(ROBOT_ID) is True
+
+    robot_state.status_at -= STATUS_MAX_AGE_SECS + 1
+    connector.publish_robot_key_values.reset_mock()
+    connector.publish_robot_pose.reset_mock()
+
+    await connector._execution_loop()
+
+    session._send_robot_status.assert_called_once_with(online=False)
+    assert connector._is_fleet_robot_online(ROBOT_ID) is False
+    assert telemetry_calls(connector) == []
+    connector.publish_robot_pose.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_a_stale_robot_recovers_when_its_status_returns(
+    connector, robot_state, session
+) -> None:
+    """Offline-on-stale is not a one-way door."""
+    robot_state.status_at -= STATUS_MAX_AGE_SECS + 1
+    await connector._execution_loop()
+    assert connector._is_fleet_robot_online(ROBOT_ID) is False
+
+    session._send_robot_status.reset_mock()
+    connector.publish_robot_key_values.reset_mock()
+    robot_state.record_status(sample_status())
+
+    await connector._execution_loop()
+
+    session._send_robot_status.assert_called_once_with(online=True)
+    assert connector._is_fleet_robot_online(ROBOT_ID) is True
+    assert len(telemetry_calls(connector)) == 1
+
+
+@pytest.mark.asyncio
+async def test_the_age_limit_is_what_catches_the_frozen_robot(
+    connector, robot_state, session, monkeypatch
+) -> None:
+    """Pins the limit: without it a robot frozen for hours still reads as online."""
+    monkeypatch.setattr(
+        "gausium_open_platform_connector.src.connector.STATUS_MAX_AGE_SECS", float("inf")
+    )
+    robot_state.status_at -= 10 * 3600
+
+    await connector._execution_loop()
+
+    assert connector._is_fleet_robot_online(ROBOT_ID) is True
 
 
 @pytest.mark.asyncio

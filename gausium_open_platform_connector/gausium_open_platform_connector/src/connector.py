@@ -47,6 +47,13 @@ API_BACKOFF_START_SECS = 1.0
 API_BACKOFF_MAX_SECS = 30.0
 
 
+# How old a robot's status may be before the connector stops speaking for it. The vendor
+# rate-limits and times out under a large fleet, and can omit a robot from a sweep that
+# otherwise succeeded; in both cases its cache stops moving. Long enough to ride out a run
+# of failed sweeps without flapping, short enough that a stale robot reads as stale.
+STATUS_MAX_AGE_SECS = 300.0
+
+
 class GausiumOpenPlatformConnector(FleetConnector):
     """Connector between the Gausium Open Platform and InOrbit."""
 
@@ -236,9 +243,18 @@ class GausiumOpenPlatformConnector(FleetConnector):
         return self._poller.api_unreachable_secs <= API_OFFLINE_GRACE_SECS
 
     def _is_available(self, robot_id: str) -> bool:
-        """API reachable within the grace period and vendor reports the robot reachable."""
-        status = self._poller.get_state(self._sn_by_robot_id[robot_id]).status
-        return self._api_reachable() and status.get("online", True)
+        """API reachable, this robot's status still fresh, and the vendor calls it reachable.
+
+        Freshness is per-robot and separate from ``_api_reachable``: the API answers for the
+        fleet while a single robot goes missing from sweep after sweep, and its cached
+        ``online: true`` would otherwise keep it available for as long as the connector runs.
+        ``status.get("online", True)`` defaults to available, so without this a robot that
+        stopped reporting mid-task keeps publishing that task.
+        """
+        state = self._poller.get_state(self._sn_by_robot_id[robot_id])
+        if state.is_stale(STATUS_MAX_AGE_SECS):
+            return False
+        return self._api_reachable() and state.status.get("online", True)
 
     @override
     def _is_fleet_robot_online(self, robot_id: str) -> bool:

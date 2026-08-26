@@ -188,17 +188,32 @@ def _consumable_wear(device: dict[str, Any]) -> dict[str, float]:
 
 def _mission_status(status: dict[str, Any], status_v2: dict[str, Any]) -> str | None:
     """Robot mode value, homogeneous across cleaning connectors so a single Modes configuration
-    serves every OEM. Omitted while the vendor state is unknown, so the cloud keeps the last
-    known mode instead of being told the robot is idle.
+    serves every OEM.
+
+    A robot is in exactly one mode, so the checks below are a precedence order, not a set of
+    independent rules. In order:
+
+    | Mode       | When                             | Why it ranks here                       |
+    |------------|----------------------------------|-----------------------------------------|
+    | ``Error``  | E-stop engaged                   | A robot needing a person outranks what   |
+    |            |                                  | it was doing.                            |
+    | ``Paused`` | Task state PAUSED                | Stopped and waiting for someone, which   |
+    |            |                                  | is the opposite of what Mission conveys. |
+    | ``Mission``| Task running, or the vendor still| The work in progress, and it outranks    |
+    |            | reports a current task instance  | Charging: a robot topping up mid-task is |
+    |            |                                  | still on that task.                      |
+    | ``Charging``| On the charger, no task          | Occupied but not working.                |
+    | ``Idle``   | Anything else                    | Reachable with nothing to do.            |
+
+    Returns ``None``, publishing no mode at all, while the vendor reports no task state:
+    the cloud then keeps the last known mode rather than being told the robot is idle,
+    which is a claim we cannot make without knowing.
     """
     task_state = status.get("taskState")
     if not task_state:
         return None
     if status.get("emergencyStop", {}).get("enabled"):
         return "Error"
-    # Paused is its own mode. A paused robot is stopped and waiting for someone, which is
-    # the opposite of what Mission conveys, and reporting it as Mission hid a robot that had
-    # not moved for hours. The account already defines a Paused mode; nothing emitted it.
     if task_state == TaskState.PAUSED.value:
         return "Paused"
     if task_state in MISSION_TASK_STATES or status_v2.get("currentTask", {}).get("taskInstanceId"):

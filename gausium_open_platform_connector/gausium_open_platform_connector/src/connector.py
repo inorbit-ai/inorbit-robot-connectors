@@ -47,10 +47,11 @@ API_BACKOFF_START_SECS = 1.0
 API_BACKOFF_MAX_SECS = 30.0
 
 
-# How old a robot's status may be before the connector stops speaking for it. The vendor
+# How old a robot's status data may be before the connector reports it as offline. The vendor
 # rate-limits and times out under a large fleet, and can omit a robot from a sweep that
-# otherwise succeeded; in both cases its cache stops moving. Long enough to ride out a run
-# of failed sweeps without flapping, short enough that a stale robot reads as stale.
+# otherwise succeeded; in both cases its cache stops moving.
+# This value is long enough to ride out a run of failed sweeps without flapping, short
+# enough that a stale robot reads as stale.
 STATUS_MAX_AGE_SECS = 300.0
 
 

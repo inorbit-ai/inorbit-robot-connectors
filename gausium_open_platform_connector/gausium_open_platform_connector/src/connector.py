@@ -189,13 +189,14 @@ class GausiumOpenPlatformConnector(FleetConnector):
         arriving while nothing else does. Telemetry restates robot data the connector cannot
         refresh once the API or the robot is unreachable, or once the vendor stops reporting.
         """
-        state = self._poller.get_state(self._sn_by_robot_id[robot_id])
+        serial_number = self._sn_by_robot_id[robot_id]
+        state = self._poller.get_state(serial_number)
         available = self._is_available(robot_id)
         self._mirror_online_status(robot_id, available)
         self.publish_robot_key_values(
             robot_id,
             **build_health_key_values(
-                self._api_reachable(), state.status, state.status_v2, __version__
+                serial_number, self._api_reachable(), state.status, state.status_v2, __version__
             ),
         )
         if not available or not state.status:
@@ -252,7 +253,8 @@ class GausiumOpenPlatformConnector(FleetConnector):
         ``status.get("online", True)`` defaults to available, so without this a robot that
         stopped reporting mid-task keeps publishing that task.
         """
-        state = self._poller.get_state(self._sn_by_robot_id[robot_id])
+        serial_number = self._sn_by_robot_id[robot_id]
+        state = self._poller.get_state(serial_number)
         if state.is_stale(STATUS_MAX_AGE_SECS):
             return False
         return self._api_reachable() and state.status.get("online", True)

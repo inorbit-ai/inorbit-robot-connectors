@@ -27,6 +27,7 @@ LEVEL_UNAVAILABLE = -1
 
 
 def build_health_key_values(
+    serial_number: str,
     api_connected: bool,
     status: dict[str, Any],
     status_v2: dict[str, Any],
@@ -38,6 +39,8 @@ def build_health_key_values(
     that data is current. Keys without a value are omitted.
     """
     key_values = {
+        # Vendor identity, known from config, so it publishes even while nothing is reachable
+        "serial_number": serial_number,
         "api_connected": api_connected,
         "connector_version": connector_version,
         # Vendor reachability is only knowable while the API is reachable: omit it otherwise

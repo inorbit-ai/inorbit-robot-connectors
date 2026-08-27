@@ -279,7 +279,9 @@ async def test_robot_without_status_is_skipped(connector) -> None:
     assert telemetry_calls(connector) == []
     connector.publish_robot_pose.assert_not_called()
     # Health still goes out, without a vendor reachability it cannot know
-    assert health_calls(connector) == [{"api_connected": True, "connector_version": __version__}]
+    assert health_calls(connector) == [
+        {"serial_number": SN_1, "api_connected": True, "connector_version": __version__}
+    ]
 
 
 # --- Data freshness -----------------------------------------------------------

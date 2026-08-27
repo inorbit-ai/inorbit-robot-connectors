@@ -39,7 +39,7 @@ def published_keys() -> set[str]:
     status_v2 = json.loads((FIXTURES / "status_v2.json").read_text())
     status_v2["currentTask"]["workMode"]["name"] = "__洗地"  # Expose the cleaning_mode keys
     key_values = build_key_values(status_v1, status_v2, ROBOT_DATA)
-    health = build_health_key_values(True, status_v1, status_v2, "2.0.0")
+    health = build_health_key_values("GS000-0000-000-0001", True, status_v1, status_v2, "2.0.0")
     return set(key_values) | set(health) | EXTRA_KEYS
 
 

@@ -594,6 +594,19 @@ spec:
 kind: DataSourceDefinition
 apiVersion: v0.1
 metadata:
+  id: serial_number
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  label: Serial Number
+  timeline: {}
+  source:
+    keyValue:
+      key: serial_number
+
+---
+kind: DataSourceDefinition
+apiVersion: v0.1
+metadata:
   id: display_name
   scope: tag/<ACCOUNT_ID>/<TAG_ID>
 spec:

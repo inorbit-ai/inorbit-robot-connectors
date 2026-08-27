@@ -307,7 +307,7 @@ requires-dist = [
     { name = "colorlog", marker = "extra == 'dev'", specifier = "~=6.10.1" },
     { name = "coverage", marker = "extra == 'dev'", specifier = "~=7.11" },
     { name = "httpx", specifier = "~=0.28" },
-    { name = "inorbit-connector", extras = ["system-stats"], specifier = "~=3.2.1" },
+    { name = "inorbit-connector", extras = ["system-stats"], specifier = "~=3.2.2" },
     { name = "pydantic-settings", specifier = "~=2.13" },
     { name = "pytest", marker = "extra == 'dev'", specifier = "~=8.4" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = "~=1.2" },
@@ -388,7 +388,7 @@ wheels = [
 
 [[package]]
 name = "inorbit-connector"
-version = "3.2.1"
+version = "3.2.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "inorbit-edge", extra = ["telemetry"] },
@@ -397,9 +397,9 @@ dependencies = [
     { name = "pytz" },
     { name = "pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ab/39/e81a77db6a224a2bc492b59c00b9e8a7478284a5fa042829da8643c74dd7/inorbit_connector-3.2.1.tar.gz", hash = "sha256:dd8c2dc0e358a9e00371167cbdc339cf1976c26cb6aaaa7a0dca73bfd3a1414c", size = 63085, upload-time = "2026-07-30T10:29:35.118Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5f/6e/3fc7bfaa8b8cb4e39dd0d54a2981e103e6895b65971b3a36e6628defeb45/inorbit_connector-3.2.2.tar.gz", hash = "sha256:6d581e085fd08f813535e453f9b8d4564cef8c4beee1534f7099bc973c702ed3", size = 63927, upload-time = "2026-08-27T16:30:40.485Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0f/f5/587c6b46599050e531752715b9b28b686f56a1ee1128df605016c8ff4f8f/inorbit_connector-3.2.1-py3-none-any.whl", hash = "sha256:6678624f8d52a2d1caadc97e46003e96418b192923cc3261c13e070e8986ab0d", size = 40613, upload-time = "2026-07-30T10:29:33.717Z" },
+    { url = "https://files.pythonhosted.org/packages/3b/64/af65145984bebf93194d55e962dfc443797a876467ec33fd07efbd606f72/inorbit_connector-3.2.2-py3-none-any.whl", hash = "sha256:84fc88168d628514c96436bd6b57aaed5f1958a2a5ccca64bbc8955613c765f3", size = 41149, upload-time = "2026-08-27T16:30:39.104Z" },
 ]
 
 [package.optional-dependencies]

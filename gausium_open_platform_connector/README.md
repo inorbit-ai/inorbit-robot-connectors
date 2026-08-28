@@ -33,7 +33,7 @@ framework.
   reports a pose on an unknown map
 - Custom commands to submit cleaning tasks and control tasks and navigation (see
   [Custom commands](#custom-commands))
-- Vendor-offline mirroring: robots reported offline by Gausium show as offline in InOrbit
+- Vendor-offline reporting: robots reported offline by Gausium show as offline in InOrbit
 
 ## Prerequisites
 

@@ -4,7 +4,7 @@
 
 [project]
 name = "gausium-open-platform-connector"
-version = "2.0.2"
+version = "2.0.3"
 description = "InOrbit Edge connector for robots managed by the Gausium Open Platform"
 readme = "README.md"
 requires-python = ">=3.13"

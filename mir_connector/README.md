@@ -21,7 +21,7 @@ The [InOrbit](https://inorbit.ai/) Robot Connector for [MiR Motors](https://dire
 - **Real-time Monitoring**: Robot pose, system status, battery levels, and error states
 - **Mission Control**: Dispatch, pause, cancel missions via [Actions](https://developer.inorbit.ai/docs#configuring-action-definitions), including [running MiR robot actions as mission steps](#-running-mir-actions-in-missions)
 - **Custom Scripts**: Execute custom shell scripts on the connector via Custom Actions
-- **Mission Tracking**: Full [Mission Tracking](https://developer.inorbit.ai/docs#configuring-mission-tracking) support
+- **Mission Tracking**: Full [Mission Tracking](https://developer.inorbit.ai/docs#configuring-mission-tracking) support, including [robot-triggered (native) missions](#-native-mission-tracking) reported step by step, in execution order, with the robot's own step labels
 - **SSL Support**: Secure connections with full certificate validation
 - **Multi-Robot Fleet Management**: Simplified configuration for managing multiple robots
 - **Docker Support**: Production-ready containerized deployment with Docker Compose
@@ -801,6 +801,46 @@ to that mission's GUID.
 - A rejected action (blank or denied `mir_actionType`) fails during translation, before any mission
   is created on the robot; nothing runs.
 - A failure identifies the mission, not which step within it failed.
+
+## 📊 Native Mission Tracking
+
+Missions started on the robot itself (from the MiR interface or a fleet) are reported to InOrbit as
+missions, with one task per mission step. Steps appear in execution order and are labeled the way
+MiR labels them, for example `Move to Dock charger 285` or `Wait for 10 sec.`.
+
+Progress comes from the mission queue: each executed queue action names the definition action it
+came from, so a step is marked complete only when that action finished without failing.
+
+### Mission states
+
+MiR keeps a queue entry in `Executing` whether the robot is driving, paused or emergency-stopped,
+so the robot's own state supplies the rest. Each state maps to exactly one status:
+
+| Mission state    | Status    | When |
+| ---------------- | --------- | ---- |
+| `Executing`      | `OK`      | Running normally |
+| `Paused`         | `warning` | Robot paused; the mission is still open |
+| `Emergency stop` | `warning` | Emergency stop pressed mid-mission |
+| `Error`          | `error`   | Robot in an error state mid-mission |
+| `Done`           | `OK`      | Finished |
+| `Aborted`        | `error`   | Cancelled or failed |
+
+A blocked mission stays `inProgress`, so it is not closed out and resumes cleanly.
+
+### Limitations
+
+- **Loops report one task per step, not per iteration.** A mission step inside a `loop` is a single
+  task, so it shows complete after the first pass and progress can reach 100% while later
+  iterations are still running.
+- **Untaken branches never complete.** Steps inside an `if` or `try_catch` branch that is not taken
+  stay unchecked, so a mission using them can finish below 100%.
+- **Sub-missions are not expanded.** A `load_mission` step runs the sub-mission's own actions, which
+  do not belong to the parent definition, so its internal steps are not tracked.
+- **Scope steps are not shown.** `loop`, `if`, `while`, `try_catch`, `prompt_user`,
+  `reduce_protective_fields`, `set_reset_io` and `set_reset_plc` are containers rather than steps
+  and are left out of the task list; the steps inside them are kept.
+- **Fleet ActionLists have no task list.** Missions dispatched by a MiR fleet carry no mission
+  definition, so they are reported with state and timing only.
 
 ## Next steps
 

@@ -109,7 +109,7 @@ class DataPoller:
         """Whether the last sweep of either status endpoint reached the API.
 
         Tracked per payload and OR-ed here: two loops write it, so a single bool would flap
-        as their sweeps interleave. It gates the online mirror and the command guard, which
+        as their sweeps interleave. It gates the online status check and the command guard, which
         must stay open while either endpoint answers.
         """
         return any(self._reached.values())

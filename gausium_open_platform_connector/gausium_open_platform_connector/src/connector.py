@@ -93,27 +93,8 @@ class GausiumOpenPlatformConnector(FleetConnector):
             )
             for robot_id, serial_number in self._sn_by_robot_id.items()
         }
-        # Reachability last mirrored into the InOrbit online status, per robot.
-        # See _mirror_online_status.
-        self._online: dict[str, bool] = {}
         # Vendor report times behind the last telemetry publish, per robot.
         self._report_times: dict[str, tuple[str, ...]] = {}
-
-    def _mirror_online_status(self, robot_id: str, online: bool) -> None:
-        """Mirror reachability into the InOrbit online status, on transitions only.
-
-        Uses the same retained state message the MQTT last-will uses. Re-sending offline
-        would keep refreshing the robot's updateStamp, hiding how long it has been offline.
-        TODO: move this into inorbit-connector; _send_robot_status is an edge-SDK internal.
-        """
-        if online == self._online.get(robot_id):
-            return
-        # connect already published the initial online report
-        if robot_id in self._online or not online:
-            session = self._get_robot_session(robot_id)
-            if session is not None:
-                session._send_robot_status(online=online)
-        self._online[robot_id] = online
 
     def _publish_mission_tracking(self, robot_id: str, report: dict) -> None:
         """Publish a mission tracking report as an InOrbit event."""
@@ -191,8 +172,7 @@ class GausiumOpenPlatformConnector(FleetConnector):
         """
         serial_number = self._sn_by_robot_id[robot_id]
         state = self._poller.get_state(serial_number)
-        available = self._is_available(robot_id)
-        self._mirror_online_status(robot_id, available)
+        available = self._is_fleet_robot_online(robot_id)
         self.publish_robot_key_values(
             robot_id,
             **build_health_key_values(
@@ -244,8 +224,13 @@ class GausiumOpenPlatformConnector(FleetConnector):
         """Whether a status poll reached the API within the grace period."""
         return self._poller.api_unreachable_secs <= API_OFFLINE_GRACE_SECS
 
-    def _is_available(self, robot_id: str) -> bool:
+    @override
+    def _is_fleet_robot_online(self, robot_id: str) -> bool:
         """API reachable, this robot's status still fresh, and the vendor calls it reachable.
+
+        The framework calls this on every execution loop iteration and reports the result
+        to InOrbit as the robot's online status, once per change. Reads cached state only,
+        as it also runs on the edge-SDK's network thread.
 
         Freshness is per-robot and separate from ``_api_reachable``: the API answers for the
         fleet while a single robot goes missing from sweep after sweep, and its cached
@@ -258,11 +243,6 @@ class GausiumOpenPlatformConnector(FleetConnector):
         if state.is_stale(STATUS_MAX_AGE_SECS):
             return False
         return self._api_reachable() and state.status.get("online", True)
-
-    @override
-    def _is_fleet_robot_online(self, robot_id: str) -> bool:
-        """Reachability last mirrored by _mirror_online_status."""
-        return self._online.get(robot_id, True)
 
     @override
     async def fetch_robot_map(self, robot_id: str, frame_id: str) -> MapConfigTemp | None:
@@ -324,7 +304,7 @@ class GausiumOpenPlatformConnector(FleetConnector):
 
             serial_number = self._sn_by_robot_id[robot_id]
             state = self._poller.get_state(serial_number)
-            if not self._is_available(robot_id):
+            if not self._is_fleet_robot_online(robot_id):
                 raise CommandFailure(
                     execution_status_details="Robot is not available",
                     stderr=f"Robot '{robot_id}' is offline or the API is unreachable",

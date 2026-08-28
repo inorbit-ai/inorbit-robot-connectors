@@ -12,7 +12,7 @@ import math
 import threading
 import time
 from collections import defaultdict
-from unittest.mock import AsyncMock, MagicMock, Mock, call
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 from inorbit_connector.commands import CommandFailure, CommandResultCode
@@ -335,25 +335,22 @@ async def test_recovery_republishes_even_without_a_newer_report(connector, robot
     assert len(telemetry_calls(connector)) == 1
 
 
-# --- Reachability mirror ------------------------------------------------------
+# --- Online status ------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_a_single_failed_tick_does_not_flap_the_fleet(
-    connector, robot_state, session
-) -> None:
+async def test_a_single_failed_tick_does_not_flap_the_fleet(connector, robot_state) -> None:
     # 4xx and 5xx are not retried, so one gateway error fails both batch endpoints at once
     mark_api(connector, API_OFFLINE_GRACE_SECS / 2)
 
     await connector._execution_loop()
 
-    session._send_robot_status.assert_not_called()
     assert connector._is_fleet_robot_online(ROBOT_ID) is True
     assert len(telemetry_calls(connector)) == 1
 
 
 @pytest.mark.asyncio
-async def test_one_robot_going_stale_is_reported_offline(connector, robot_state, session) -> None:
+async def test_one_robot_going_stale_is_reported_offline(connector, robot_state) -> None:
     """The API answers for the fleet while one robot stops appearing in the sweeps.
 
     Observed on a 55-robot fleet: the vendor rate-limits and times out, and can omit a
@@ -370,35 +367,30 @@ async def test_one_robot_going_stale_is_reported_offline(connector, robot_state,
 
     await connector._execution_loop()
 
-    session._send_robot_status.assert_called_once_with(online=False)
     assert connector._is_fleet_robot_online(ROBOT_ID) is False
     assert telemetry_calls(connector) == []
     connector.publish_robot_pose.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_a_stale_robot_recovers_when_its_status_returns(
-    connector, robot_state, session
-) -> None:
+async def test_a_stale_robot_recovers_when_its_status_returns(connector, robot_state) -> None:
     """Offline-on-stale is not a one-way door."""
     robot_state.status_at -= STATUS_MAX_AGE_SECS + 1
     await connector._execution_loop()
     assert connector._is_fleet_robot_online(ROBOT_ID) is False
 
-    session._send_robot_status.reset_mock()
     connector.publish_robot_key_values.reset_mock()
     robot_state.record_status(sample_status())
 
     await connector._execution_loop()
 
-    session._send_robot_status.assert_called_once_with(online=True)
     assert connector._is_fleet_robot_online(ROBOT_ID) is True
     assert len(telemetry_calls(connector)) == 1
 
 
 @pytest.mark.asyncio
 async def test_the_age_limit_is_what_catches_the_frozen_robot(
-    connector, robot_state, session, monkeypatch
+    connector, robot_state, monkeypatch
 ) -> None:
     """Pins the limit: without it a robot frozen for hours still reads as online."""
     monkeypatch.setattr(
@@ -412,9 +404,8 @@ async def test_the_age_limit_is_what_catches_the_frozen_robot(
 
 
 @pytest.mark.asyncio
-async def test_api_unreachable_mirror(connector, robot_state, session) -> None:
+async def test_api_unreachable_reports_the_robot_offline(connector, robot_state) -> None:
     await connector._execution_loop()
-    session._send_robot_status.assert_not_called()
     assert connector._is_fleet_robot_online(ROBOT_ID) is True
 
     # Unreachable past the grace period freezes the cache: report offline instead of
@@ -423,7 +414,6 @@ async def test_api_unreachable_mirror(connector, robot_state, session) -> None:
     connector.publish_robot_key_values.reset_mock()
     connector.publish_robot_pose.reset_mock()
     await connector._execution_loop()
-    session._send_robot_status.assert_called_once_with(online=False)
     assert telemetry_calls(connector) == []
     connector.publish_robot_pose.assert_not_called()
     assert connector._is_fleet_robot_online(ROBOT_ID) is False
@@ -434,33 +424,29 @@ async def test_api_unreachable_mirror(connector, robot_state, session) -> None:
     assert health["data_age_secs"] > 0
     assert "robot_online" not in health
 
-    # Still unreachable: the offline status is not re-sent
+    # Still unreachable: still offline, still no telemetry
     connector.publish_robot_key_values.reset_mock()
     await connector._execution_loop()
-    assert session._send_robot_status.call_args_list == [call(online=False)]
+    assert connector._is_fleet_robot_online(ROBOT_ID) is False
     assert telemetry_calls(connector) == []
 
-    # API comes back: status is mirrored and telemetry resumes
+    # API comes back: the robot reads online again and telemetry resumes
     mark_api(connector, 0.0)
     connector.publish_robot_key_values.reset_mock()
     await connector._execution_loop()
-    session._send_robot_status.assert_called_with(online=True)
     assert len(telemetry_calls(connector)) == 1
     assert connector._is_fleet_robot_online(ROBOT_ID) is True
 
 
 @pytest.mark.asyncio
-async def test_vendor_offline_mirror(connector, robot_state, session) -> None:
-    # Initial online=True is not re-sent (connect already published it)
+async def test_vendor_offline_reports_the_robot_offline(connector, robot_state) -> None:
     await connector._execution_loop()
-    session._send_robot_status.assert_not_called()
     assert connector._is_fleet_robot_online(ROBOT_ID) is True
 
-    # Vendor goes offline: status is mirrored once and publishing stops
+    # Vendor goes offline: the robot reads offline and publishing stops
     robot_state.status["online"] = False
     connector.publish_robot_key_values.reset_mock()
     await connector._execution_loop()
-    session._send_robot_status.assert_called_once_with(online=False)
     assert telemetry_calls(connector) == []
     # The API is still reachable, so health carries the vendor's own verdict
     (health,) = health_calls(connector)
@@ -468,18 +454,16 @@ async def test_vendor_offline_mirror(connector, robot_state, session) -> None:
     assert health["robot_online"] is False
     assert connector._is_fleet_robot_online(ROBOT_ID) is False
 
-    # Still offline: the offline status is not re-sent (it would refresh updateStamp,
-    # hiding how long the robot has been offline), still no telemetry
+    # Still offline: still no telemetry
     connector.publish_robot_key_values.reset_mock()
     await connector._execution_loop()
-    assert session._send_robot_status.call_args_list == [call(online=False)]
+    assert connector._is_fleet_robot_online(ROBOT_ID) is False
     assert telemetry_calls(connector) == []
 
-    # Vendor comes back: status is mirrored and telemetry resumes
+    # Vendor comes back: the robot reads online again and telemetry resumes
     robot_state.status["online"] = True
     connector.publish_robot_key_values.reset_mock()
     await connector._execution_loop()
-    session._send_robot_status.assert_called_with(online=True)
     assert len(telemetry_calls(connector)) == 1
     assert connector._is_fleet_robot_online(ROBOT_ID) is True
 

@@ -74,7 +74,9 @@ class OmronConnector(FleetConnector):
         )
         
         # Initialize Mission Tracking
-        self._mission_tracking = OmronMissionTracking(self.robot_manager.api)
+        self._mission_tracking = OmronMissionTracking(
+            self.robot_manager.api, create_supervised_task=self._create_supervised_task
+        )
         
         # Build robot_id (InOrbit) to fleet_robot_id (FlowCore NameKey) mapping
         self._robot_id_to_fleet_id: dict[str, str] = {}

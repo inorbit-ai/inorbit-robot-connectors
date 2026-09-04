@@ -33,9 +33,13 @@ class OmronMissionTracking:
     and constructs InOrbit Mission Tracking payloads.
     """
 
-    def __init__(self, api_client: OmronApiClient):
+    def __init__(self, api_client: OmronApiClient, create_supervised_task=None):
         self.api = api_client
-        self._stop_event = asyncio.Event()
+        # Falls back to a bare task when no supervisor is injected, which is what the
+        # tests use. In production the connector passes the framework's supervisor.
+        self._create_supervised_task = create_supervised_task or (
+            lambda name, coro_factory: asyncio.create_task(coro_factory(), name=name)
+        )
         self._running_tasks = []
         
         # Cache for active missions per robot
@@ -68,25 +72,19 @@ class OmronMissionTracking:
 
     def start(self):
         """Start background processing tasks."""
-        self._running_tasks.append(asyncio.create_task(self._process_job_stream()))
-        self._running_tasks.append(asyncio.create_task(self._process_segment_stream()))
-        self._running_tasks.append(asyncio.create_task(self._cleanup_loop()))
+        self._running_tasks = [
+            self._create_supervised_task("flowcore-job-stream", self._process_job_stream),
+            self._create_supervised_task("flowcore-segment-stream", self._process_segment_stream),
+            self._create_supervised_task("flowcore-mission-cleanup", self._cleanup_loop),
+        ]
         LOGGER.info("Started Mission Tracking")
 
     async def stop(self):
         """Stop background tasks."""
-        self._stop_event.set()
         for task in self._running_tasks:
             task.cancel()
-        
-        try:
-            await asyncio.wait_for(
-                asyncio.gather(*self._running_tasks, return_exceptions=True),
-                timeout=5.0
-            )
-        except asyncio.TimeoutError:
-            LOGGER.warning("Mission tracking tasks failed to stop gracefully within timeout")
-            
+        if self._running_tasks:
+            await asyncio.gather(*self._running_tasks, return_exceptions=True)
         self._running_tasks.clear()
         LOGGER.info("Stopped Mission Tracking")
 
@@ -98,28 +96,13 @@ class OmronMissionTracking:
         return self._mission_cache.get(robot_id)
         
     async def _process_job_stream(self):
-        """Consumes stream of job events."""
-        while not self._stop_event.is_set():
-            try:
-                async for event in self.api.get_job_stream():
-                    if self._stop_event.is_set():
-                        break
-                    
-                    robot_id = event.get('lastAssignedRobot')
-                    if not robot_id:
-                        continue
-                    
-                    job_key = event.get('namekey')
+        """Consume the job event stream. Supervised: an exit or crash restarts it."""
+        async for event in self.api.get_job_stream():
+            robot_id = event.get('lastAssignedRobot')
+            if not robot_id:
+                continue
 
-                    
-                    await self._handle_job_update(robot_id, job_key, event)
-
-                # Stream finished expectedly (or empty), wait before retry/reconnect
-                await asyncio.sleep(1.0)
-
-            except Exception as e:
-                LOGGER.error(f"Error in Job Stream: {e}")
-                await asyncio.sleep(5.0)
+            await self._handle_job_update(robot_id, event.get('namekey'), event)
 
     async def _handle_job_update(self, robot_id: str, job_key: str, event: Dict[str, Any], update_mission_cache: bool = True):
         """Central logic for updating job state from event data."""
@@ -209,66 +192,54 @@ class OmronMissionTracking:
             self._mission_cache[robot_id] = payload
         
     async def _process_segment_stream(self):
-        """Consumes stream of job segment events."""
-        while not self._stop_event.is_set():
-            try:
-                async for event in self.api.get_job_segment_stream():
-                    if self._stop_event.is_set():
-                        break
-                    
-                    robot_id = event.get('robot')
-                    if not robot_id:
-                        continue
-                    
-                    job_key = event.get('job')
-                    
-                    if job_key not in self._active_job_totals:
-                        try:
-                             job_data = await self.api.get_job_details_by_namekey(job_key)
-                             if job_data:
-                                  await self._handle_job_update(robot_id, job_key, job_data)
-                        except Exception as e:
-                             LOGGER.warning(f"Failed to catch-up missing job {job_key}: {e}")
-                    
-                    if job_key not in self._active_job_totals:
-                        continue
-                        
-                    self._job_last_update[job_key] = time.time()
-                    
-                    seq = event.get('seq', 0)
-                    total = self._active_job_totals.get(job_key, 10)
-                    percent = min(seq / total, 0.99)
-                    
-                    seg_status = event.get('status', '') # InProgress / Completed
-                    
-                    if job_key in self._active_job_tasks:
-                        for task in self._active_job_tasks[job_key]:
-                            if task['taskId'] == str(seq):
-                                if seg_status == 'InProgress':
-                                    task['inProgress'] = True
-                                    task['completed'] = False
-                                elif seg_status == 'Completed':
-                                    task['inProgress'] = False
-                                    task['completed'] = True
-                    
-                    if robot_id in self._mission_cache:
-                        mission = self._mission_cache[robot_id]
-                        
-                        if job_key in [mission['missionId'], mission.get('data', {}).get('namekey')]:
-                            mission['completedPercent'] = percent
-                            if 'data' in mission:
-                                 mission['data']['subStatus'] = event.get('subStatus')
-
-                # Stream finished expectedly (or empty), wait before retry/reconnect
-                await asyncio.sleep(1.0)
-
-            except Exception as e:
-                LOGGER.error(f"Error in Segment Stream: {e}")
-                await asyncio.sleep(5.0)
+        """Consume the job segment event stream. Supervised: an exit or crash restarts it."""
+        async for event in self.api.get_job_segment_stream():
+            robot_id = event.get('robot')
+            if not robot_id:
+                continue
+            
+            job_key = event.get('job')
+            
+            if job_key not in self._active_job_totals:
+                try:
+                     job_data = await self.api.get_job_details_by_namekey(job_key)
+                     if job_data:
+                          await self._handle_job_update(robot_id, job_key, job_data)
+                except Exception as e:
+                     LOGGER.warning(f"Failed to catch-up missing job {job_key}: {e}")
+            
+            if job_key not in self._active_job_totals:
+                continue
+                
+            self._job_last_update[job_key] = time.time()
+            
+            seq = event.get('seq', 0)
+            total = self._active_job_totals.get(job_key, 10)
+            percent = min(seq / total, 0.99)
+            
+            seg_status = event.get('status', '') # InProgress / Completed
+            
+            if job_key in self._active_job_tasks:
+                for task in self._active_job_tasks[job_key]:
+                    if task['taskId'] == str(seq):
+                        if seg_status == 'InProgress':
+                            task['inProgress'] = True
+                            task['completed'] = False
+                        elif seg_status == 'Completed':
+                            task['inProgress'] = False
+                            task['completed'] = True
+            
+            if robot_id in self._mission_cache:
+                mission = self._mission_cache[robot_id]
+                
+                if job_key in [mission['missionId'], mission.get('data', {}).get('namekey')]:
+                    mission['completedPercent'] = percent
+                    if 'data' in mission:
+                         mission['data']['subStatus'] = event.get('subStatus')
 
     async def _cleanup_loop(self):
         """Periodically cleans up stale jobs."""
-        while not self._stop_event.is_set():
+        while True:
             await asyncio.sleep(60)
             now = time.time()
             api_timeout = 300 # 5 minutes expiry

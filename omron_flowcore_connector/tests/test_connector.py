@@ -144,6 +144,9 @@ async def test_is_fleet_robot_online_is_false_for_an_unknown_robot(
     connector_config, mock_robot_manager, mock_executor_cls
 ):
     connector = OmronConnector(connector_config, robot_manager=mock_robot_manager)
+    mock_robot_manager.is_online = MagicMock()
 
     assert connector._is_fleet_robot_online("not-in-the-fleet") is False
+
+    mock_robot_manager.is_online.assert_not_called()
 

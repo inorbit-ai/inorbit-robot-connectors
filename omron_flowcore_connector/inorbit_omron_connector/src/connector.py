@@ -246,7 +246,7 @@ class OmronConnector(FleetConnector):
         Called once per robot per execution loop iteration and from the edge-SDK
         network thread, so this must stay a cache read.
         """
-        fleet_robot_id = self._robot_id_to_fleet_id.get(robot_id)
+        fleet_robot_id = self._get_fleet_robot_id(robot_id)
         if fleet_robot_id is None:
             return False
         return self.robot_manager.is_online(fleet_robot_id)

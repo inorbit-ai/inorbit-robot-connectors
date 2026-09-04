@@ -328,7 +328,7 @@ wheels = [
 
 [[package]]
 name = "inorbit-connector"
-version = "3.2.0"
+version = "3.2.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "inorbit-edge", extra = ["telemetry"] },
@@ -337,14 +337,14 @@ dependencies = [
     { name = "pytz" },
     { name = "pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fa/c3/942ad5f5232e0555613817fe5c5be54a45f30ac0425b5c317e51201c5caf/inorbit_connector-3.2.0.tar.gz", hash = "sha256:3fb99a2ae142b64c4f1407f3bf8ac9610f3d03287e5228c5c66e0492882e2d68", size = 61802, upload-time = "2026-06-10T12:26:14.761Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b2/b0/900b3cd1b0c204d0c98454f2b708634d0a44bead875f9cb2a3303676a4d8/inorbit_connector-3.2.3.tar.gz", hash = "sha256:7fa8774dce4837c89aec43e9bcddb8a63df88b9d48d72671698f0a2f5b25ba41", size = 64452, upload-time = "2026-08-28T18:01:37.172Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8f/58/48ab30578f16439d1b6311c3bc16c13b58a0cb4e689d8ad5e1d80a6016d5/inorbit_connector-3.2.0-py3-none-any.whl", hash = "sha256:1d93990ed0b6a8422709399504623814e203b07217decb00d597e0d478e1fe97", size = 39838, upload-time = "2026-06-10T12:26:13.567Z" },
+    { url = "https://files.pythonhosted.org/packages/d2/4a/e1ab47ee93dbc7850194a3df8ddad3416c64b1b97fb9f671a898466173c1/inorbit_connector-3.2.3-py3-none-any.whl", hash = "sha256:e9eaada0afcd263081bb403d1d643fde4e754bf08d9feebd7e50512814b59041", size = 41387, upload-time = "2026-08-28T18:01:35.903Z" },
 ]
 
 [[package]]
 name = "inorbit-edge"
-version = "3.1.0"
+version = "3.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
@@ -357,9 +357,9 @@ dependencies = [
     { name = "rdp2" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d1/c5/9d6d21835ef57c943ad8f5c057c8a7ad7fb6056b90e6c6b0904b051aa39e/inorbit_edge-3.1.0.tar.gz", hash = "sha256:8b4036c3cd288fb656ff399354c598185cc7043f8a481fc6430b92ef7f1350f6", size = 45903, upload-time = "2026-06-09T19:55:11.311Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/de/7b/9c2edc3b0e12df63584d06903b906a05bdac4959c8b90a1f6330fb0f9cc9/inorbit_edge-3.4.0.tar.gz", hash = "sha256:1e55328f501079fcd016259eb48d75f72126564577bd5286d71cedc2e85fe9da", size = 52495, upload-time = "2026-09-04T12:42:32.672Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b0/3d/0ef724f3db575c5d70140ec04c492f183af0011c557187eb6d66effcdb4d/inorbit_edge-3.1.0-py3-none-any.whl", hash = "sha256:ad073aa29a951de2837d20e3045279a72aa1d8ac48130144c9742e0912a75d01", size = 43641, upload-time = "2026-06-09T19:55:10.126Z" },
+    { url = "https://files.pythonhosted.org/packages/1f/8d/f495f0c682e92b972f44db8e0a2d2d96e8d1735d9a68b92bbb2bd7ac362f/inorbit_edge-3.4.0-py3-none-any.whl", hash = "sha256:0d6b70da5061fb5af070464396388c0b3ea644f03ce22eff900f7812599444ff", size = 48900, upload-time = "2026-09-04T12:42:31.618Z" },
 ]
 
 [package.optional-dependencies]
@@ -424,8 +424,8 @@ requires-dist = [
     { name = "colorlog", marker = "extra == 'dev'", specifier = "~=6.10.1" },
     { name = "coverage", marker = "extra == 'dev'", specifier = "~=7.11" },
     { name = "httpx", specifier = "~=0.28.1" },
-    { name = "inorbit-connector", specifier = ">=3.2,<4.0" },
-    { name = "inorbit-edge-executor", specifier = "~=4.0.3" },
+    { name = "inorbit-connector", specifier = "~=3.2.3" },
+    { name = "inorbit-edge-executor", specifier = "~=4.0.4" },
     { name = "pydantic", specifier = "~=2.12.5" },
     { name = "pydantic-settings", specifier = "~=2.14.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = "~=8.4" },

@@ -42,7 +42,9 @@ class OmronConnector(FleetConnector):
             config: FlowCore connector configuration
             robot_manager: Optional injected RobotManager (for testing)
         """
-        super().__init__(config)
+        # Fills each robot's CPU, RAM and disk defaults with the connector host's real
+        # figures instead of zeroes. FlowCore exposes no per-AMR host stats.
+        super().__init__(config, publish_connector_system_stats=True)
 
         api_url = str(config.api_url)
 
@@ -236,6 +238,18 @@ class OmronConnector(FleetConnector):
 
         # Indicate success
         options["result_function"](CommandResultCode.SUCCESS)
+
+    @override
+    def _is_fleet_robot_online(self, robot_id: str) -> bool:
+        """Report availability from the Fleet Manager's view of the robot.
+
+        Called once per robot per execution loop iteration and from the edge-SDK
+        network thread, so this must stay a cache read.
+        """
+        fleet_robot_id = self._robot_id_to_fleet_id.get(robot_id)
+        if fleet_robot_id is None:
+            return False
+        return self.robot_manager.is_online(fleet_robot_id)
 
     def _get_fleet_robot_id(self, robot_id: str) -> Optional[str]:
         """Resolve InOrbit robot_id to FlowCore NameKey."""

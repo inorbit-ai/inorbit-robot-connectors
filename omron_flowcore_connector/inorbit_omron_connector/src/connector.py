@@ -102,9 +102,12 @@ class OmronConnector(FleetConnector):
     @override
     async def _disconnect(self) -> None:
         """Disconnect from FlowCore API and stop polling."""
-        await self.robot_manager.stop()
+        # Stop the executor and tracker first: they hold the same api client that
+        # robot_manager.stop() closes, and a mission worker cancelling mid-call would
+        # otherwise reopen it.
         await self._mission_executor.shutdown()
         await self._mission_tracking.stop()
+        await self.robot_manager.stop()
         LOGGER.info("Disconnected from FlowCore API.")
 
     @override

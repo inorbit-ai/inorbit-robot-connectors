@@ -6,7 +6,7 @@ import asyncio
 import logging
 import time
 from enum import StrEnum
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Callable, Optional, List
 
 from inorbit_omron_connector.src.omron.api_client import OmronApiClient
 
@@ -33,7 +33,9 @@ class OmronMissionTracking:
     and constructs InOrbit Mission Tracking payloads.
     """
 
-    def __init__(self, api_client: OmronApiClient, create_supervised_task=None):
+    def __init__(
+        self, api_client: OmronApiClient, create_supervised_task: Optional[Callable] = None
+    ):
         self.api = api_client
         # Falls back to a bare task when no supervisor is injected, which is what the
         # tests use. In production the connector passes the framework's supervisor.
@@ -202,11 +204,11 @@ class OmronMissionTracking:
             
             if job_key not in self._active_job_totals:
                 try:
-                     job_data = await self.api.get_job_details_by_namekey(job_key)
-                     if job_data:
-                          await self._handle_job_update(robot_id, job_key, job_data)
+                    job_data = await self.api.get_job_details_by_namekey(job_key)
+                    if job_data:
+                        await self._handle_job_update(robot_id, job_key, job_data)
                 except Exception as e:
-                     LOGGER.warning(f"Failed to catch-up missing job {job_key}: {e}")
+                    LOGGER.warning(f"Failed to catch-up missing job {job_key}: {e}")
             
             if job_key not in self._active_job_totals:
                 continue

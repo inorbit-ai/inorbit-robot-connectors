@@ -8,6 +8,7 @@
 import asyncio
 import logging
 import math
+from functools import partial
 from typing import Any, Callable, Dict, Optional
 
 # Local
@@ -91,8 +92,12 @@ class RobotManager:
 
         # One loop for high-level status (fleet state), one for details (telemetry)
         self._running_tasks = [
-            self._create_supervised_task("flowcore-fleet-state", self._fleet_state_loop),
-            self._create_supervised_task("flowcore-fleet-details", self._fleet_details_loop),
+            self._create_supervised_task(
+                "flowcore-fleet-state", partial(self._poll_loop, self._update_fleet_state)
+            ),
+            self._create_supervised_task(
+                "flowcore-fleet-details", partial(self._poll_loop, self._update_fleet_details)
+            ),
         ]
 
         LOGGER.info("Started FlowCore API polling")
@@ -278,21 +283,10 @@ class RobotManager:
             return "ERROR"
         return "IDLE" # Default
 
-    async def _fleet_state_loop(self) -> None:
-        """Poll fleet state forever. Supervised: a crash is logged and restarted."""
+    async def _poll_loop(self, poll) -> None:
+        """Poll `poll` forever at the configured frequency. Supervised: a crash restarts it."""
         while True:
-            await asyncio.gather(
-                self._update_fleet_state(),
-                asyncio.sleep(1.0 / self._default_update_freq),
-            )
-
-    async def _fleet_details_loop(self) -> None:
-        """Poll fleet telemetry forever. Supervised: a crash is logged and restarted."""
-        while True:
-            await asyncio.gather(
-                self._update_fleet_details(),
-                asyncio.sleep(1.0 / self._default_update_freq),
-            )
+            await asyncio.gather(poll(), asyncio.sleep(1.0 / self._default_update_freq))
 
     async def get_arcl_client(self, robot_id: str) -> ArclClient:
         """Get or create ARCL client for a robot."""

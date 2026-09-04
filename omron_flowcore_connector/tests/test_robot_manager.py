@@ -179,8 +179,7 @@ async def test_start_registers_supervised_tasks(manager_config):
 
     def fake_supervisor(name, coro_factory):
         registered.append(name)
-        task = asyncio.create_task(asyncio.sleep(0))
-        return task
+        return asyncio.create_task(coro_factory(), name=name)
 
     manager = RobotManager(
         manager_config, api_client=client, create_supervised_task=fake_supervisor
@@ -188,3 +187,9 @@ async def test_start_registers_supervised_tasks(manager_config):
     await manager.start()
 
     assert registered == ["flowcore-fleet-state", "flowcore-fleet-details"]
+
+    await asyncio.sleep(0.1)
+    for task in manager._running_tasks:
+        assert not task.done()
+
+    await manager.stop()

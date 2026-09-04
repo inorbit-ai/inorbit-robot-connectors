@@ -80,7 +80,7 @@ async def test_request_timeout_records_error_metric_and_raises():
 
 
 @pytest.mark.asyncio
-async def test_public_method_keeps_fallback_on_error():
+async def test_get_data_store_value_keeps_fallback_on_error():
     """get_data_store_value still swallows errors and returns [] (behavior unchanged)."""
     api = _client()
     api.client.request = AsyncMock(side_effect=httpx.ConnectError("down"))

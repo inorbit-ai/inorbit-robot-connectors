@@ -74,8 +74,8 @@ class RobotManager:
         )
         self._running_tasks: list[asyncio.Task] = []
         
-        # Cached data per InOrbit robot_id
-        # Structure: {robot_id: {data_type: value}}
+        # Cached data keyed by FlowCore namekey (fleet_robot_id)
+        # Structure: {fleet_robot_id: {data_type: value}}
         self._robot_data: Dict[str, Dict[str, Any]] = {}
 
         # Map of FlowCore robot_id (NameKey) to configuration
@@ -250,9 +250,9 @@ class RobotManager:
         summary = self._robot_data.get(fleet_robot_id, {}).get("summary")
         return summary is None or summary.subStatus != ARCL_LOST_SUB_STATUS
 
-    def get_robot_pose(self, robot_id: str) -> Optional[dict]:
+    def get_robot_pose(self, fleet_robot_id: str) -> Optional[dict]:
         """Get cached pose for a specific robot."""
-        data = self._robot_data.get(robot_id, {})
+        data = self._robot_data.get(fleet_robot_id, {})
         
         pose_x = data.get("PoseX")
         pose_y = data.get("PoseY")
@@ -268,9 +268,9 @@ class RobotManager:
             
         return None
 
-    def get_robot_key_values(self, robot_id: str) -> Optional[dict]:
+    def get_robot_key_values(self, fleet_robot_id: str) -> Optional[dict]:
         """Get cached key-values for a specific robot."""
-        data = self._robot_data.get(robot_id, {})
+        data = self._robot_data.get(fleet_robot_id, {})
         summary = data.get("summary")
         battery = data.get("StateOfCharge")
         
@@ -293,7 +293,7 @@ class RobotManager:
             
         return kv
 
-    def get_robot_odometry(self, robot_id: str) -> Optional[dict]:
+    def get_robot_odometry(self, fleet_robot_id: str) -> Optional[dict]:
         """Get cached odometry for a specific robot.
         
         Note: FlowCore generic API might not expose velocity easily in 
@@ -325,23 +325,23 @@ class RobotManager:
         while True:
             await asyncio.gather(poll(), asyncio.sleep(1.0 / self._default_update_freq))
 
-    async def get_arcl_client(self, robot_id: str) -> ArclClient:
+    async def get_arcl_client(self, fleet_robot_id: str) -> ArclClient:
         """Get or create ARCL client for a robot."""
         # Check if we have the robot in cache
-        if robot_id not in self._robot_data:
-            raise ValueError(f"Robot {robot_id} not found in fleet.")
+        if fleet_robot_id not in self._robot_data:
+            raise ValueError(f"Robot {fleet_robot_id} not found in fleet.")
 
         # Get IP address
-        ip = self._robot_data[robot_id].get("robot_ip")
+        ip = self._robot_data[fleet_robot_id].get("robot_ip")
         if not ip:
-            raise ValueError(f"IP address not available for robot {robot_id}.")
+            raise ValueError(f"IP address not available for robot {fleet_robot_id}.")
 
         # Return existing client if available
-        if robot_id in self._arcl_clients:
-            return self._arcl_clients[robot_id]
+        if fleet_robot_id in self._arcl_clients:
+            return self._arcl_clients[fleet_robot_id]
 
         # Create new client
-        LOGGER.info(f"Creating new ARCL client for {robot_id} at {ip}")
+        LOGGER.info(f"Creating new ARCL client for {fleet_robot_id} at {ip}")
         client = ArclClient(
             host=ip,
             port=self.config.connector_config.arcl_port,
@@ -349,5 +349,5 @@ class RobotManager:
             connection_timeout=self.config.connector_config.arcl_timeout,
         )
         await client.connect()
-        self._arcl_clients[robot_id] = client
+        self._arcl_clients[fleet_robot_id] = client
         return client

@@ -241,7 +241,7 @@ class OmronApiClient:
             data = response.json()
             return data
         except Exception as e:
-            LOGGER.error(f"Error fetching fleet state: {e}")
+            LOGGER.error(f"Error fetching job segment list: {e}")
             return []
 
     async def get_job_details_by_job_id(self, job_id: str) -> Optional[Dict[str, Any]]:

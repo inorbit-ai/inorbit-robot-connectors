@@ -231,9 +231,10 @@ async def test_offline_when_arcl_connection_lost(robot_manager):
     assert robot_manager.is_online("Robot1") is False
 
 
+@pytest.mark.parametrize("sub_status", ["Fault", "Lost", "EstopPressed", "MotorsDisabled"])
 @pytest.mark.asyncio
-async def test_stays_online_when_faulted(robot_manager):
-    robot_manager.api.seed_robot("Robot1", status="Unavailable", sub_status="Fault")
+async def test_stays_online_when_faulted(robot_manager, sub_status):
+    robot_manager.api.seed_robot("Robot1", status="Unavailable", sub_status=sub_status)
 
     await robot_manager._update_fleet_state()
 

@@ -114,9 +114,4 @@ def test_flowcore_config_prioritizes_yaml_args_over_environment(
 def test_flowcore_config_defaults() -> None:
     config = FlowCoreConfig(**REQUIRED_CONNECTOR_CONFIG)
     assert config.verify_ssl is False
-
-
-def test_api_grace_secs_defaults_to_30():
-    config = FlowCoreConfig(url="http://test", password="pass", arcl_password="arcl")
-
     assert config.api_grace_secs == 30.0

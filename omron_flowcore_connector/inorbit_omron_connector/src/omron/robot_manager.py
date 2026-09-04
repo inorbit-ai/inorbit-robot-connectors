@@ -113,6 +113,8 @@ class RobotManager:
                 LOGGER.error(f"Error disconnecting ARCL client: {e}")
         self._arcl_clients.clear()
 
+        await self.api.close()
+
         self._running_tasks.clear()
         LOGGER.info("Stopped FlowCore API polling")
 

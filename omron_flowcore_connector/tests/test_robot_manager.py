@@ -163,3 +163,11 @@ async def test_arcl_client_lifecycle(robot_manager):
         await robot_manager.stop()
         mock_client2.disconnect.assert_called()
         assert robot_manager._arcl_clients == {}
+
+@pytest.mark.asyncio
+async def test_stop_closes_api_client(robot_manager):
+    robot_manager.api.close = AsyncMock()
+
+    await robot_manager.stop()
+
+    robot_manager.api.close.assert_awaited_once()

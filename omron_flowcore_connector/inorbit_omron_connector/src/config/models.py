@@ -64,6 +64,10 @@ class FlowCoreConfig(ConnectorSpecificConfig):
     arcl_port: int = 7171
     arcl_password: str
     arcl_timeout: int = 5
+    # Seconds a failing /Robot/UpdatedSince poll is tolerated before every robot is
+    # reported offline. The Fleet Manager reflects attach and detach within 10s and the
+    # poll runs at update_freq, so this absorbs a few missed sweeps without flapping.
+    api_grace_secs: float = 30.0
     verify_ssl: bool = False
     use_mock: bool = False
 

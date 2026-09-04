@@ -8,6 +8,7 @@
 import asyncio
 import logging
 import math
+import time
 from functools import partial
 from typing import Any, Callable, Dict, Optional
 
@@ -16,6 +17,10 @@ from .api_client import OmronApiClient
 from .arcl_client import ArclClient
 
 LOGGER = logging.getLogger(__name__)
+
+# Documented AMR sub-status meaning the Fleet Manager lost its ARCL link to a robot
+# that it still lists as attached.
+ARCL_LOST_SUB_STATUS = "OutgoingArclConnectionLost"
 
 
 def to_inorbit_pose(x_mm: float, y_mm: float, theta_deg: float, frame_id: str = "map") -> dict[str, float]:
@@ -56,6 +61,11 @@ class RobotManager:
         # Allow injection of api_client for testing/mocking
         self.api = api_client if api_client else OmronApiClient(config.connector_config)
         self._default_update_freq = default_update_freq
+        self._api_grace_secs = config.connector_config.api_grace_secs
+        # Monotonic time of the last /Robot/UpdatedSince that did not raise, and the
+        # robots it listed. The Fleet Manager lists only currently attached AMRs.
+        self._last_sweep_ok_at: float | None = None
+        self._present: set[str] = set()
 
         # Falls back to a bare task when no supervisor is injected, which is what the
         # tests use. In production the connector passes the framework's supervisor.
@@ -125,7 +135,9 @@ class RobotManager:
         """Fetch fleet state and update cached data for all robots."""
         try:
             fleet_state = await self.api.get_fleet_state()
-            
+            self._last_sweep_ok_at = time.monotonic()
+            self._present = {robot.namekey for robot in fleet_state}
+
             for robot_summary in fleet_state:
                 robot_id = robot_summary.namekey # We use namekey as robot_id
                 
@@ -212,6 +224,31 @@ class RobotManager:
 
         except Exception as e:
             LOGGER.error(f"Error updating fleet details: {e}")
+
+    def api_connected(self) -> bool:
+        """Whether a fleet sweep succeeded within the grace period."""
+        if self._last_sweep_ok_at is None:
+            return False
+        return (time.monotonic() - self._last_sweep_ok_at) <= self._api_grace_secs
+
+    def is_attached(self, fleet_robot_id: str) -> bool:
+        """Whether the last successful sweep listed this robot."""
+        return fleet_robot_id in self._present
+
+    def is_online(self, fleet_robot_id: str) -> bool:
+        """Whether InOrbit should consider this robot online.
+
+        Cache reads only: this runs once per robot per execution loop iteration and
+        also on the edge-SDK network thread.
+
+        A robot in a bad but reachable state (Fault, Lost, EstopPressed,
+        MotorsDisabled) stays online. It is still reporting, and its pose is what an
+        operator needs to go find it; the condition surfaces as status ERROR.
+        """
+        if not self.api_connected() or not self.is_attached(fleet_robot_id):
+            return False
+        summary = self._robot_data.get(fleet_robot_id, {}).get("summary")
+        return summary is None or summary.subStatus != ARCL_LOST_SUB_STATUS
 
     def get_robot_pose(self, robot_id: str) -> Optional[dict]:
         """Get cached pose for a specific robot."""

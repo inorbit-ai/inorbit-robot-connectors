@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
+import asyncio
 import pytest
 import pytest_asyncio
 from unittest.mock import MagicMock, AsyncMock, patch
@@ -88,12 +89,10 @@ async def test_getters(robot_manager):
 
 @pytest.mark.asyncio
 async def test_start_stop(robot_manager):
-    # Spy on _run_in_loop
-    with patch.object(robot_manager, '_run_in_loop') as mock_run:
-        await robot_manager.start()
-        # Should start fleet update loop
-        assert mock_run.call_count >= 1
-        
+    await robot_manager.start()
+    # Should start the fleet state and fleet details loops
+    assert len(robot_manager._running_tasks) == 2
+
     await robot_manager.stop()
     assert robot_manager._running_tasks == []
 
@@ -171,3 +170,21 @@ async def test_stop_closes_api_client(robot_manager):
     await robot_manager.stop()
 
     robot_manager.api.close.assert_awaited_once()
+
+@pytest.mark.asyncio
+async def test_start_registers_supervised_tasks(manager_config):
+    client = MockOmronClient()
+    await client.connect()
+    registered = []
+
+    def fake_supervisor(name, coro_factory):
+        registered.append(name)
+        task = asyncio.create_task(asyncio.sleep(0))
+        return task
+
+    manager = RobotManager(
+        manager_config, api_client=client, create_supervised_task=fake_supervisor
+    )
+    await manager.start()
+
+    assert registered == ["flowcore-fleet-state", "flowcore-fleet-details"]

@@ -69,7 +69,8 @@ class OmronConnector(FleetConnector):
         self.robot_manager = robot_manager if robot_manager else RobotManager(
             config,
             api_client=api_client,
-            default_update_freq=config.update_freq
+            default_update_freq=config.update_freq,
+            create_supervised_task=self._create_supervised_task,
         )
         
         # Initialize Mission Tracking

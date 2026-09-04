@@ -8,7 +8,8 @@
 import asyncio
 import logging
 import math
-from typing import Any, Callable, Coroutine, Dict, Optional
+from functools import partial
+from typing import Any, Callable, Dict, Optional
 
 # Local
 from .api_client import OmronApiClient
@@ -40,6 +41,7 @@ class RobotManager:
         config,
         api_client: Optional[Any] = None,
         default_update_freq: float = 1.0,
+        create_supervised_task: Optional[Callable] = None,
     ):
         """Initialize the robot manager.
 
@@ -47,13 +49,19 @@ class RobotManager:
             config: FlowCore connector configuration
             api_client: Optional API client instance (for testing)
             default_update_freq: Default update frequency in Hz
+            create_supervised_task: Callable scheduling a supervised background task,
+                normally FleetConnector._create_supervised_task
         """
         self.config = config
         # Allow injection of api_client for testing/mocking
         self.api = api_client if api_client else OmronApiClient(config.connector_config)
         self._default_update_freq = default_update_freq
-        
-        self._stop_event = asyncio.Event()
+
+        # Falls back to a bare task when no supervisor is injected, which is what the
+        # tests use. In production the connector passes the framework's supervisor.
+        self._create_supervised_task = create_supervised_task or (
+            lambda name, coro_factory: asyncio.create_task(coro_factory(), name=name)
+        )
         self._running_tasks: list[asyncio.Task] = []
         
         # Cached data per InOrbit robot_id
@@ -82,29 +90,25 @@ class RobotManager:
             LOGGER.error(f"Failed to connect to FlowCore API: {e}")
             raise
 
-        # We start two loops: one for high-level status (fleet state), one for details (telemetry)
-        self._run_in_loop(self._update_fleet_state)
-        self._run_in_loop(self._update_fleet_details)
-        
+        # One loop for high-level status (fleet state), one for details (telemetry)
+        self._running_tasks = [
+            self._create_supervised_task(
+                "flowcore-fleet-state", partial(self._poll_loop, self._update_fleet_state)
+            ),
+            self._create_supervised_task(
+                "flowcore-fleet-details", partial(self._poll_loop, self._update_fleet_details)
+            ),
+        ]
+
         LOGGER.info("Started FlowCore API polling")
 
     async def stop(self) -> None:
         """Stop all background polling tasks."""
-        self._stop_event.set()
-
+        for task in self._running_tasks:
+            task.cancel()
         if self._running_tasks:
-            try:
-                done, pending = await asyncio.wait(
-                    self._running_tasks,
-                    timeout=1.0,
-                    return_when=asyncio.ALL_COMPLETED,
-                )
-                for task in pending:
-                    task.cancel()
-                if pending:
-                    await asyncio.wait(pending, timeout=0.5)
-            except Exception as e:
-                LOGGER.error(f"Error during graceful shutdown: {e}")
+            await asyncio.gather(*self._running_tasks, return_exceptions=True)
+        self._running_tasks.clear()
 
         for client in self._arcl_clients.values():
             try:
@@ -113,7 +117,8 @@ class RobotManager:
                 LOGGER.error(f"Error disconnecting ARCL client: {e}")
         self._arcl_clients.clear()
 
-        self._running_tasks.clear()
+        await self.api.close()
+
         LOGGER.info("Stopped FlowCore API polling")
 
     async def _update_fleet_state(self) -> None:
@@ -278,28 +283,10 @@ class RobotManager:
             return "ERROR"
         return "IDLE" # Default
 
-    def _run_in_loop(
-        self,
-        coro: Callable[[], Coroutine[None, None, None]],
-        frequency: float | None = None,
-    ) -> None:
-        """Run a coroutine in a loop at a specified frequency."""
-        freq = frequency if frequency is not None else self._default_update_freq
-
-        async def run_loop():
-            while not self._stop_event.is_set():
-                try:
-                    await asyncio.gather(
-                        coro(),
-                        asyncio.sleep(1.0 / freq),
-                    )
-                except Exception as e:
-                    LOGGER.error(f"Error in polling loop for {coro.__name__}: {e}")
-                    # Prevent tight loop on error
-                    await asyncio.sleep(1.0)
-
-        task = asyncio.create_task(run_loop())
-        self._running_tasks.append(task)
+    async def _poll_loop(self, poll) -> None:
+        """Poll `poll` forever at the configured frequency. Supervised: a crash restarts it."""
+        while True:
+            await asyncio.gather(poll(), asyncio.sleep(1.0 / self._default_update_freq))
 
     async def get_arcl_client(self, robot_id: str) -> ArclClient:
         """Get or create ARCL client for a robot."""

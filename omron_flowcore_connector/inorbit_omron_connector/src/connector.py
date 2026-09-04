@@ -69,11 +69,14 @@ class OmronConnector(FleetConnector):
         self.robot_manager = robot_manager if robot_manager else RobotManager(
             config,
             api_client=api_client,
-            default_update_freq=config.update_freq
+            default_update_freq=config.update_freq,
+            create_supervised_task=self._create_supervised_task,
         )
         
         # Initialize Mission Tracking
-        self._mission_tracking = OmronMissionTracking(self.robot_manager.api)
+        self._mission_tracking = OmronMissionTracking(
+            self.robot_manager.api, create_supervised_task=self._create_supervised_task
+        )
         
         # Build robot_id (InOrbit) to fleet_robot_id (FlowCore NameKey) mapping
         self._robot_id_to_fleet_id: dict[str, str] = {}
@@ -99,9 +102,12 @@ class OmronConnector(FleetConnector):
     @override
     async def _disconnect(self) -> None:
         """Disconnect from FlowCore API and stop polling."""
-        await self.robot_manager.stop()
+        # Stop the executor and tracker first: they hold the same api client that
+        # robot_manager.stop() closes, and a mission worker cancelling mid-call would
+        # otherwise reopen it.
         await self._mission_executor.shutdown()
         await self._mission_tracking.stop()
+        await self.robot_manager.stop()
         LOGGER.info("Disconnected from FlowCore API.")
 
     @override

@@ -31,6 +31,9 @@ class MockOmronClient:
         self._connected = True
         return True
 
+    async def close(self):
+        self._connected = False
+
     def seed_robot(self, robot_id: str, status: str = "Available", sub_status: str = "Unallocated", 
                    battery: float = 1.0, x: float = 0.0, y: float = 0.0, theta: float = 0.0,
                    ip_address: str = "127.0.0.1"):

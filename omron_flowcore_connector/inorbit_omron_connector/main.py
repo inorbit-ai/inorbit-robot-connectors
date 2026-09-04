@@ -7,7 +7,6 @@
 # Standard
 import argparse
 import logging
-import signal
 import sys
 from typing import NoReturn
 
@@ -90,8 +89,8 @@ def start() -> None:
         logging.getLogger("httpcore").setLevel(logging.INFO)
         logging.getLogger("RobotSession").setLevel(logging.INFO)
 
-    # Register signal handler for graceful shutdown
-    signal.signal(signal.SIGINT, lambda sig, frame: connector.stop())
+    # Covers SIGINT and SIGTERM, so `docker stop` tears down gracefully
+    connector.install_signal_handlers()
 
     # Wait for the connector to finish
     connector.join()

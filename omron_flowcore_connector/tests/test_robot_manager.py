@@ -193,3 +193,69 @@ async def test_start_registers_supervised_tasks(manager_config):
         assert not task.done()
 
     await manager.stop()
+
+
+@pytest.mark.asyncio
+async def test_api_connected_is_false_before_any_sweep(robot_manager):
+    assert robot_manager.api_connected() is False
+
+
+@pytest.mark.asyncio
+async def test_online_after_a_successful_sweep(robot_manager):
+    await robot_manager._update_fleet_state()
+
+    assert robot_manager.api_connected() is True
+    assert robot_manager.is_attached("Robot1") is True
+    assert robot_manager.is_online("Robot1") is True
+
+
+@pytest.mark.asyncio
+async def test_offline_when_absent_from_the_sweep(robot_manager):
+    await robot_manager._update_fleet_state()
+    robot_manager.api._robots.pop("Robot1")
+
+    await robot_manager._update_fleet_state()
+
+    assert robot_manager.api_connected() is True
+    assert robot_manager.is_attached("Robot1") is False
+    assert robot_manager.is_online("Robot1") is False
+
+
+@pytest.mark.asyncio
+async def test_offline_when_arcl_connection_lost(robot_manager):
+    robot_manager.api.seed_robot("Robot1", sub_status="OutgoingArclConnectionLost")
+
+    await robot_manager._update_fleet_state()
+
+    assert robot_manager.is_attached("Robot1") is True
+    assert robot_manager.is_online("Robot1") is False
+
+
+@pytest.mark.parametrize("sub_status", ["Fault", "Lost", "EstopPressed", "MotorsDisabled"])
+@pytest.mark.asyncio
+async def test_stays_online_when_faulted(robot_manager, sub_status):
+    robot_manager.api.seed_robot("Robot1", status="Unavailable", sub_status=sub_status)
+
+    await robot_manager._update_fleet_state()
+
+    assert robot_manager.is_online("Robot1") is True
+
+
+@pytest.mark.asyncio
+async def test_stays_online_while_within_the_grace_period(robot_manager):
+    await robot_manager._update_fleet_state()
+    robot_manager.api._connected = False
+
+    await robot_manager._update_fleet_state()
+
+    assert robot_manager.api_connected() is True
+    assert robot_manager.is_online("Robot1") is True
+
+
+@pytest.mark.asyncio
+async def test_offline_once_the_grace_period_lapses(robot_manager):
+    await robot_manager._update_fleet_state()
+    robot_manager._last_sweep_ok_at -= robot_manager._api_grace_secs + 1.0
+
+    assert robot_manager.api_connected() is False
+    assert robot_manager.is_online("Robot1") is False

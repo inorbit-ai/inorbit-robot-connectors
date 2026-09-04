@@ -8,6 +8,7 @@
 import asyncio
 import logging
 import math
+import time
 from functools import partial
 from typing import Any, Callable, Dict, Optional
 
@@ -16,6 +17,10 @@ from .api_client import OmronApiClient
 from .arcl_client import ArclClient
 
 LOGGER = logging.getLogger(__name__)
+
+# Documented AMR sub-status meaning the Fleet Manager lost its ARCL link to a robot
+# that it still lists as attached.
+ARCL_LOST_SUB_STATUS = "OutgoingArclConnectionLost"
 
 
 def to_inorbit_pose(x_mm: float, y_mm: float, theta_deg: float, frame_id: str = "map") -> dict[str, float]:
@@ -56,6 +61,11 @@ class RobotManager:
         # Allow injection of api_client for testing/mocking
         self.api = api_client if api_client else OmronApiClient(config.connector_config)
         self._default_update_freq = default_update_freq
+        self._api_grace_secs = config.connector_config.api_grace_secs
+        # Monotonic time of the last /Robot/UpdatedSince that did not raise, and the
+        # robots it listed. The Fleet Manager lists only currently attached AMRs.
+        self._last_sweep_ok_at: float | None = None
+        self._present: set[str] = set()
 
         # Falls back to a bare task when no supervisor is injected, which is what the
         # tests use. In production the connector passes the framework's supervisor.
@@ -64,8 +74,8 @@ class RobotManager:
         )
         self._running_tasks: list[asyncio.Task] = []
         
-        # Cached data per InOrbit robot_id
-        # Structure: {robot_id: {data_type: value}}
+        # Cached data keyed by FlowCore namekey (fleet_robot_id)
+        # Structure: {fleet_robot_id: {data_type: value}}
         self._robot_data: Dict[str, Dict[str, Any]] = {}
 
         # Map of FlowCore robot_id (NameKey) to configuration
@@ -125,7 +135,9 @@ class RobotManager:
         """Fetch fleet state and update cached data for all robots."""
         try:
             fleet_state = await self.api.get_fleet_state()
-            
+            self._last_sweep_ok_at = time.monotonic()
+            self._present = {robot.namekey for robot in fleet_state}
+
             for robot_summary in fleet_state:
                 robot_id = robot_summary.namekey # We use namekey as robot_id
                 
@@ -213,9 +225,34 @@ class RobotManager:
         except Exception as e:
             LOGGER.error(f"Error updating fleet details: {e}")
 
-    def get_robot_pose(self, robot_id: str) -> Optional[dict]:
+    def api_connected(self) -> bool:
+        """Whether a fleet sweep succeeded within the grace period."""
+        if self._last_sweep_ok_at is None:
+            return False
+        return (time.monotonic() - self._last_sweep_ok_at) <= self._api_grace_secs
+
+    def is_attached(self, fleet_robot_id: str) -> bool:
+        """Whether the last successful sweep listed this robot."""
+        return fleet_robot_id in self._present
+
+    def is_online(self, fleet_robot_id: str) -> bool:
+        """Whether InOrbit should consider this robot online.
+
+        Cache reads only: this runs once per robot per execution loop iteration and
+        also on the edge-SDK network thread.
+
+        A robot in a bad but reachable state (Fault, Lost, EstopPressed,
+        MotorsDisabled) stays online. It is still reporting, and its pose is what an
+        operator needs to go find it; the condition surfaces as status ERROR.
+        """
+        if not self.api_connected() or not self.is_attached(fleet_robot_id):
+            return False
+        summary = self._robot_data.get(fleet_robot_id, {}).get("summary")
+        return summary is None or summary.subStatus != ARCL_LOST_SUB_STATUS
+
+    def get_robot_pose(self, fleet_robot_id: str) -> Optional[dict]:
         """Get cached pose for a specific robot."""
-        data = self._robot_data.get(robot_id, {})
+        data = self._robot_data.get(fleet_robot_id, {})
         
         pose_x = data.get("PoseX")
         pose_y = data.get("PoseY")
@@ -231,9 +268,9 @@ class RobotManager:
             
         return None
 
-    def get_robot_key_values(self, robot_id: str) -> Optional[dict]:
+    def get_robot_key_values(self, fleet_robot_id: str) -> Optional[dict]:
         """Get cached key-values for a specific robot."""
-        data = self._robot_data.get(robot_id, {})
+        data = self._robot_data.get(fleet_robot_id, {})
         summary = data.get("summary")
         battery = data.get("StateOfCharge")
         
@@ -256,7 +293,7 @@ class RobotManager:
             
         return kv
 
-    def get_robot_odometry(self, robot_id: str) -> Optional[dict]:
+    def get_robot_odometry(self, fleet_robot_id: str) -> Optional[dict]:
         """Get cached odometry for a specific robot.
         
         Note: FlowCore generic API might not expose velocity easily in 
@@ -288,23 +325,23 @@ class RobotManager:
         while True:
             await asyncio.gather(poll(), asyncio.sleep(1.0 / self._default_update_freq))
 
-    async def get_arcl_client(self, robot_id: str) -> ArclClient:
+    async def get_arcl_client(self, fleet_robot_id: str) -> ArclClient:
         """Get or create ARCL client for a robot."""
         # Check if we have the robot in cache
-        if robot_id not in self._robot_data:
-            raise ValueError(f"Robot {robot_id} not found in fleet.")
+        if fleet_robot_id not in self._robot_data:
+            raise ValueError(f"Robot {fleet_robot_id} not found in fleet.")
 
         # Get IP address
-        ip = self._robot_data[robot_id].get("robot_ip")
+        ip = self._robot_data[fleet_robot_id].get("robot_ip")
         if not ip:
-            raise ValueError(f"IP address not available for robot {robot_id}.")
+            raise ValueError(f"IP address not available for robot {fleet_robot_id}.")
 
         # Return existing client if available
-        if robot_id in self._arcl_clients:
-            return self._arcl_clients[robot_id]
+        if fleet_robot_id in self._arcl_clients:
+            return self._arcl_clients[fleet_robot_id]
 
         # Create new client
-        LOGGER.info(f"Creating new ARCL client for {robot_id} at {ip}")
+        LOGGER.info(f"Creating new ARCL client for {fleet_robot_id} at {ip}")
         client = ArclClient(
             host=ip,
             port=self.config.connector_config.arcl_port,
@@ -312,5 +349,5 @@ class RobotManager:
             connection_timeout=self.config.connector_config.arcl_timeout,
         )
         await client.connect()
-        self._arcl_clients[robot_id] = client
+        self._arcl_clients[fleet_robot_id] = client
         return client

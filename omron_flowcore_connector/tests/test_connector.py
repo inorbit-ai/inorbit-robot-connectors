@@ -126,3 +126,27 @@ async def test_connector_command_handler_stop(connector_config, mock_robot_manag
     
     options["result_function"].assert_called_with("0")
 
+
+@pytest.mark.asyncio
+async def test_is_fleet_robot_online_delegates_to_the_manager(
+    connector_config, mock_robot_manager, mock_executor_cls
+):
+    connector = OmronConnector(connector_config, robot_manager=mock_robot_manager)
+
+    assert connector._is_fleet_robot_online("Robot1") is True
+
+    mock_robot_manager._present.discard("Robot1_FlowCore")
+    assert connector._is_fleet_robot_online("Robot1") is False
+
+
+@pytest.mark.asyncio
+async def test_is_fleet_robot_online_is_false_for_an_unknown_robot(
+    connector_config, mock_robot_manager, mock_executor_cls
+):
+    connector = OmronConnector(connector_config, robot_manager=mock_robot_manager)
+    mock_robot_manager.is_online = MagicMock()
+
+    assert connector._is_fleet_robot_online("not-in-the-fleet") is False
+
+    mock_robot_manager.is_online.assert_not_called()
+

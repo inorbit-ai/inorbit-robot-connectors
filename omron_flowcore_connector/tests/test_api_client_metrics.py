@@ -81,9 +81,18 @@ async def test_request_timeout_records_error_metric_and_raises():
 
 @pytest.mark.asyncio
 async def test_public_method_keeps_fallback_on_error():
-    """get_fleet_state still swallows errors and returns [] (behavior unchanged)."""
+    """get_data_store_value still swallows errors and returns [] (behavior unchanged)."""
     api = _client()
     api.client.request = AsyncMock(side_effect=httpx.ConnectError("down"))
 
     with patch("inorbit_omron_connector.src.omron.api_client.record_upstream_http_error"):
-        assert await api.get_fleet_state() == []
+        assert await api.get_data_store_value("PoseX", "*") == []
+
+
+@pytest.mark.asyncio
+async def test_get_fleet_state_raises_on_transport_error():
+    api = _client()
+    api.client.request = AsyncMock(side_effect=httpx.ConnectError("boom"))
+
+    with pytest.raises(httpx.ConnectError):
+        await api.get_fleet_state()

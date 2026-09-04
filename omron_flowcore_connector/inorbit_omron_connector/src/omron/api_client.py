@@ -80,14 +80,13 @@ class OmronApiClient:
         return response
 
     async def get_fleet_state(self) -> List[RobotResponse]:
-        """Fetches fleet state from /Robot/UpdatedSince."""
-        try:
-            response = await self._request("GET", "/Robot/UpdatedSince?sinceTime=0")
-            data = response.json()
-            return [RobotResponse(**r) for r in data]
-        except Exception as e:
-            LOGGER.error(f"Error fetching fleet state: {e}")
-            return []
+        """Fetch fleet state from /Robot/UpdatedSince.
+
+        Raises rather than returning an empty list: an empty fleet and an
+        unreachable Fleet Manager mean opposite things to the health state.
+        """
+        response = await self._request("GET", "/Robot/UpdatedSince?sinceTime=0")
+        return [RobotResponse(**r) for r in response.json()]
 
     async def get_data_store_value(self, key: str, robot_id: str) -> List[DataStoreResponse]:
         """Fetches data store values for a specific key."""

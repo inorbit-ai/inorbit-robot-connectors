@@ -28,7 +28,7 @@ class MockOmronClient:
         self._jobs_db: Dict[str, Dict[str, Any]] = {} # job_id -> job_details
         # Last value and stamp per namekey. Mirrors the documented Integration Toolkit
         # behaviour: an unchanged DataStore item is not re-stamped.
-        self._stamps: Dict[str, tuple] = {}
+        self._stamps: Dict[str, tuple[Any, int]] = {}
         self._stamp_seq = 0
 
     async def connect(self):

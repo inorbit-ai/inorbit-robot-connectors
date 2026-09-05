@@ -11,13 +11,14 @@ FlowCore refreshed them.
 
 from typing import Any, Optional
 
+from .omron.models import DataStoreResponse, RobotResponse
+
 BUSY_SUB_STATUSES = frozenset(
     {"Driving", "BeforePickup", "AfterDropoff", "BeforeDropoff", "BeforeEvery", "AfterEvery"}
 )
 CHARGING_SUB_STATUSES = frozenset(
     {"Docked", "Docking", "Charging", "DockParking", "DockParked", "ForcedDocking"}
 )
-IDLE_SUB_STATUSES = frozenset({"Available", "Parked", "Allocated", "Unallocated"})
 ERROR_SUB_STATUSES = frozenset(
     {"EStopPressed", "Fault", "MotorsDisabled", "Lost", "NotLocalized"}
 )
@@ -52,7 +53,9 @@ def build_health_key_values(
     return key_values
 
 
-def build_key_values(summary: Optional[Any], battery: Optional[Any]) -> dict[str, Any]:
+def build_key_values(
+    summary: Optional[RobotResponse], battery: Optional[DataStoreResponse]
+) -> dict[str, Any]:
     """Robot telemetry key-values from the cached fleet summary and battery value."""
     key_values: dict[str, Any] = {}
     if battery is not None:

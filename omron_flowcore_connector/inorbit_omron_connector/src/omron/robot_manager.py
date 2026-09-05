@@ -316,6 +316,20 @@ class RobotManager:
         """Whether InOrbit should consider this robot online. See `offline_reason`."""
         return self.offline_reason(fleet_robot_id) is None
 
+    def data_token(self, fleet_robot_id: str, keys: tuple[str, ...]) -> Optional[tuple]:
+        """Vendor change token for a set of cached items, or None if none is cached.
+
+        FlowCore does not restamp a DataStore item whose value is unchanged, so an
+        unchanged token means the vendor has nothing new for these items. Items the
+        vendor never reported are skipped rather than vetoing the whole token, so a
+        robot missing one of them still publishes on the others.
+        """
+        data = self._robot_data.get(fleet_robot_id, {})
+        items = [data[key] for key in keys if key in data]
+        if not items:
+            return None
+        return tuple(item.upd.millis for item in items)
+
     def get_robot_pose(self, fleet_robot_id: str) -> Optional[dict]:
         """Get cached pose for a specific robot."""
         data = self._robot_data.get(fleet_robot_id, {})

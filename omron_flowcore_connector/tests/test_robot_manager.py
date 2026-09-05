@@ -367,3 +367,42 @@ async def test_a_failing_details_poll_does_not_refresh_the_fetch_clock(robot_man
     await robot_manager._update_fleet_details()
 
     assert robot_manager._last_fetched_at["Robot1"] == before
+
+@pytest.mark.asyncio
+async def test_data_token_is_none_until_the_cache_is_populated(robot_manager):
+    assert robot_manager.data_token("Robot1", ("PoseX", "PoseY")) is None
+
+
+@pytest.mark.asyncio
+async def test_data_token_uses_the_keys_that_are_present(robot_manager):
+    await robot_manager._update_fleet_details()
+
+    partial = robot_manager.data_token("Robot1", ("PoseX", "NeverReported"))
+    full = robot_manager.data_token("Robot1", ("PoseX",))
+
+    assert partial == full
+    assert partial is not None
+
+
+@pytest.mark.asyncio
+async def test_data_token_holds_while_nothing_changed(robot_manager):
+    await robot_manager._update_fleet_details()
+    first = robot_manager.data_token("Robot1", ("PoseX", "PoseY", "PoseTh"))
+
+    await robot_manager._update_fleet_details()
+    second = robot_manager.data_token("Robot1", ("PoseX", "PoseY", "PoseTh"))
+
+    assert first is not None
+    assert first == second
+
+
+@pytest.mark.asyncio
+async def test_data_token_changes_when_the_pose_moves(robot_manager):
+    await robot_manager._update_fleet_details()
+    first = robot_manager.data_token("Robot1", ("PoseX", "PoseY", "PoseTh"))
+
+    robot_manager.api.seed_robot("Robot1", x=9999.0, y=2000.0, theta=90.0, battery=50.0)
+    await robot_manager._update_fleet_details()
+    second = robot_manager.data_token("Robot1", ("PoseX", "PoseY", "PoseTh"))
+
+    assert first != second

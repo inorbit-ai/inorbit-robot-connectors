@@ -90,16 +90,18 @@ async def test_connector_execution_loop(connector_config, mock_robot_manager, mo
     assert abs(call_args[1]["yaw"] - 3.14159) < 0.001
     assert call_args[1]["frame_id"] == "map_frame"
 
-    # Verify key values
-    # Battery 80.0 -> 0.8
-    # Status: Unallocated -> IDLE
-    connector.publish_robot_key_values.assert_called() # might be called multiple times?
-    # Check calls
-    kv_call = connector.publish_robot_key_values.call_args
-    assert kv_call[0][0] == "Robot1"
-    assert kv_call[1]["battery_percent"] == 80.0
-    assert kv_call[1]["status"] == "IDLE"
-    assert kv_call[1]["connector_version"] == __version__
+    # Verify key values. Health and telemetry are now separate publishes.
+    calls = connector.publish_robot_key_values.call_args_list
+    assert all(call[0][0] == "Robot1" for call in calls)
+
+    health = next(call.kwargs for call in calls if "api_connected" in call.kwargs)
+    assert health["connector_version"] == __version__
+    assert health["api_connected"] is True
+    assert health["robot_attached"] is True
+
+    telemetry = next(call.kwargs for call in calls if "battery_percent" in call.kwargs)
+    assert telemetry["battery_percent"] == 80.0
+    assert telemetry["status"] == "IDLE"
 
 @pytest.mark.asyncio
 async def test_connector_command_handler_stop(connector_config, mock_robot_manager, mock_executor_cls):
@@ -149,4 +151,96 @@ async def test_is_fleet_robot_online_is_false_for_an_unknown_robot(
     assert connector._is_fleet_robot_online("not-in-the-fleet") is False
 
     mock_robot_manager.is_online.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_health_key_values_publish_every_tick(
+    connector_config, mock_robot_manager, mock_executor_cls
+):
+    connector = OmronConnector(connector_config, robot_manager=mock_robot_manager)
+    connector.publish_robot_pose = MagicMock()
+    connector.publish_robot_key_values = MagicMock()
+    connector.publish_robot_odometry = MagicMock()
+
+    await connector._execution_loop()
+    await connector._execution_loop()
+
+    health_calls = [
+        call
+        for call in connector.publish_robot_key_values.call_args_list
+        if "api_connected" in call.kwargs
+    ]
+    assert len(health_calls) == 2
+    assert health_calls[0].kwargs["api_connected"] is True
+    assert health_calls[0].kwargs["robot_attached"] is True
+
+
+@pytest.mark.asyncio
+async def test_pose_publishes_once_while_the_token_holds(
+    connector_config, mock_robot_manager, mock_executor_cls
+):
+    connector = OmronConnector(connector_config, robot_manager=mock_robot_manager)
+    connector.publish_robot_pose = MagicMock()
+    connector.publish_robot_key_values = MagicMock()
+    connector.publish_robot_odometry = MagicMock()
+
+    await connector._execution_loop()
+    await connector._execution_loop()
+
+    assert connector.publish_robot_pose.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_pose_republishes_when_the_robot_moves(
+    connector_config, mock_robot_manager, mock_executor_cls
+):
+    connector = OmronConnector(connector_config, robot_manager=mock_robot_manager)
+    connector.publish_robot_pose = MagicMock()
+    connector.publish_robot_key_values = MagicMock()
+    connector.publish_robot_odometry = MagicMock()
+
+    await connector._execution_loop()
+    mock_robot_manager.api.seed_robot(
+        "Robot1_FlowCore", x=5000.0, y=2000.0, theta=180.0, battery=80.0
+    )
+    await mock_robot_manager._update_fleet_details()
+    await connector._execution_loop()
+
+    assert connector.publish_robot_pose.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_offline_robot_publishes_health_only(
+    connector_config, mock_robot_manager, mock_executor_cls
+):
+    connector = OmronConnector(connector_config, robot_manager=mock_robot_manager)
+    connector.publish_robot_pose = MagicMock()
+    connector.publish_robot_key_values = MagicMock()
+    connector.publish_robot_odometry = MagicMock()
+    mock_robot_manager._present.discard("Robot1_FlowCore")
+
+    await connector._execution_loop()
+
+    connector.publish_robot_pose.assert_not_called()
+    assert connector.publish_robot_key_values.call_count == 1
+    assert connector.publish_robot_key_values.call_args.kwargs["api_connected"] is True
+    assert "robot_attached" in connector.publish_robot_key_values.call_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_pose_republishes_after_recovery(
+    connector_config, mock_robot_manager, mock_executor_cls
+):
+    connector = OmronConnector(connector_config, robot_manager=mock_robot_manager)
+    connector.publish_robot_pose = MagicMock()
+    connector.publish_robot_key_values = MagicMock()
+    connector.publish_robot_odometry = MagicMock()
+
+    await connector._execution_loop()
+    mock_robot_manager._present.discard("Robot1_FlowCore")
+    await connector._execution_loop()
+    mock_robot_manager._present.add("Robot1_FlowCore")
+    await connector._execution_loop()
+
+    assert connector.publish_robot_pose.call_count == 2
 

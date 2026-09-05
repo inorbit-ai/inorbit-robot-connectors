@@ -5,6 +5,7 @@
 """FlowCore fleet connector for InOrbit."""
 
 # Standard
+import copy
 import logging
 from typing import Optional
 from typing_extensions import override
@@ -18,6 +19,7 @@ from inorbit_edge_executor.inorbit import InOrbitAPI
 
 # Local
 from .. import __version__
+from .key_values import build_health_key_values
 from .omron.robot_manager import RobotManager
 from .omron.models import JobCancelByRobotName
 from .omron.mock_client import MockOmronClient
@@ -31,6 +33,10 @@ from .mission.tracking import OmronMissionTracking
 from .mission.executor import OmronMissionExecutor
 
 LOGGER = logging.getLogger(__name__)
+
+# Cached items whose upd.millis forms each publish's change token
+POSE_KEYS = ("PoseX", "PoseY", "PoseTh")
+KEY_VALUE_KEYS = ("summary", "StateOfCharge", "RobotIP")
 
 class OmronConnector(FleetConnector):
     """Connector between FlowCore Fleet and InOrbit."""
@@ -85,6 +91,12 @@ class OmronConnector(FleetConnector):
         for robot_config in config.fleet:
             self._robot_id_to_fleet_id[robot_config.robot_id] = robot_config.fleet_robot_id
 
+        # Last published change token per robot, per publish. Dropped while a robot is
+        # offline so the first tick after recovery republishes.
+        self._pose_tokens: dict[str, tuple] = {}
+        self._key_value_tokens: dict[str, tuple] = {}
+        self._mission_payloads: dict[str, dict] = {}
+
         # Initialize Mission Executor
         self._mission_executor = OmronMissionExecutor(
             api=self.inorbit_api,
@@ -115,29 +127,51 @@ class OmronConnector(FleetConnector):
     @override
     async def _execution_loop(self) -> None:
         """Main execution loop - publish cached robot data to InOrbit."""
-        published_count = 0
-
         for robot_id in self.robot_ids:
             try:
                 fleet_robot_id = self._robot_id_to_fleet_id.get(robot_id)
                 if not fleet_robot_id:
                     continue
 
-                if pose := self.robot_manager.get_robot_pose(fleet_robot_id):
-                    self.publish_robot_pose(robot_id, **pose)
-                    published_count += 1
+                # Health is the connector's own view. It is never stale and has to keep
+                # arriving while nothing else does.
+                self.publish_robot_key_values(
+                    robot_id,
+                    **build_health_key_values(
+                        api_connected=self.robot_manager.api_connected(),
+                        robot_attached=self.robot_manager.is_attached(fleet_robot_id),
+                        connector_version=__version__,
+                    ),
+                )
 
-                if odometry := self.robot_manager.get_robot_odometry(fleet_robot_id):
-                    self.publish_robot_odometry(robot_id, **odometry)
+                if not self._is_fleet_robot_online(robot_id):
+                    # Forget the tokens, so recovery republishes even if FlowCore has
+                    # nothing newer than it had before the outage
+                    self._pose_tokens.pop(robot_id, None)
+                    self._key_value_tokens.pop(robot_id, None)
+                    self._mission_payloads.pop(robot_id, None)
+                    continue
 
-                key_values = self.robot_manager.get_robot_key_values(fleet_robot_id) or {}
-                key_values["connector_version"] = __version__
+                pose_token = self.robot_manager.data_token(fleet_robot_id, POSE_KEYS)
+                if pose_token is not None and pose_token != self._pose_tokens.get(robot_id):
+                    self._pose_tokens[robot_id] = pose_token
+                    if pose := self.robot_manager.get_robot_pose(fleet_robot_id):
+                        self.publish_robot_pose(robot_id, **pose)
+                    if odometry := self.robot_manager.get_robot_odometry(fleet_robot_id):
+                        self.publish_robot_odometry(robot_id, **odometry)
 
-                if mission_payload := self._mission_tracking.get_mission_tracking(fleet_robot_id):
-                    key_values["mission_tracking"] = mission_payload
+                kv_token = self.robot_manager.data_token(fleet_robot_id, KEY_VALUE_KEYS)
+                if kv_token is not None and kv_token != self._key_value_tokens.get(robot_id):
+                    self._key_value_tokens[robot_id] = kv_token
+                    if key_values := self.robot_manager.get_robot_key_values(fleet_robot_id):
+                        self.publish_robot_key_values(robot_id, **key_values)
 
-                if key_values:
-                    self.publish_robot_key_values(robot_id, **key_values)
+                # The job streams carry no DataStore token, so the payload itself is
+                # the only thing that can say whether the mission changed
+                mission_payload = self._mission_tracking.get_mission_tracking(fleet_robot_id)
+                if mission_payload and mission_payload != self._mission_payloads.get(robot_id):
+                    self._mission_payloads[robot_id] = copy.deepcopy(mission_payload)
+                    self.publish_robot_key_values(robot_id, mission_tracking=mission_payload)
 
             except Exception as e:
                 LOGGER.error(f"Error publishing data for robot {robot_id}: {e}")

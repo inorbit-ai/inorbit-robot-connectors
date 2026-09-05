@@ -55,7 +55,7 @@ async def test_stop():
     client = MockOmronClient()
     await client.connect()
     client.seed_robot("robot1")
-    
+
     cancel = JobCancelByRobotName(
         robot="robot1",
         cancelReason="Stop"
@@ -63,3 +63,40 @@ async def test_stop():
     result = await client.stop(cancel.model_dump())
     assert result["namekey"] == "robot1"
     assert result["status"] == "Aborted"
+
+
+@pytest.mark.asyncio
+async def test_data_store_stamp_holds_while_the_value_is_unchanged():
+    client = MockOmronClient()
+    await client.connect()
+    client.seed_robot("Robot1", x=1000.0)
+
+    first = await client.get_data_store_value("PoseX", "Robot1")
+    second = await client.get_data_store_value("PoseX", "Robot1")
+
+    assert first.upd.millis == second.upd.millis
+
+
+@pytest.mark.asyncio
+async def test_data_store_stamp_advances_when_the_value_changes():
+    client = MockOmronClient()
+    await client.connect()
+    client.seed_robot("Robot1", x=1000.0)
+
+    first = await client.get_data_store_value("PoseX", "Robot1")
+    client.seed_robot("Robot1", x=2000.0)
+    second = await client.get_data_store_value("PoseX", "Robot1")
+
+    assert first.upd.millis != second.upd.millis
+
+
+@pytest.mark.asyncio
+async def test_fleet_state_stamp_holds_while_the_status_is_unchanged():
+    client = MockOmronClient()
+    await client.connect()
+    client.seed_robot("Robot1")
+
+    first = (await client.get_fleet_state())[0]
+    second = (await client.get_fleet_state())[0]
+
+    assert first.upd.millis == second.upd.millis

@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, Optional
 # Local
 from .api_client import OmronApiClient
 from .arcl_client import ArclClient
+from ..key_values import build_key_values
 
 LOGGER = logging.getLogger(__name__)
 
@@ -334,29 +335,15 @@ class RobotManager:
         return None
 
     def get_robot_key_values(self, fleet_robot_id: str) -> Optional[dict]:
-        """Get cached key-values for a specific robot."""
+        """Get cached telemetry key-values for a specific robot."""
         data = self._robot_data.get(fleet_robot_id, {})
         summary = data.get("summary")
         battery = data.get("StateOfCharge")
-        
+
         if not summary and not battery:
             return None
-            
-        kv = {}
-        
-        if battery:
-            kv["battery_percent"] = float(battery.value)
-            
-        if summary:
-            kv["omron_status"] = summary.status
-            kv["omron_sub_status"] = summary.subStatus
-            kv["status"] = self._map_status(summary.subStatus)
-            
-            # Add more summary fields if available
-            if summary.ipAddress:
-                kv["robot_ip"] = summary.ipAddress
-            
-        return kv
+
+        return build_key_values(summary, battery)
 
     def get_robot_odometry(self, fleet_robot_id: str) -> Optional[dict]:
         """Get cached odometry for a specific robot.
@@ -366,24 +353,6 @@ class RobotManager:
         Returning None for now unless we find velocity keys.
         """
         return None
-
-    def _map_status(self, sub_status: str) -> str:
-        """Map Omron sub-status to InOrbit status."""
-        # Simple mapping logic
-        busy_states = ["Driving", "BeforePickup", "AfterDropoff", "BeforeDropoff", "BeforeEvery", "AfterEvery"]
-        charging_states = ["Docked", "Docking", "Charging", "DockParking", "DockParked", "ForcedDocking"]
-        idle_states = ["Available", "Parked", "Allocated", "Unallocated"]
-        error_states = ["EStopPressed", "Fault", "MotorsDisabled", "Lost", "NotLocalized"]
-
-        if sub_status in busy_states:
-            return "BUSY"
-        elif sub_status in charging_states:
-            return "CHARGING"
-        elif sub_status in idle_states:
-            return "IDLE"
-        elif sub_status in error_states:
-            return "ERROR"
-        return "IDLE" # Default
 
     async def _poll_loop(self, poll) -> None:
         """Poll `poll` forever at the configured frequency. Supervised: a crash restarts it."""

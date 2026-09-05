@@ -244,3 +244,38 @@ async def test_pose_republishes_after_recovery(
 
     assert connector.publish_robot_pose.call_count == 2
 
+
+@pytest.mark.asyncio
+async def test_mission_tracking_republishes_on_in_place_mutation(
+    connector_config, mock_robot_manager, mock_executor_cls
+):
+    """The mission cache is a plain dict the tracker mutates in place, at both the
+    top level and inside its `tasks` list. The gate must snapshot deeply, or an
+    in-place mutation of the live payload would be invisible to the equality check
+    because both sides of the comparison would be the same mutated object."""
+    connector = OmronConnector(connector_config, robot_manager=mock_robot_manager)
+    connector.publish_robot_pose = MagicMock()
+    connector.publish_robot_key_values = MagicMock()
+    connector.publish_robot_odometry = MagicMock()
+
+    mission_payload = {
+        "missionId": "job-1",
+        "completedPercent": 0.0,
+        "tasks": [{"taskId": "1", "completed": False}],
+    }
+    connector._mission_tracking._mission_cache["Robot1_FlowCore"] = mission_payload
+
+    await connector._execution_loop()
+
+    mission_payload["completedPercent"] = 0.5
+    mission_payload["tasks"][0]["completed"] = True
+
+    await connector._execution_loop()
+
+    mission_calls = [
+        call
+        for call in connector.publish_robot_key_values.call_args_list
+        if "mission_tracking" in call.kwargs
+    ]
+    assert len(mission_calls) == 2
+

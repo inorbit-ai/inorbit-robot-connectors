@@ -36,7 +36,7 @@ LOGGER = logging.getLogger(__name__)
 
 # Cached items whose upd.millis forms each publish's change token
 POSE_KEYS = ("PoseX", "PoseY", "PoseTh")
-KEY_VALUE_KEYS = ("summary", "StateOfCharge", "RobotIP")
+KEY_VALUE_KEYS = ("summary", "StateOfCharge")
 
 class OmronConnector(FleetConnector):
     """Connector between FlowCore Fleet and InOrbit."""
@@ -152,26 +152,32 @@ class OmronConnector(FleetConnector):
                     self._mission_payloads.pop(robot_id, None)
                     continue
 
+                # Token is stored after the publish calls, not before: if a publish
+                # raises, the except below skips the store too, so the next tick sees
+                # the same token as unpublished and retries instead of skipping forever.
                 pose_token = self.robot_manager.data_token(fleet_robot_id, POSE_KEYS)
                 if pose_token is not None and pose_token != self._pose_tokens.get(robot_id):
-                    self._pose_tokens[robot_id] = pose_token
                     if pose := self.robot_manager.get_robot_pose(fleet_robot_id):
                         self.publish_robot_pose(robot_id, **pose)
+                    # Odometry rides the pose token; if it starts returning real data,
+                    # check that data is actually covered by POSE_KEYS.
                     if odometry := self.robot_manager.get_robot_odometry(fleet_robot_id):
                         self.publish_robot_odometry(robot_id, **odometry)
+                    self._pose_tokens[robot_id] = pose_token
 
                 kv_token = self.robot_manager.data_token(fleet_robot_id, KEY_VALUE_KEYS)
                 if kv_token is not None and kv_token != self._key_value_tokens.get(robot_id):
-                    self._key_value_tokens[robot_id] = kv_token
                     if key_values := self.robot_manager.get_robot_key_values(fleet_robot_id):
                         self.publish_robot_key_values(robot_id, **key_values)
+                    self._key_value_tokens[robot_id] = kv_token
 
                 # The job streams carry no DataStore token, so the payload itself is
                 # the only thing that can say whether the mission changed
                 mission_payload = self._mission_tracking.get_mission_tracking(fleet_robot_id)
                 if mission_payload and mission_payload != self._mission_payloads.get(robot_id):
-                    self._mission_payloads[robot_id] = copy.deepcopy(mission_payload)
-                    self.publish_robot_key_values(robot_id, mission_tracking=mission_payload)
+                    snapshot = copy.deepcopy(mission_payload)
+                    self.publish_robot_key_values(robot_id, mission_tracking=snapshot)
+                    self._mission_payloads[robot_id] = snapshot
 
             except Exception as e:
                 LOGGER.error(f"Error publishing data for robot {robot_id}: {e}")

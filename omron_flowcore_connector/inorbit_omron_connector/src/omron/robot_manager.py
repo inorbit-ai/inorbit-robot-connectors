@@ -191,7 +191,10 @@ class RobotManager:
                             "Invalidating ARCL client."
                         )
                         client = self._arcl_clients.pop(robot_id)
-                        asyncio.create_task(client.disconnect())
+                        try:
+                            await client.disconnect()
+                        except Exception as e:
+                            LOGGER.error(f"Error disconnecting ARCL client: {e}")
 
                 # Update IP in cache only if not overridden by config
                 conf = self._fleet_config.get(robot_id)
@@ -324,7 +327,8 @@ class RobotManager:
         and at 4 hours on a live Fleet Manager). Do not use it for DataStore items: every
         `/DataStoreValueLatest` call fetches from the AMR and stamps the fetch, so their
         stamps are our own read time and advance on every poll. Compare those by value,
-        see `data_values`.
+        see `data_values`. `keys` must name only stamped model objects (as cached under
+        "summary"), not raw values such as `robot_ip`, which have no `upd` attribute.
         """
         data = self._robot_data.get(fleet_robot_id, {})
         items = [data[key] for key in keys if key in data]

@@ -279,3 +279,20 @@ async def test_mission_tracking_republishes_on_in_place_mutation(
     ]
     assert len(mission_calls) == 2
 
+
+@pytest.mark.asyncio
+async def test_pose_retries_after_a_failed_publish(
+    connector_config, mock_robot_manager, mock_executor_cls
+):
+    """A publish that raises must not let its token get stored, or the retry that
+    depends on statement ordering (store after publish, not before) silently
+    regresses back to skipping forever."""
+    connector = OmronConnector(connector_config, robot_manager=mock_robot_manager)
+    connector.publish_robot_pose = MagicMock(side_effect=[Exception("boom"), None])
+    connector.publish_robot_key_values = MagicMock()
+    connector.publish_robot_odometry = MagicMock()
+
+    await connector._execution_loop()
+    await connector._execution_loop()
+
+    assert connector.publish_robot_pose.call_count == 2

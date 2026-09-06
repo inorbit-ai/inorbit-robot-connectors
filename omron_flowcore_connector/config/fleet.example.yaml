@@ -26,6 +26,9 @@ connector_config:
   url: "https://0.0.0.0:8443"
   username: "admin"
   verify_ssl: false
+  # Seconds a failing FlowCore poll is tolerated before every robot is reported
+  # offline. Defaults to 30.
+  # api_grace_secs: 30.0
 
 # Fleet configuration - list of robots to manage
 # Each robot must specify:

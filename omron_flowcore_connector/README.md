@@ -98,6 +98,18 @@ Then scrape with `curl http://localhost:9090/metrics`.
 
 Exported metrics include connector liveness (`inorbit_connector_up`), per-robot InOrbit session status (`inorbit_connector_session_connected`), execution loop ticks/errors, and the upstream FlowCore API request/error/latency family (`inorbit_connector_upstream_http_*` with `vendor="flowcore"`). All metrics share the `inorbit_connector` wire prefix; the connector type rides on every series as a resource attribute rather than in the metric name.
 
+## Robot availability
+
+A robot is reported online to InOrbit while all of the following hold:
+
+- the connector's last `/Robot/UpdatedSince` sweep succeeded within `api_grace_secs` (default 30s),
+- the Fleet Manager listed the robot in its most recent sweep, and
+- the robot's sub-status is not `OutgoingArclConnectionLost`.
+
+The Integration Toolkit lists only AMRs currently attached to the Fleet Manager and reflects additions and removals within 10 seconds, so presence in that list is the availability signal. A robot that is reachable but faulted (`Fault`, `Lost`, `EStopPressed`, `MotorsDisabled`) stays online and reports `status: ERROR`: it is still reporting, and its pose is what you need to go find it.
+
+Pose and key-values are published only when the `upd.millis` of the items they read has changed, because the Integration Toolkit does not restamp a DataStore item whose value is unchanged (the code calls this timestamp a change token). Health key-values (`connector_version`, `api_connected`, `robot_attached`) publish on every execution loop iteration regardless, so an operator can tell a quiet robot from a broken connector. `robot_attached` is omitted while `api_connected` is false, since it is not knowable when the connector cannot reach the API.
+
 ## Contributing
 
 Any contribution that you make to this repository will be under the MIT license, as dictated by that [license](https://opensource.org/licenses/MIT).

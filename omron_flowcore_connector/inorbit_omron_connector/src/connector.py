@@ -93,8 +93,8 @@ class OmronConnector(FleetConnector):
 
         # Last published change token per robot, per publish. Dropped while a robot is
         # offline so the first tick after recovery republishes.
-        self._pose_tokens: dict[str, tuple] = {}
-        self._key_value_tokens: dict[str, tuple] = {}
+        self._pose_update_millis: dict[str, tuple] = {}
+        self._key_value_update_millis: dict[str, tuple] = {}
         self._mission_payloads: dict[str, dict] = {}
 
         # Initialize Mission Executor
@@ -147,29 +147,33 @@ class OmronConnector(FleetConnector):
                 if not self._is_fleet_robot_online(robot_id):
                     # Forget the tokens, so recovery republishes even if FlowCore has
                     # nothing newer than it had before the outage
-                    self._pose_tokens.pop(robot_id, None)
-                    self._key_value_tokens.pop(robot_id, None)
+                    self._pose_update_millis.pop(robot_id, None)
+                    self._key_value_update_millis.pop(robot_id, None)
                     self._mission_payloads.pop(robot_id, None)
                     continue
 
                 # Token is stored after the publish calls, not before: if a publish
                 # raises, the except below skips the store too, so the next tick sees
                 # the same token as unpublished and retries instead of skipping forever.
-                pose_token = self.robot_manager.data_token(fleet_robot_id, POSE_KEYS)
-                if pose_token is not None and pose_token != self._pose_tokens.get(robot_id):
+                pose_millis = self.robot_manager.update_millis(fleet_robot_id, POSE_KEYS)
+                if pose_millis is not None and pose_millis != self._pose_update_millis.get(
+                    robot_id
+                ):
                     if pose := self.robot_manager.get_robot_pose(fleet_robot_id):
                         self.publish_robot_pose(robot_id, **pose)
                     # Odometry rides the pose token; if it starts returning real data,
                     # check that data is actually covered by POSE_KEYS.
                     if odometry := self.robot_manager.get_robot_odometry(fleet_robot_id):
                         self.publish_robot_odometry(robot_id, **odometry)
-                    self._pose_tokens[robot_id] = pose_token
+                    self._pose_update_millis[robot_id] = pose_millis
 
-                kv_token = self.robot_manager.data_token(fleet_robot_id, KEY_VALUE_KEYS)
-                if kv_token is not None and kv_token != self._key_value_tokens.get(robot_id):
+                kv_millis = self.robot_manager.update_millis(fleet_robot_id, KEY_VALUE_KEYS)
+                if kv_millis is not None and kv_millis != self._key_value_update_millis.get(
+                    robot_id
+                ):
                     if key_values := self.robot_manager.get_robot_key_values(fleet_robot_id):
                         self.publish_robot_key_values(robot_id, **key_values)
-                    self._key_value_tokens[robot_id] = kv_token
+                    self._key_value_update_millis[robot_id] = kv_millis
 
                 # The job streams carry no DataStore token, so the payload itself is
                 # the only thing that can say whether the mission changed

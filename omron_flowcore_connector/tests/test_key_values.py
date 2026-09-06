@@ -4,6 +4,8 @@
 
 """Tests for the key-value builders."""
 
+import pytest
+
 from inorbit_omron_connector.src.key_values import (
     build_health_key_values,
     build_robot_key_values,
@@ -92,5 +94,11 @@ def test_map_status_maps_the_documented_sub_statuses():
     assert map_status("Driving") == "BUSY"
     assert map_status("Docked") == "CHARGING"
     assert map_status("Available") == "IDLE"
-    assert map_status("EStopPressed") == "ERROR"
     assert map_status("SomethingNew") == "IDLE"
+
+
+@pytest.mark.parametrize(
+    "sub_status", ["EstopPressed", "Fault", "MotorsDisabled", "Lost"]
+)
+def test_map_status_maps_every_error_sub_status(sub_status):
+    assert map_status(sub_status) == "ERROR"

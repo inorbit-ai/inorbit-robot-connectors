@@ -22,9 +22,7 @@ BUSY_SUB_STATUSES = frozenset(
 CHARGING_SUB_STATUSES = frozenset(
     {"Docked", "Docking", "Charging", "DockParking", "DockParked", "ForcedDocking"}
 )
-ERROR_SUB_STATUSES = frozenset(
-    {"EStopPressed", "Fault", "MotorsDisabled", "Lost", "NotLocalized"}
-)
+ERROR_SUB_STATUSES = frozenset({"EstopPressed", "Fault", "MotorsDisabled", "Lost"})
 
 
 def map_status(sub_status: str) -> str:

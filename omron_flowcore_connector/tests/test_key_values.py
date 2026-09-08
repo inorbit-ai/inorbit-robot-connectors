@@ -110,3 +110,11 @@ def test_map_status_warns_on_an_unrecognised_sub_status(caplog):
 
     assert result == "IDLE"
     assert "SomethingNew" in caplog.text
+
+
+def test_map_status_known_idle_sub_status_does_not_warn(caplog):
+    with caplog.at_level("WARNING"):
+        result = map_status("Unallocated")
+
+    assert result == "IDLE"
+    assert caplog.text == ""

@@ -98,7 +98,15 @@ def test_map_status_maps_the_documented_sub_statuses():
 
 
 @pytest.mark.parametrize(
-    "sub_status", ["EstopPressed", "Fault", "MotorsDisabled", "Lost"]
+    "sub_status", ["EstopPressed", "Fault", "MotorsDisabled", "Lost", "Disconnected"]
 )
 def test_map_status_maps_every_error_sub_status(sub_status):
     assert map_status(sub_status) == "ERROR"
+
+
+def test_map_status_warns_on_an_unrecognised_sub_status(caplog):
+    with caplog.at_level("WARNING"):
+        result = map_status("SomethingNew")
+
+    assert result == "IDLE"
+    assert "SomethingNew" in caplog.text

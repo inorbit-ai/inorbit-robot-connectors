@@ -12,9 +12,12 @@ the robot's own telemetry, which keeps flowing for as long as the robot is
 reporting, whether or not the Fleet Manager can still command it.
 """
 
+import logging
 from typing import Any, Optional
 
 from .omron.models import DataStoreResponse, RobotResponse
+
+LOGGER = logging.getLogger(__name__)
 
 BUSY_SUB_STATUSES = frozenset(
     {"Driving", "BeforePickup", "AfterDropoff", "BeforeDropoff", "BeforeEvery", "AfterEvery"}
@@ -22,7 +25,9 @@ BUSY_SUB_STATUSES = frozenset(
 CHARGING_SUB_STATUSES = frozenset(
     {"Docked", "Docking", "Charging", "DockParking", "DockParked", "ForcedDocking"}
 )
-ERROR_SUB_STATUSES = frozenset({"EstopPressed", "Fault", "MotorsDisabled", "Lost"})
+# `Disconnected` is undocumented: found by probing a live Fleet Manager, not in
+# the manual. Without it, a dropped robot maps to IDLE and looks available.
+ERROR_SUB_STATUSES = frozenset({"EstopPressed", "Fault", "MotorsDisabled", "Lost", "Disconnected"})
 
 
 def map_status(sub_status: str) -> str:
@@ -33,6 +38,7 @@ def map_status(sub_status: str) -> str:
         return "CHARGING"
     if sub_status in ERROR_SUB_STATUSES:
         return "ERROR"
+    LOGGER.warning("Unrecognised sub-status %r, publishing as IDLE.", sub_status)
     return "IDLE"
 
 

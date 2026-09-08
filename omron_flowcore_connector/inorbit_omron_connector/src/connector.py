@@ -36,7 +36,8 @@ LOGGER = logging.getLogger(__name__)
 
 # Cached items whose upd.millis forms each publish's change token
 POSE_KEYS = ("PoseX", "PoseY", "PoseTh")
-KEY_VALUE_KEYS = ("summary", "StateOfCharge")
+SUMMARY_KEYS = ("summary",)
+TELEMETRY_KEYS = ("StateOfCharge",)
 
 class OmronConnector(FleetConnector):
     """Connector between FlowCore Fleet and InOrbit."""
@@ -91,8 +92,11 @@ class OmronConnector(FleetConnector):
         for robot_config in config.fleet:
             self._robot_id_to_fleet_id[robot_config.robot_id] = robot_config.fleet_robot_id
 
-        # Last published change token per robot, per publish. Dropped while a robot is
-        # offline so the first tick after recovery republishes.
+        # Last published change token per robot, per publish. Each tier forgets its
+        # token when its own precondition next fails, so the first tick after
+        # recovery republishes: the summary tier when the API drops, the rest when
+        # the robot goes offline.
+        self._summary_update_millis: dict[str, tuple] = {}
         self._pose_update_millis: dict[str, tuple] = {}
         self._key_value_update_millis: dict[str, tuple] = {}
         self._mission_payloads: dict[str, dict] = {}
@@ -126,23 +130,57 @@ class OmronConnector(FleetConnector):
 
     @override
     async def _execution_loop(self) -> None:
-        """Main execution loop - publish cached robot data to InOrbit."""
+        """Main execution loop - publish cached robot data to InOrbit.
+
+        Three tiers, gated on different preconditions because they come from
+        different endpoints with different lifetimes:
+
+        - Connector view (health): every tick, ungated.
+        - Vendor's view, from `/Robot/UpdatedSince`: gated on its own change token
+          and on the API being connected. This is FlowCore's own statement about the
+          robot, and it keeps arriving correctly even while the robot itself is
+          unreachable, so it must not wait for the robot to be online.
+        - Robot telemetry, from `/DataStoreValueLatest`: gated on its own change
+          token and on the robot being online. This is the robot's own data, and it
+          genuinely goes stale once the robot drops.
+        """
         for robot_id in self.robot_ids:
             try:
                 fleet_robot_id = self._robot_id_to_fleet_id.get(robot_id)
                 if not fleet_robot_id:
                     continue
 
+                api_connected = self.robot_manager.api_connected()
+
                 # Health is the connector's own view. It is never stale and has to keep
                 # arriving while nothing else does.
                 self.publish_robot_key_values(
                     robot_id,
                     **build_health_key_values(
-                        api_connected=self.robot_manager.api_connected(),
+                        api_connected=api_connected,
                         robot_attached=self.robot_manager.is_attached(fleet_robot_id),
                         connector_version=__version__,
                     ),
                 )
+
+                if not api_connected:
+                    # Forget the token, so recovery republishes even if FlowCore has
+                    # nothing newer than it had before the outage
+                    self._summary_update_millis.pop(robot_id, None)
+                else:
+                    # Token is stored after the publish call, not before: see the
+                    # comment on the tiers below for why.
+                    summary_millis = self.robot_manager.update_millis(
+                        fleet_robot_id, SUMMARY_KEYS
+                    )
+                    if summary_millis is not None and summary_millis != (
+                        self._summary_update_millis.get(robot_id)
+                    ):
+                        if vendor_kv := self.robot_manager.get_vendor_key_values(
+                            fleet_robot_id
+                        ):
+                            self.publish_robot_key_values(robot_id, **vendor_kv)
+                        self._summary_update_millis[robot_id] = summary_millis
 
                 if not self._is_fleet_robot_online(robot_id):
                     # Forget the tokens, so recovery republishes even if FlowCore has
@@ -167,7 +205,7 @@ class OmronConnector(FleetConnector):
                         self.publish_robot_odometry(robot_id, **odometry)
                     self._pose_update_millis[robot_id] = pose_millis
 
-                kv_millis = self.robot_manager.update_millis(fleet_robot_id, KEY_VALUE_KEYS)
+                kv_millis = self.robot_manager.update_millis(fleet_robot_id, TELEMETRY_KEYS)
                 if kv_millis is not None and kv_millis != self._key_value_update_millis.get(
                     robot_id
                 ):

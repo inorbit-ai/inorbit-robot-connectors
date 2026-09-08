@@ -5,8 +5,10 @@
 """Key-value builders for the FlowCore connector.
 
 Health key-values describe the connector's own view and are published every
-tick. Telemetry key-values restate robot data and are published only when
-FlowCore refreshed them.
+tick. Vendor key-values come from `/Robot/UpdatedSince`, FlowCore's own
+statement about the robot, and keep arriving correctly even while the robot
+itself is unreachable. Robot key-values come from `/DataStoreValueLatest`,
+the robot's own telemetry, which genuinely goes stale once the robot drops.
 """
 
 from typing import Any, Optional
@@ -53,17 +55,31 @@ def build_health_key_values(
     return key_values
 
 
-def build_key_values(
-    summary: Optional[RobotResponse], battery: Optional[DataStoreResponse]
-) -> dict[str, Any]:
-    """Robot telemetry key-values from the cached fleet summary and battery value."""
-    key_values: dict[str, Any] = {}
-    if battery is not None:
-        key_values["battery_percent"] = float(battery.value)
-    if summary is not None:
-        key_values["omron_status"] = summary.status
-        key_values["omron_sub_status"] = summary.subStatus
-        key_values["status"] = map_status(summary.subStatus)
-        if summary.ipAddress:
-            key_values["robot_ip"] = summary.ipAddress
+def build_vendor_key_values(summary: Optional[RobotResponse]) -> dict[str, Any]:
+    """FlowCore's own statement about a robot, from `/Robot/UpdatedSince`.
+
+    This is the fleet summary, not the robot's own telemetry: it keeps arriving
+    correctly even while the robot itself is unreachable, so it publishes whenever
+    the API is connected, regardless of whether the robot is online.
+    """
+    if summary is None:
+        return {}
+    key_values: dict[str, Any] = {
+        "omron_status": summary.status,
+        "omron_sub_status": summary.subStatus,
+        "status": map_status(summary.subStatus),
+    }
+    if summary.ipAddress:
+        key_values["robot_ip"] = summary.ipAddress
     return key_values
+
+
+def build_robot_key_values(battery: Optional[DataStoreResponse]) -> dict[str, Any]:
+    """The robot's own telemetry, from `/DataStoreValueLatest`.
+
+    Unlike the fleet summary, this genuinely goes stale once the robot drops, so it
+    publishes only while the robot is online.
+    """
+    if battery is None:
+        return {}
+    return {"battery_percent": float(battery.value)}

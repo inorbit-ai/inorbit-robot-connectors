@@ -15,7 +15,7 @@ from typing import Any, Callable, Dict, Optional
 # Local
 from .api_client import OmronApiClient
 from .arcl_client import ArclClient
-from ..key_values import build_key_values
+from ..key_values import build_robot_key_values, build_vendor_key_values
 
 LOGGER = logging.getLogger(__name__)
 
@@ -348,16 +348,19 @@ class RobotManager:
             
         return None
 
-    def get_robot_key_values(self, fleet_robot_id: str) -> Optional[dict]:
-        """Get cached telemetry key-values for a specific robot."""
-        data = self._robot_data.get(fleet_robot_id, {})
-        summary = data.get("summary")
-        battery = data.get("StateOfCharge")
-
-        if not summary and not battery:
+    def get_vendor_key_values(self, fleet_robot_id: str) -> Optional[dict]:
+        """Get FlowCore's own statement about a robot, from the cached fleet summary."""
+        summary = self._robot_data.get(fleet_robot_id, {}).get("summary")
+        if summary is None:
             return None
+        return build_vendor_key_values(summary)
 
-        return build_key_values(summary, battery)
+    def get_robot_key_values(self, fleet_robot_id: str) -> Optional[dict]:
+        """Get the robot's own cached telemetry key-values for a specific robot."""
+        battery = self._robot_data.get(fleet_robot_id, {}).get("StateOfCharge")
+        if battery is None:
+            return None
+        return build_robot_key_values(battery)
 
     def get_robot_odometry(self, fleet_robot_id: str) -> Optional[dict]:
         """Get cached odometry for a specific robot.

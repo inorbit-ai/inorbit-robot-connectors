@@ -6,7 +6,8 @@
 
 from inorbit_omron_connector.src.key_values import (
     build_health_key_values,
-    build_key_values,
+    build_robot_key_values,
+    build_vendor_key_values,
     map_status,
 )
 from inorbit_omron_connector.src.omron.models import (
@@ -52,11 +53,10 @@ def test_health_key_values_omit_attachment_when_the_api_is_down():
     assert result == {"connector_version": "1.2.3", "api_connected": False}
 
 
-def test_key_values_carry_robot_telemetry():
-    result = build_key_values(_summary(), _battery())
+def test_vendor_key_values_carry_the_fleet_summary():
+    result = build_vendor_key_values(_summary())
 
     assert result == {
-        "battery_percent": 50.0,
         "omron_status": "Available",
         "omron_sub_status": "Unallocated",
         "status": "IDLE",
@@ -64,8 +64,28 @@ def test_key_values_carry_robot_telemetry():
     }
 
 
-def test_key_values_are_empty_without_data():
-    assert build_key_values(None, None) == {}
+def test_vendor_key_values_omit_robot_ip_when_unset():
+    result = build_vendor_key_values(_summary(ip=None))
+
+    assert result == {
+        "omron_status": "Available",
+        "omron_sub_status": "Unallocated",
+        "status": "IDLE",
+    }
+
+
+def test_vendor_key_values_are_empty_without_data():
+    assert build_vendor_key_values(None) == {}
+
+
+def test_robot_key_values_carry_battery():
+    result = build_robot_key_values(_battery())
+
+    assert result == {"battery_percent": 50.0}
+
+
+def test_robot_key_values_are_empty_without_data():
+    assert build_robot_key_values(None) == {}
 
 
 def test_map_status_maps_the_documented_sub_statuses():

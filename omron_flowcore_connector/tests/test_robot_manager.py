@@ -85,7 +85,9 @@ async def test_getters(robot_manager):
     # Test key values
     kv = robot_manager.get_robot_key_values("Robot1")
     assert kv["battery_percent"] == 75.0
-    assert kv["status"] == "IDLE"
+
+    vendor_kv = robot_manager.get_vendor_key_values("Robot1")
+    assert vendor_kv["status"] == "IDLE"
 
 @pytest.mark.asyncio
 async def test_start_stop(robot_manager):

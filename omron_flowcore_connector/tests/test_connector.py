@@ -90,7 +90,7 @@ async def test_connector_execution_loop(connector_config, mock_robot_manager, mo
     assert abs(call_args[1]["yaw"] - 3.14159) < 0.001
     assert call_args[1]["frame_id"] == "map_frame"
 
-    # Verify key values. Health and telemetry are now separate publishes.
+    # Verify key values. Health, vendor and robot telemetry are three separate publishes.
     calls = connector.publish_robot_key_values.call_args_list
     assert all(call[0][0] == "Robot1" for call in calls)
 
@@ -99,9 +99,12 @@ async def test_connector_execution_loop(connector_config, mock_robot_manager, mo
     assert health["api_connected"] is True
     assert health["robot_attached"] is True
 
+    vendor = next(call.kwargs for call in calls if "omron_sub_status" in call.kwargs)
+    assert vendor["omron_status"] == "Available"
+    assert vendor["status"] == "IDLE"
+
     telemetry = next(call.kwargs for call in calls if "battery_percent" in call.kwargs)
     assert telemetry["battery_percent"] == 80.0
-    assert telemetry["status"] == "IDLE"
 
 @pytest.mark.asyncio
 async def test_connector_command_handler_stop(connector_config, mock_robot_manager, mock_executor_cls):
@@ -210,9 +213,12 @@ async def test_pose_republishes_when_the_robot_moves(
 
 
 @pytest.mark.asyncio
-async def test_offline_robot_publishes_health_only(
+async def test_offline_robot_withholds_telemetry_but_still_publishes_vendor_key_values(
     connector_config, mock_robot_manager, mock_executor_cls
 ):
+    """A robot that dropped out of the fleet listing is offline, but the API is still
+    connected, so the vendor tier (FlowCore's own statement) must keep publishing
+    while the robot telemetry tier (pose, battery) is withheld."""
     connector = OmronConnector(connector_config, robot_manager=mock_robot_manager)
     connector.publish_robot_pose = MagicMock()
     connector.publish_robot_key_values = MagicMock()
@@ -222,9 +228,15 @@ async def test_offline_robot_publishes_health_only(
     await connector._execution_loop()
 
     connector.publish_robot_pose.assert_not_called()
-    assert connector.publish_robot_key_values.call_count == 1
-    assert connector.publish_robot_key_values.call_args.kwargs["api_connected"] is True
-    assert "robot_attached" in connector.publish_robot_key_values.call_args.kwargs
+    calls = connector.publish_robot_key_values.call_args_list
+    assert len(calls) == 2
+
+    health = next(call.kwargs for call in calls if "api_connected" in call.kwargs)
+    assert health["api_connected"] is True
+    assert "robot_attached" in health
+
+    vendor = next(call.kwargs for call in calls if "omron_sub_status" in call.kwargs)
+    assert "battery_percent" not in vendor
 
 
 @pytest.mark.asyncio
@@ -278,6 +290,91 @@ async def test_mission_tracking_republishes_on_in_place_mutation(
         if "mission_tracking" in call.kwargs
     ]
     assert len(mission_calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_disconnected_robot_still_publishes_vendor_key_values(
+    connector_config, mock_robot_manager, mock_executor_cls
+):
+    """FlowCore's own statement about the robot (the fleet summary) keeps arriving
+    correctly even while the robot itself is unreachable, so it must still publish
+    once the robot is reported disconnected."""
+    connector = OmronConnector(connector_config, robot_manager=mock_robot_manager)
+    connector.publish_robot_pose = MagicMock()
+    connector.publish_robot_key_values = MagicMock()
+    connector.publish_robot_odometry = MagicMock()
+
+    mock_robot_manager.api.seed_robot(
+        "Robot1_FlowCore", status="Disconnected", sub_status="Disconnected"
+    )
+    await mock_robot_manager._update_fleet_state()
+
+    await connector._execution_loop()
+
+    connector.publish_robot_pose.assert_not_called()
+    vendor_calls = [
+        call
+        for call in connector.publish_robot_key_values.call_args_list
+        if "omron_sub_status" in call.kwargs
+    ]
+    assert len(vendor_calls) == 1
+    assert vendor_calls[0].kwargs["omron_sub_status"] == "Disconnected"
+
+
+@pytest.mark.asyncio
+async def test_vendor_key_values_do_not_republish_while_the_token_holds(
+    connector_config, mock_robot_manager, mock_executor_cls
+):
+    connector = OmronConnector(connector_config, robot_manager=mock_robot_manager)
+    connector.publish_robot_pose = MagicMock()
+    connector.publish_robot_key_values = MagicMock()
+    connector.publish_robot_odometry = MagicMock()
+
+    await connector._execution_loop()
+    await connector._execution_loop()
+
+    vendor_calls = [
+        call
+        for call in connector.publish_robot_key_values.call_args_list
+        if "omron_sub_status" in call.kwargs
+    ]
+    assert len(vendor_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_vendor_key_values_skipped_and_token_forgotten_when_the_api_is_down(
+    connector_config, mock_robot_manager, mock_executor_cls
+):
+    connector = OmronConnector(connector_config, robot_manager=mock_robot_manager)
+    connector.publish_robot_pose = MagicMock()
+    connector.publish_robot_key_values = MagicMock()
+    connector.publish_robot_odometry = MagicMock()
+
+    await connector._execution_loop()
+    connector.publish_robot_key_values.reset_mock()
+
+    mock_robot_manager.api_connected = MagicMock(return_value=False)
+    await connector._execution_loop()
+
+    vendor_calls = [
+        call
+        for call in connector.publish_robot_key_values.call_args_list
+        if "omron_sub_status" in call.kwargs
+    ]
+    assert vendor_calls == []
+    assert "Robot1" not in connector._summary_update_millis
+
+    # Recovery republishes even though FlowCore has nothing newer to report
+    mock_robot_manager.api_connected = MagicMock(return_value=True)
+    connector.publish_robot_key_values.reset_mock()
+    await connector._execution_loop()
+
+    vendor_calls = [
+        call
+        for call in connector.publish_robot_key_values.call_args_list
+        if "omron_sub_status" in call.kwargs
+    ]
+    assert len(vendor_calls) == 1
 
 
 @pytest.mark.asyncio

@@ -62,9 +62,18 @@ def map_status(sub_status: str) -> str:
 
 
 def build_health_key_values(
-    api_connected: bool, robot_attached: bool, connector_version: str
+    api_connected: bool,
+    robot_attached: bool,
+    connector_version: str,
+    offline_reason: Optional[str],
 ) -> dict[str, Any]:
     """Connector-view key-values, published every tick even while nothing is reachable.
+
+    ``robot_online`` is the connector's own verdict, which is what tells an operator
+    that InOrbit showing a robot offline is this connector's decision rather than a
+    dropped session. ``offline_reason`` names which condition made that decision; it
+    publishes as an empty string while the robot is online, rather than being omitted,
+    so a recovered robot does not keep displaying the reason it went down.
 
     ``robot_attached`` is only knowable while the API is reachable, so it is omitted
     otherwise and the datasource keeps its last known value instead of restating a
@@ -73,6 +82,8 @@ def build_health_key_values(
     key_values: dict[str, Any] = {
         "connector_version": connector_version,
         "api_connected": api_connected,
+        "robot_online": offline_reason is None,
+        "offline_reason": offline_reason or "",
     }
     if api_connected:
         key_values["robot_attached"] = robot_attached

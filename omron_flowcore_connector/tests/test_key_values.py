@@ -12,6 +12,7 @@ from inorbit_omron_connector.src.key_values import (
     build_vendor_key_values,
     map_status,
 )
+from inorbit_omron_connector.src.omron.robot_manager import OFFLINE_API_UNREACHABLE
 from inorbit_omron_connector.src.omron.models import (
     DataStoreResponse,
     OmronUpdate,
@@ -37,22 +38,50 @@ def _battery(value=50.0):
 
 def test_health_key_values_report_the_connector_view():
     result = build_health_key_values(
-        api_connected=True, robot_attached=True, connector_version="1.2.3"
+        api_connected=True,
+        robot_attached=True,
+        connector_version="1.2.3",
+        offline_reason=None,
     )
 
     assert result == {
         "connector_version": "1.2.3",
         "api_connected": True,
         "robot_attached": True,
+        "robot_online": True,
+        "offline_reason": "",
     }
 
 
 def test_health_key_values_omit_attachment_when_the_api_is_down():
     result = build_health_key_values(
-        api_connected=False, robot_attached=False, connector_version="1.2.3"
+        api_connected=False,
+        robot_attached=False,
+        connector_version="1.2.3",
+        offline_reason=OFFLINE_API_UNREACHABLE,
     )
 
-    assert result == {"connector_version": "1.2.3", "api_connected": False}
+    assert result == {
+        "connector_version": "1.2.3",
+        "api_connected": False,
+        "robot_online": False,
+        "offline_reason": "api_unreachable",
+    }
+
+
+def test_health_key_values_clear_the_reason_once_the_robot_is_back():
+    """The reason publishes as an empty string rather than being omitted: an omitted
+    key leaves the datasource displaying the reason the robot went down long after it
+    recovered."""
+    result = build_health_key_values(
+        api_connected=True,
+        robot_attached=True,
+        connector_version="1.2.3",
+        offline_reason=None,
+    )
+
+    assert result["offline_reason"] == ""
+    assert result["robot_online"] is True
 
 
 def test_vendor_key_values_carry_the_fleet_summary():

@@ -22,6 +22,12 @@ LOGGER = logging.getLogger(__name__)
 # that it still lists as attached.
 ARCL_LOST_SUB_STATUS = "OutgoingArclConnectionLost"
 
+# Undocumented status/subStatus value found by probing a live Fleet Manager: it is
+# not mentioned anywhere in the Integration Toolkit manual, but both fields carry it
+# for a robot that has been unreachable for a long time, and it is a first-class
+# value of /Robot/ByStatus.
+DISCONNECTED_STATUS = "Disconnected"
+
 
 def to_inorbit_pose(x_mm: float, y_mm: float, theta_deg: float, frame_id: str = "map") -> dict[str, float]:
     """Convert FlowCore pose (mm, deg) to InOrbit pose (m, rad)."""
@@ -63,7 +69,9 @@ class RobotManager:
         self._default_update_freq = default_update_freq
         self._api_grace_secs = config.connector_config.api_grace_secs
         # Monotonic time of the last /Robot/UpdatedSince that did not raise, and the
-        # robots it listed. The Fleet Manager lists only currently attached AMRs.
+        # robots it listed. Listing tracks fleet membership, not reachability: a
+        # robot stays listed indefinitely after it disconnects, until it is removed
+        # from the fleet.
         self._last_sweep_ok_at: float | None = None
         self._present: set[str] = set()
 
@@ -232,7 +240,12 @@ class RobotManager:
         return (time.monotonic() - self._last_sweep_ok_at) <= self._api_grace_secs
 
     def is_attached(self, fleet_robot_id: str) -> bool:
-        """Whether the last successful sweep listed this robot."""
+        """Whether this robot is still registered with the Fleet Manager.
+
+        This reflects fleet membership, not reachability: a robot that has lost
+        communication stays listed here indefinitely, until it is deregistered from
+        the fleet.
+        """
         return fleet_robot_id in self._present
 
     def is_online(self, fleet_robot_id: str) -> bool:
@@ -244,11 +257,21 @@ class RobotManager:
         A robot in a bad but reachable state (Fault, Lost, EstopPressed,
         MotorsDisabled) stays online. It is still reporting, and its pose is what an
         operator needs to go find it; the condition surfaces as status ERROR.
+
+        A robot is offline if the Fleet Manager sweep itself is stale, if the robot
+        is no longer attached to the fleet, or if its status or sub-status reports it
+        disconnected (documented as an ARCL link loss, or the undocumented
+        `Disconnected` value).
         """
         if not self.api_connected() or not self.is_attached(fleet_robot_id):
             return False
         summary = self._robot_data.get(fleet_robot_id, {}).get("summary")
-        return summary is None or summary.subStatus != ARCL_LOST_SUB_STATUS
+        if summary is None:
+            return True
+        return summary.status != DISCONNECTED_STATUS and summary.subStatus not in (
+            ARCL_LOST_SUB_STATUS,
+            DISCONNECTED_STATUS,
+        )
 
     def get_robot_pose(self, fleet_robot_id: str) -> Optional[dict]:
         """Get cached pose for a specific robot."""

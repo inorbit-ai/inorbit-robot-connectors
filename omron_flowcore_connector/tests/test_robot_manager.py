@@ -231,6 +231,44 @@ async def test_offline_when_arcl_connection_lost(robot_manager):
     assert robot_manager.is_online("Robot1") is False
 
 
+@pytest.mark.asyncio
+async def test_offline_when_status_and_sub_status_are_disconnected(robot_manager):
+    robot_manager.api.seed_robot("Robot1", status="Disconnected", sub_status="Disconnected")
+
+    await robot_manager._update_fleet_state()
+
+    assert robot_manager.is_online("Robot1") is False
+
+
+@pytest.mark.asyncio
+async def test_offline_when_only_status_is_disconnected(robot_manager):
+    robot_manager.api.seed_robot("Robot1", status="Disconnected", sub_status="Unallocated")
+
+    await robot_manager._update_fleet_state()
+
+    assert robot_manager.is_online("Robot1") is False
+
+
+@pytest.mark.asyncio
+async def test_offline_when_only_sub_status_is_disconnected(robot_manager):
+    robot_manager.api.seed_robot("Robot1", status="Available", sub_status="Disconnected")
+
+    await robot_manager._update_fleet_state()
+
+    assert robot_manager.is_online("Robot1") is False
+
+
+@pytest.mark.asyncio
+async def test_disconnected_robot_is_still_attached(robot_manager):
+    robot_manager.api.seed_robot("Robot1", status="Disconnected", sub_status="Disconnected")
+
+    await robot_manager._update_fleet_state()
+
+    assert robot_manager.is_attached("Robot1") is True
+
+
+
+
 @pytest.mark.parametrize("sub_status", ["Fault", "Lost", "EstopPressed", "MotorsDisabled"])
 @pytest.mark.asyncio
 async def test_stays_online_when_faulted(robot_manager, sub_status):

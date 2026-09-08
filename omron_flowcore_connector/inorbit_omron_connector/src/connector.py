@@ -98,7 +98,7 @@ class OmronConnector(FleetConnector):
         # the robot goes offline.
         self._summary_update_millis: dict[str, tuple] = {}
         self._pose_update_millis: dict[str, tuple] = {}
-        self._key_value_update_millis: dict[str, tuple] = {}
+        self._telemetry_update_millis: dict[str, tuple] = {}
         self._mission_payloads: dict[str, dict] = {}
 
         # Initialize Mission Executor
@@ -168,8 +168,10 @@ class OmronConnector(FleetConnector):
                     # nothing newer than it had before the outage
                     self._summary_update_millis.pop(robot_id, None)
                 else:
-                    # Token is stored after the publish call, not before: see the
-                    # comment on the tiers below for why.
+                    # Token is stored after the publish call, not before: if the
+                    # publish raises, the except below skips the store too, so the
+                    # next tick sees the same token as unpublished and retries
+                    # instead of skipping forever.
                     summary_millis = self.robot_manager.update_millis(
                         fleet_robot_id, SUMMARY_KEYS
                     )
@@ -186,7 +188,7 @@ class OmronConnector(FleetConnector):
                     # Forget the tokens, so recovery republishes even if FlowCore has
                     # nothing newer than it had before the outage
                     self._pose_update_millis.pop(robot_id, None)
-                    self._key_value_update_millis.pop(robot_id, None)
+                    self._telemetry_update_millis.pop(robot_id, None)
                     self._mission_payloads.pop(robot_id, None)
                     continue
 
@@ -206,12 +208,12 @@ class OmronConnector(FleetConnector):
                     self._pose_update_millis[robot_id] = pose_millis
 
                 kv_millis = self.robot_manager.update_millis(fleet_robot_id, TELEMETRY_KEYS)
-                if kv_millis is not None and kv_millis != self._key_value_update_millis.get(
+                if kv_millis is not None and kv_millis != self._telemetry_update_millis.get(
                     robot_id
                 ):
                     if key_values := self.robot_manager.get_robot_key_values(fleet_robot_id):
                         self.publish_robot_key_values(robot_id, **key_values)
-                    self._key_value_update_millis[robot_id] = kv_millis
+                    self._telemetry_update_millis[robot_id] = kv_millis
 
                 # The job streams carry no DataStore token, so the payload itself is
                 # the only thing that can say whether the mission changed

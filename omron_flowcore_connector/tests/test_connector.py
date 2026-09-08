@@ -378,6 +378,40 @@ async def test_vendor_key_values_skipped_and_token_forgotten_when_the_api_is_dow
 
 
 @pytest.mark.asyncio
+async def test_vendor_key_values_retry_after_a_failed_publish(
+    connector_config, mock_robot_manager, mock_executor_cls
+):
+    """A publish that raises must not let the vendor token get stored, or the retry
+    that depends on statement ordering (store after publish, not before) silently
+    regresses back to skipping forever. This matters more here than for pose: a
+    robot that has permanently dropped may never change its summary again, so a
+    swallowed failure on this tier is permanent rather than transient."""
+    connector = OmronConnector(connector_config, robot_manager=mock_robot_manager)
+    connector.publish_robot_pose = MagicMock()
+    connector.publish_robot_odometry = MagicMock()
+
+    attempts = {"vendor": 0}
+
+    def maybe_fail(*args, **kwargs):
+        if "omron_sub_status" in kwargs:
+            attempts["vendor"] += 1
+            if attempts["vendor"] == 1:
+                raise Exception("boom")
+
+    connector.publish_robot_key_values = MagicMock(side_effect=maybe_fail)
+
+    await connector._execution_loop()
+    await connector._execution_loop()
+
+    vendor_calls = [
+        call
+        for call in connector.publish_robot_key_values.call_args_list
+        if "omron_sub_status" in call.kwargs
+    ]
+    assert len(vendor_calls) == 2
+
+
+@pytest.mark.asyncio
 async def test_pose_retries_after_a_failed_publish(
     connector_config, mock_robot_manager, mock_executor_cls
 ):

@@ -8,7 +8,8 @@ Health key-values describe the connector's own view and are published every
 tick. Vendor key-values come from `/Robot/UpdatedSince`, FlowCore's own
 statement about the robot, and keep arriving correctly even while the robot
 itself is unreachable. Robot key-values come from `/DataStoreValueLatest`,
-the robot's own telemetry, which genuinely goes stale once the robot drops.
+the robot's own telemetry, which keeps flowing for as long as the robot is
+reporting, whether or not the Fleet Manager can still command it.
 """
 
 from typing import Any, Optional
@@ -77,8 +78,9 @@ def build_vendor_key_values(summary: Optional[RobotResponse]) -> dict[str, Any]:
 def build_robot_key_values(battery: Optional[DataStoreResponse]) -> dict[str, Any]:
     """The robot's own telemetry, from `/DataStoreValueLatest`.
 
-    Unlike the fleet summary, this genuinely goes stale once the robot drops, so it
-    publishes only while the robot is online.
+    Published on its change token alone, with no online check on top: a robot whose
+    ARCL link the Fleet Manager has lost keeps reporting here, and a robot that has
+    truly dropped reports nothing at all, so the token stops advancing by itself.
     """
     if battery is None:
         return {}

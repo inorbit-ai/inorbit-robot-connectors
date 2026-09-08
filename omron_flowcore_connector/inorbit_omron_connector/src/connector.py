@@ -92,10 +92,10 @@ class OmronConnector(FleetConnector):
         for robot_config in config.fleet:
             self._robot_id_to_fleet_id[robot_config.robot_id] = robot_config.fleet_robot_id
 
-        # Last published change token per robot, per publish. Each tier forgets its
-        # token when its own precondition next fails, so the first tick after
-        # recovery republishes: the summary tier when the API drops, the rest when
-        # the robot goes offline.
+        # Last published change token per robot, per publish. The summary tier
+        # forgets its token while the API is down, so the first tick after recovery
+        # republishes even if FlowCore has nothing newer. The rest are never
+        # withheld, so they have nothing to catch up on.
         self._summary_update_millis: dict[str, tuple] = {}
         self._pose_update_millis: dict[str, tuple] = {}
         self._telemetry_update_millis: dict[str, tuple] = {}
@@ -141,8 +141,11 @@ class OmronConnector(FleetConnector):
           robot, and it keeps arriving correctly even while the robot itself is
           unreachable, so it must not wait for the robot to be online.
         - Robot telemetry, from `/DataStoreValueLatest`: gated on its own change
-          token and on the robot being online. This is the robot's own data, and it
-          genuinely goes stale once the robot drops.
+          token alone. The token is what makes this data fresh, so no online check
+          is needed on top of it: a robot the Fleet Manager cannot command may still
+          be reporting its own battery and pose, and that pose is what an operator
+          needs to go find it. A robot that has truly dropped reports nothing, so
+          its token never advances and nothing publishes.
         """
         for robot_id in self.robot_ids:
             try:
@@ -183,14 +186,6 @@ class OmronConnector(FleetConnector):
                         ):
                             self.publish_robot_key_values(robot_id, **vendor_kv)
                         self._summary_update_millis[robot_id] = summary_millis
-
-                if not self._is_fleet_robot_online(robot_id):
-                    # Forget the tokens, so recovery republishes even if FlowCore has
-                    # nothing newer than it had before the outage
-                    self._pose_update_millis.pop(robot_id, None)
-                    self._telemetry_update_millis.pop(robot_id, None)
-                    self._mission_payloads.pop(robot_id, None)
-                    continue
 
                 # Token is stored after the publish calls, not before: if a publish
                 # raises, the except below skips the store too, so the next tick sees

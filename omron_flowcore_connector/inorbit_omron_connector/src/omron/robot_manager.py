@@ -18,15 +18,24 @@ from .arcl_client import ArclClient
 
 LOGGER = logging.getLogger(__name__)
 
-# Documented AMR sub-status meaning the Fleet Manager lost its ARCL link to a robot
-# that it still lists as attached.
-ARCL_LOST_SUB_STATUS = "OutgoingArclConnectionLost"
-
 # Undocumented status/subStatus value found by probing a live Fleet Manager: it is
 # not mentioned anywhere in the Integration Toolkit manual, but both fields carry it
 # for a robot that has been unreachable for a long time, and it is a first-class
-# value of /Robot/ByStatus.
+# value of /Robot/ByStatus. Used to explain an offline robot, never to decide it.
 DISCONNECTED_STATUS = "Disconnected"
+
+# Reasons a robot is offline, most fundamental first
+OFFLINE_API_UNREACHABLE = "api_unreachable"
+OFFLINE_NOT_IN_FLEET = "not_in_fleet"
+OFFLINE_DISCONNECTED = "disconnected"
+OFFLINE_NO_TELEMETRY = "no_telemetry"
+
+# Missed polls tolerated before a robot or the API counts as gone, and the floor on
+# that window whatever update_freq is. The Fleet Manager takes up to 10s to reflect
+# an attach or detach, and a wildcard /DataStoreValueLatest fetch takes ~2s by design
+# (manual, Table 4-7), so a tighter window at high poll rates flaps on one slow cycle.
+MISSED_POLLS_TOLERATED = 3
+MIN_GRACE_SECS = 10.0
 
 
 def to_inorbit_pose(x_mm: float, y_mm: float, theta_deg: float, frame_id: str = "map") -> dict[str, float]:
@@ -67,13 +76,24 @@ class RobotManager:
         # Allow injection of api_client for testing/mocking
         self.api = api_client if api_client else OmronApiClient(config.connector_config)
         self._default_update_freq = default_update_freq
-        self._api_grace_secs = config.connector_config.api_grace_secs
+        self._grace_secs = max(MISSED_POLLS_TOLERATED / default_update_freq, MIN_GRACE_SECS)
         # Monotonic time of the last /Robot/UpdatedSince that did not raise, and the
         # robots it listed. Listing tracks fleet membership, not reachability: a
         # robot stays listed indefinitely after it disconnects, until it is removed
         # from the fleet.
-        self._last_sweep_ok_at: float | None = None
+        #
+        # Monotonic time the Fleet Manager last fetched any DataStore value from each
+        # robot. /DataStoreValueLatest reaches the AMR on every call (manual, p.23), so
+        # a value coming back is the Fleet Manager saying it just reached the robot.
+        # That is the availability signal; the status vocabulary only explains it.
+        #
+        # Both clocks are seeded at construction so the grace period covers startup
+        # the same way it covers an outage. Without this every start and restart
+        # publishes a spurious offline tick while the first polls are in flight.
+        now = time.monotonic()
+        self._last_sweep_ok_at: float = now
         self._present: set[str] = set()
+        self._last_fetched_at: Dict[str, float] = {r.fleet_robot_id: now for r in config.fleet}
 
         # Falls back to a bare task when no supervisor is injected, which is what the
         # tests use. In production the connector passes the framework's supervisor.
@@ -193,7 +213,8 @@ class RobotManager:
             # Bulk fetch using wildcard '*'
             # Each call returns a list of DataStoreResponse objects for all robots
             results = await asyncio.gather(*calls, return_exceptions=True)
-            
+            fetched: set[str] = set()
+
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
                     LOGGER.error(f"Error bulk fetching {keys[i]}: {result}")
@@ -209,7 +230,8 @@ class RobotManager:
                     parts = item.namekey.split(":")
                     if len(parts) >= 2:
                         robot_id = parts[1]
-                        
+                        fetched.add(robot_id)
+
                         # Initialize cache if needed (though fleet state update should have done it)
                         if robot_id not in self._robot_data:
                             self._robot_data[robot_id] = {}
@@ -230,14 +252,16 @@ class RobotManager:
                                 self._robot_data[robot_id]["robot_ip"] = item.value
                                 LOGGER.info(f"Discovered IP {item.value} for robot {robot_id} via DataStore")
 
+            now = time.monotonic()
+            for robot_id in fetched:
+                self._last_fetched_at[robot_id] = now
+
         except Exception as e:
             LOGGER.error(f"Error updating fleet details: {e}")
 
     def api_connected(self) -> bool:
         """Whether a fleet sweep succeeded within the grace period."""
-        if self._last_sweep_ok_at is None:
-            return False
-        return (time.monotonic() - self._last_sweep_ok_at) <= self._api_grace_secs
+        return (time.monotonic() - self._last_sweep_ok_at) <= self._grace_secs
 
     def is_attached(self, fleet_robot_id: str) -> bool:
         """Whether this robot is still registered with the Fleet Manager.
@@ -248,30 +272,48 @@ class RobotManager:
         """
         return fleet_robot_id in self._present
 
-    def is_online(self, fleet_robot_id: str) -> bool:
-        """Whether InOrbit should consider this robot online.
+    def is_reporting(self, fleet_robot_id: str) -> bool:
+        """Whether the Fleet Manager fetched a DataStore value from this robot recently.
+
+        This is the one fact availability rests on. A robot the Fleet Manager cannot
+        reach returns nothing from /DataStoreValueLatest; one it can reach returns
+        values whatever its status says, including `OutgoingArclConnectionLost`, which
+        only means the Fleet Manager's own command channel is down.
+        """
+        last = self._last_fetched_at.get(fleet_robot_id)
+        return last is not None and (time.monotonic() - last) <= self._grace_secs
+
+    def offline_reason(self, fleet_robot_id: str) -> Optional[str]:
+        """Why this robot is offline, or None while it is online.
 
         Cache reads only: this runs once per robot per execution loop iteration and
         also on the edge-SDK network thread.
 
-        A robot in a bad but reachable state (Fault, Lost, EstopPressed,
-        MotorsDisabled) stays online. It is still reporting, and its pose is what an
-        operator needs to go find it; the condition surfaces as status ERROR.
+        The decision is `is_reporting`. Everything below it is explanation, ordered
+        so the most fundamental cause wins: an unreachable API is why nothing else
+        about the robot can be known, a deregistered robot is why no fetch was
+        attempted, and the Fleet Manager's own `Disconnected` verdict, when it has
+        one, beats the bare observation that values stopped coming back.
 
-        A robot is offline if the Fleet Manager sweep itself is stale, if the robot
-        is no longer attached to the fleet, or if its status or sub-status reports it
-        disconnected (documented as an ARCL link loss, or the undocumented
-        `Disconnected` value).
+        A robot in a bad but reachable state (Fault, Lost, EstopPressed,
+        MotorsDisabled, OutgoingArclConnectionLost) stays online: it is still
+        reporting, and its pose is what an operator needs to go find it. The
+        condition surfaces through its status instead.
         """
-        if not self.api_connected() or not self.is_attached(fleet_robot_id):
-            return False
+        if self.is_reporting(fleet_robot_id):
+            return None
+        if not self.api_connected():
+            return OFFLINE_API_UNREACHABLE
+        if not self.is_attached(fleet_robot_id):
+            return OFFLINE_NOT_IN_FLEET
         summary = self._robot_data.get(fleet_robot_id, {}).get("summary")
-        if summary is None:
-            return True
-        return summary.status != DISCONNECTED_STATUS and summary.subStatus not in (
-            ARCL_LOST_SUB_STATUS,
-            DISCONNECTED_STATUS,
-        )
+        if summary is not None and DISCONNECTED_STATUS in (summary.status, summary.subStatus):
+            return OFFLINE_DISCONNECTED
+        return OFFLINE_NO_TELEMETRY
+
+    def is_online(self, fleet_robot_id: str) -> bool:
+        """Whether InOrbit should consider this robot online. See `offline_reason`."""
+        return self.offline_reason(fleet_robot_id) is None
 
     def get_robot_pose(self, fleet_robot_id: str) -> Optional[dict]:
         """Get cached pose for a specific robot."""

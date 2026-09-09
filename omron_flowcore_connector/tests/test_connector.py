@@ -135,7 +135,7 @@ async def test_is_fleet_robot_online_delegates_to_the_manager(
 
     assert connector._is_fleet_robot_online("Robot1") is True
 
-    mock_robot_manager._present.discard("Robot1_FlowCore")
+    mock_robot_manager._last_fetched_at["Robot1_FlowCore"] -= mock_robot_manager._grace_secs + 1
     assert connector._is_fleet_robot_online("Robot1") is False
 
 

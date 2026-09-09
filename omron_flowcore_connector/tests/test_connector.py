@@ -17,6 +17,16 @@ def mock_executor_cls():
          patch("inorbit_edge.robot.RobotSession.connect"):
         yield mock
 
+def test_connector_wires_supervisor(connector_config, mock_executor_cls):
+    """robot_manager and mission_tracking must use the connector's own supervisor,
+    not the create_supervised_task-or-bare-task fallback, or a dropped keyword
+    would silently revert them to unsupervised bare tasks."""
+    connector = OmronConnector(connector_config)
+
+    assert connector.robot_manager._create_supervised_task == connector._create_supervised_task
+    assert connector._mission_tracking._create_supervised_task == connector._create_supervised_task
+
+
 @pytest.mark.asyncio
 async def test_connector_initialization(connector_config, mock_robot_manager, mock_executor_cls):
     connector = OmronConnector(connector_config, robot_manager=mock_robot_manager)

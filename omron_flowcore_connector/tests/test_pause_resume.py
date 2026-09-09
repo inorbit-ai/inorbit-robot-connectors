@@ -88,7 +88,7 @@ async def test_connector_pause_resume_with_state_update(connector_config, mock_o
         # Verify state in mock_omron updated
         # We need to manually trigger update_fleet_state since the polling loop is suppressed in this test style
         await manager._update_fleet_state()
-        kv = manager.get_robot_key_values("Robot1_FlowCore")
+        kv = manager.get_vendor_key_values("Robot1_FlowCore")
         assert kv["status"] == "BUSY" # Driving maps to BUSY
 
         # 4. Test Resume
@@ -110,5 +110,5 @@ async def test_connector_pause_resume_with_state_update(connector_config, mock_o
         
         # Verify state in mock_omron updated back to IDLE
         await manager._update_fleet_state()
-        kv = manager.get_robot_key_values("Robot1_FlowCore")
+        kv = manager.get_vendor_key_values("Robot1_FlowCore")
         assert kv["status"] == "IDLE" # Available maps to IDLE

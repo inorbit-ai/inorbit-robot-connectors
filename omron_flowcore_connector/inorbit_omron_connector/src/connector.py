@@ -5,6 +5,7 @@
 """FlowCore fleet connector for InOrbit."""
 
 # Standard
+import copy
 import logging
 from typing import Optional
 from typing_extensions import override
@@ -18,6 +19,7 @@ from inorbit_edge_executor.inorbit import InOrbitAPI
 
 # Local
 from .. import __version__
+from .key_values import build_health_key_values
 from .omron.robot_manager import RobotManager
 from .omron.models import JobCancelByRobotName
 from .omron.mock_client import MockOmronClient
@@ -31,6 +33,13 @@ from .mission.tracking import OmronMissionTracking
 from .mission.executor import OmronMissionExecutor
 
 LOGGER = logging.getLogger(__name__)
+
+# Cached items each publish is gated on. The summary tier compares upd.millis, a real
+# change token on /Robot/UpdatedSince; the DataStore tiers compare values, since a
+# DataStore stamp is only the time of our own fetch.
+POSE_KEYS = ("PoseX", "PoseY", "PoseTh")
+SUMMARY_KEYS = ("summary",)
+TELEMETRY_KEYS = ("StateOfCharge",)
 
 class OmronConnector(FleetConnector):
     """Connector between FlowCore Fleet and InOrbit."""
@@ -85,6 +94,15 @@ class OmronConnector(FleetConnector):
         for robot_config in config.fleet:
             self._robot_id_to_fleet_id[robot_config.robot_id] = robot_config.fleet_robot_id
 
+        # Last published change token per robot, per publish. The summary tier
+        # forgets its token while the API is down, so the first tick after recovery
+        # republishes even if FlowCore has nothing newer. The rest are never
+        # withheld, so they have nothing to catch up on.
+        self._summary_update_millis: dict[str, tuple] = {}
+        self._pose_values: dict[str, tuple] = {}
+        self._telemetry_values: dict[str, tuple] = {}
+        self._mission_payloads: dict[str, dict] = {}
+
         # Initialize Mission Executor
         self._mission_executor = OmronMissionExecutor(
             api=self.inorbit_api,
@@ -114,30 +132,92 @@ class OmronConnector(FleetConnector):
 
     @override
     async def _execution_loop(self) -> None:
-        """Main execution loop - publish cached robot data to InOrbit."""
-        published_count = 0
+        """Main execution loop - publish cached robot data to InOrbit.
 
+        Three tiers, gated on different preconditions because they come from
+        different endpoints with different lifetimes:
+
+        - Connector view (health): every tick, ungated.
+        - Vendor's view, from `/Robot/UpdatedSince`: gated on its own change token
+          and on the API being connected. This is FlowCore's own statement about the
+          robot, and it keeps arriving correctly even while the robot itself is
+          unreachable, so it must not wait for the robot to be online.
+        - Robot telemetry, from `/DataStoreValueLatest`: gated on the values
+          themselves having changed, with no online check on top. Every call to that
+          endpoint fetches from the AMR and stamps the fetch, so its `upd.millis` is
+          our own read time and cannot gate anything; the value can. No online check
+          is needed either: a robot that stops answering stops producing values, so
+          the cache holds and nothing publishes, and a reachable robot's live pose is
+          what an operator needs whatever its status says.
+        """
         for robot_id in self.robot_ids:
             try:
                 fleet_robot_id = self._robot_id_to_fleet_id.get(robot_id)
                 if not fleet_robot_id:
                     continue
 
-                if pose := self.robot_manager.get_robot_pose(fleet_robot_id):
-                    self.publish_robot_pose(robot_id, **pose)
-                    published_count += 1
+                api_connected = self.robot_manager.api_connected()
 
-                if odometry := self.robot_manager.get_robot_odometry(fleet_robot_id):
-                    self.publish_robot_odometry(robot_id, **odometry)
+                # Health is the connector's own view. It is never stale and has to keep
+                # arriving while nothing else does.
+                self.publish_robot_key_values(
+                    robot_id,
+                    **build_health_key_values(
+                        api_connected=api_connected,
+                        robot_attached=self.robot_manager.is_attached(fleet_robot_id),
+                        connector_version=__version__,
+                    ),
+                )
 
-                key_values = self.robot_manager.get_robot_key_values(fleet_robot_id) or {}
-                key_values["connector_version"] = __version__
+                if not api_connected:
+                    # Forget the token, so recovery republishes even if FlowCore has
+                    # nothing newer than it had before the outage
+                    self._summary_update_millis.pop(robot_id, None)
+                else:
+                    # Token is stored after the publish call, not before: if the
+                    # publish raises, the except below skips the store too, so the
+                    # next tick sees the same token as unpublished and retries
+                    # instead of skipping forever.
+                    summary_millis = self.robot_manager.update_millis(
+                        fleet_robot_id, SUMMARY_KEYS
+                    )
+                    if summary_millis is not None and summary_millis != (
+                        self._summary_update_millis.get(robot_id)
+                    ):
+                        if vendor_kv := self.robot_manager.get_vendor_key_values(
+                            fleet_robot_id
+                        ):
+                            self.publish_robot_key_values(robot_id, **vendor_kv)
+                        self._summary_update_millis[robot_id] = summary_millis
 
-                if mission_payload := self._mission_tracking.get_mission_tracking(fleet_robot_id):
-                    key_values["mission_tracking"] = mission_payload
+                # Values are stored after the publish calls, not before: if a publish
+                # raises, the except below skips the store too, so the next tick sees
+                # the same values as unpublished and retries instead of skipping forever.
+                pose_values = self.robot_manager.data_values(fleet_robot_id, POSE_KEYS)
+                if pose_values is not None and pose_values != self._pose_values.get(robot_id):
+                    if pose := self.robot_manager.get_robot_pose(fleet_robot_id):
+                        self.publish_robot_pose(robot_id, **pose)
+                    # Odometry rides the pose gate; if it starts returning real data,
+                    # check that data is actually covered by POSE_KEYS.
+                    if odometry := self.robot_manager.get_robot_odometry(fleet_robot_id):
+                        self.publish_robot_odometry(robot_id, **odometry)
+                    self._pose_values[robot_id] = pose_values
 
-                if key_values:
-                    self.publish_robot_key_values(robot_id, **key_values)
+                telemetry_values = self.robot_manager.data_values(fleet_robot_id, TELEMETRY_KEYS)
+                if telemetry_values is not None and telemetry_values != (
+                    self._telemetry_values.get(robot_id)
+                ):
+                    if key_values := self.robot_manager.get_robot_key_values(fleet_robot_id):
+                        self.publish_robot_key_values(robot_id, **key_values)
+                    self._telemetry_values[robot_id] = telemetry_values
+
+                # The job streams carry no DataStore token, so the payload itself is
+                # the only thing that can say whether the mission changed
+                mission_payload = self._mission_tracking.get_mission_tracking(fleet_robot_id)
+                if mission_payload and mission_payload != self._mission_payloads.get(robot_id):
+                    snapshot = copy.deepcopy(mission_payload)
+                    self.publish_robot_key_values(robot_id, mission_tracking=snapshot)
+                    self._mission_payloads[robot_id] = snapshot
 
             except Exception as e:
                 LOGGER.error(f"Error publishing data for robot {robot_id}: {e}")

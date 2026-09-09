@@ -26,6 +26,16 @@ class MockOmronClient:
         self._connected = False
         self._current_job_id: Dict[str, str] = {} # robot_id -> job_id
         self._jobs_db: Dict[str, Dict[str, Any]] = {} # job_id -> job_details
+        # Two stamp semantics, mirroring the live Integration Toolkit, which differ by
+        # endpoint. /Robot/UpdatedSince is a changed-since query, so a summary's
+        # `upd.millis` holds while its status is unchanged (`_stamp`). Every
+        # /DataStoreValueLatest call fetches from the AMR and stamps the fetch, so a
+        # DataStore item's `upd.millis` is the read time and advances on every call
+        # whatever the value did (`_now_millis`). Modelling both is what makes a
+        # publish gate testable: a gate that compares DataStore stamps passes against
+        # a mock that only restamps on change and does nothing in production.
+        self._stamps: Dict[str, tuple[Any, int]] = {}
+        self._stamp_seq = 0
 
     async def connect(self):
         self._connected = True
@@ -34,7 +44,22 @@ class MockOmronClient:
     async def close(self):
         self._connected = False
 
-    def seed_robot(self, robot_id: str, status: str = "Available", sub_status: str = "Unallocated", 
+    def _now_millis(self) -> int:
+        """A strictly increasing read-time stamp, as /DataStoreValueLatest returns."""
+        # The sequence keeps two reads inside the same millisecond distinguishable
+        self._stamp_seq += 1
+        return int(time.time() * 1000) + self._stamp_seq
+
+    def _stamp(self, namekey: str, value: Any) -> int:
+        """The millis for a summary value, advancing only when the value changed."""
+        previous = self._stamps.get(namekey)
+        if previous is not None and previous[0] == value:
+            return previous[1]
+        millis = self._now_millis()
+        self._stamps[namekey] = (value, millis)
+        return millis
+
+    def seed_robot(self, robot_id: str, status: str = "Available", sub_status: str = "Unallocated",
                    battery: float = 1.0, x: float = 0.0, y: float = 0.0, theta: float = 0.0,
                    ip_address: str = "127.0.0.1"):
         """Seeds a robot with initial state."""
@@ -52,11 +77,14 @@ class MockOmronClient:
             raise ConnectionError("Not connected")
         
         response = []
-        now_millis = int(time.time() * 1000)
         for robot_id, data in self._robots.items():
             response.append(RobotResponse(
                 namekey=robot_id,
-                upd=OmronUpdate(millis=now_millis),
+                upd=OmronUpdate(
+                    millis=self._stamp(
+                        f"Robot:{robot_id}", (data["status"], data["subStatus"])
+                    )
+                ),
                 status=data["status"],
                 subStatus=data["subStatus"],
                 ipAddress=data.get("ipAddress")
@@ -81,8 +109,6 @@ class MockOmronClient:
             # If the key is not in our mapped list, we can't provide a value
             return []
 
-        now_millis = int(time.time() * 1000)
-
         def _get_value_from_robot(robot_data: Dict[str, Any], path: str):
             parts = path.split('.')
             current_val = robot_data
@@ -100,7 +126,7 @@ class MockOmronClient:
                 if val is not None:
                     res.append(DataStoreResponse(
                         namekey=f"{key}:{rid}",
-                        upd=OmronUpdate(millis=now_millis),
+                        upd=OmronUpdate(millis=self._now_millis()),
                         value=val
                     ))
             return res
@@ -114,13 +140,13 @@ class MockOmronClient:
         if val is None:
             return DataStoreResponse(
                 namekey=f"{key}:{robot_id}",
-                upd=OmronUpdate(millis=now_millis),
+                upd=OmronUpdate(millis=self._now_millis()),
                 value=0 # Default value
             )
-            
+
         return DataStoreResponse(
             namekey=f"{key}:{robot_id}",
-            upd=OmronUpdate(millis=now_millis),
+            upd=OmronUpdate(millis=self._now_millis()),
             value=val
         )
 

@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, Optional
 # Local
 from .api_client import OmronApiClient
 from .arcl_client import ArclClient
+from ..key_values import build_robot_key_values, build_vendor_key_values
 
 LOGGER = logging.getLogger(__name__)
 
@@ -315,6 +316,35 @@ class RobotManager:
         """Whether InOrbit should consider this robot online. See `offline_reason`."""
         return self.offline_reason(fleet_robot_id) is None
 
+    def update_millis(self, fleet_robot_id: str, keys: tuple[str, ...]) -> Optional[tuple]:
+        """The upd.millis of cached fleet-summary records, or None if none is cached.
+
+        A change token for `/Robot/UpdatedSince` only: that is a changed-since query, so
+        a summary's stamp holds while its status is unchanged (observed frozen at 17 days
+        and at 4 hours on a live Fleet Manager). Do not use it for DataStore items: every
+        `/DataStoreValueLatest` call fetches from the AMR and stamps the fetch, so their
+        stamps are our own read time and advance on every poll. Compare those by value,
+        see `data_values`.
+        """
+        data = self._robot_data.get(fleet_robot_id, {})
+        items = [data[key] for key in keys if key in data]
+        if not items:
+            return None
+        return tuple(item.upd.millis for item in items)
+
+    def data_values(self, fleet_robot_id: str, keys: tuple[str, ...]) -> Optional[tuple]:
+        """The values of cached DataStore items, or None if none is cached.
+
+        The change token for robot telemetry, since a DataStore stamp only says when we
+        last asked. Items the vendor never reported are skipped rather than vetoing the
+        whole result, so a robot missing one of them still publishes on the others.
+        """
+        data = self._robot_data.get(fleet_robot_id, {})
+        items = [data[key] for key in keys if key in data]
+        if not items:
+            return None
+        return tuple(item.value for item in items)
+
     def get_robot_pose(self, fleet_robot_id: str) -> Optional[dict]:
         """Get cached pose for a specific robot."""
         data = self._robot_data.get(fleet_robot_id, {})
@@ -333,30 +363,19 @@ class RobotManager:
             
         return None
 
-    def get_robot_key_values(self, fleet_robot_id: str) -> Optional[dict]:
-        """Get cached key-values for a specific robot."""
-        data = self._robot_data.get(fleet_robot_id, {})
-        summary = data.get("summary")
-        battery = data.get("StateOfCharge")
-        
-        if not summary and not battery:
+    def get_vendor_key_values(self, fleet_robot_id: str) -> Optional[dict]:
+        """Get FlowCore's own statement about a robot, from the cached fleet summary."""
+        summary = self._robot_data.get(fleet_robot_id, {}).get("summary")
+        if summary is None:
             return None
-            
-        kv = {}
-        
-        if battery:
-            kv["battery_percent"] = float(battery.value)
-            
-        if summary:
-            kv["omron_status"] = summary.status
-            kv["omron_sub_status"] = summary.subStatus
-            kv["status"] = self._map_status(summary.subStatus)
-            
-            # Add more summary fields if available
-            if summary.ipAddress:
-                kv["robot_ip"] = summary.ipAddress
-            
-        return kv
+        return build_vendor_key_values(summary)
+
+    def get_robot_key_values(self, fleet_robot_id: str) -> Optional[dict]:
+        """Get the robot's own cached telemetry key-values for a specific robot."""
+        battery = self._robot_data.get(fleet_robot_id, {}).get("StateOfCharge")
+        if battery is None:
+            return None
+        return build_robot_key_values(battery)
 
     def get_robot_odometry(self, fleet_robot_id: str) -> Optional[dict]:
         """Get cached odometry for a specific robot.
@@ -366,24 +385,6 @@ class RobotManager:
         Returning None for now unless we find velocity keys.
         """
         return None
-
-    def _map_status(self, sub_status: str) -> str:
-        """Map Omron sub-status to InOrbit status."""
-        # Simple mapping logic
-        busy_states = ["Driving", "BeforePickup", "AfterDropoff", "BeforeDropoff", "BeforeEvery", "AfterEvery"]
-        charging_states = ["Docked", "Docking", "Charging", "DockParking", "DockParked", "ForcedDocking"]
-        idle_states = ["Available", "Parked", "Allocated", "Unallocated"]
-        error_states = ["EStopPressed", "Fault", "MotorsDisabled", "Lost", "NotLocalized"]
-
-        if sub_status in busy_states:
-            return "BUSY"
-        elif sub_status in charging_states:
-            return "CHARGING"
-        elif sub_status in idle_states:
-            return "IDLE"
-        elif sub_status in error_states:
-            return "ERROR"
-        return "IDLE" # Default
 
     async def _poll_loop(self, poll) -> None:
         """Poll `poll` forever at the configured frequency. Supervised: a crash restarts it."""

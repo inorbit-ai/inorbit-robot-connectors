@@ -213,6 +213,33 @@ async def test_health_key_values_publish_every_tick(
     assert len(health_calls) == 2
     assert health_calls[0].kwargs["api_connected"] is True
     assert health_calls[0].kwargs["robot_attached"] is True
+    assert health_calls[0].kwargs["robot_online"] is True
+    assert health_calls[0].kwargs["offline_reason"] == ""
+
+
+@pytest.mark.asyncio
+async def test_health_key_values_name_why_the_robot_is_offline(
+    connector_config, mock_robot_manager, mock_executor_cls
+):
+    """The reason has to keep arriving while the robot is offline: it is the only
+    published value that says the connector decided this, rather than InOrbit having
+    lost the session."""
+    connector = OmronConnector(connector_config, robot_manager=mock_robot_manager)
+    connector.publish_robot_pose = MagicMock()
+    connector.publish_robot_key_values = MagicMock()
+    connector.publish_robot_odometry = MagicMock()
+
+    mock_robot_manager._last_fetched_at["Robot1_FlowCore"] -= mock_robot_manager._grace_secs + 1
+
+    await connector._execution_loop()
+
+    health = next(
+        call.kwargs
+        for call in connector.publish_robot_key_values.call_args_list
+        if "api_connected" in call.kwargs
+    )
+    assert health["robot_online"] is False
+    assert health["offline_reason"] == "no_telemetry"
 
 
 @pytest.mark.asyncio

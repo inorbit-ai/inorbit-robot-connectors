@@ -166,6 +166,7 @@ class OmronConnector(FleetConnector):
                         api_connected=api_connected,
                         robot_attached=self.robot_manager.is_attached(fleet_robot_id),
                         connector_version=__version__,
+                        offline_reason=self.robot_manager.offline_reason(fleet_robot_id),
                     ),
                 )
 

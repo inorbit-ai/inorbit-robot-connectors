@@ -317,18 +317,33 @@ class RobotManager:
         return self.offline_reason(fleet_robot_id) is None
 
     def update_millis(self, fleet_robot_id: str, keys: tuple[str, ...]) -> Optional[tuple]:
-        """The upd.millis values for a set of cached items, or None if none is cached.
+        """The upd.millis of cached fleet-summary records, or None if none is cached.
 
-        Doubles as a change token: FlowCore does not restamp a DataStore item whose value
-        is unchanged, so unchanged values mean the vendor has nothing new for these items.
-        Items the vendor never reported are skipped rather than vetoing the whole result,
-        so a robot missing one of them still publishes on the others.
+        A change token for `/Robot/UpdatedSince` only: that is a changed-since query, so
+        a summary's stamp holds while its status is unchanged (observed frozen at 17 days
+        and at 4 hours on a live Fleet Manager). Do not use it for DataStore items: every
+        `/DataStoreValueLatest` call fetches from the AMR and stamps the fetch, so their
+        stamps are our own read time and advance on every poll. Compare those by value,
+        see `data_values`.
         """
         data = self._robot_data.get(fleet_robot_id, {})
         items = [data[key] for key in keys if key in data]
         if not items:
             return None
         return tuple(item.upd.millis for item in items)
+
+    def data_values(self, fleet_robot_id: str, keys: tuple[str, ...]) -> Optional[tuple]:
+        """The values of cached DataStore items, or None if none is cached.
+
+        The change token for robot telemetry, since a DataStore stamp only says when we
+        last asked. Items the vendor never reported are skipped rather than vetoing the
+        whole result, so a robot missing one of them still publishes on the others.
+        """
+        data = self._robot_data.get(fleet_robot_id, {})
+        items = [data[key] for key in keys if key in data]
+        if not items:
+            return None
+        return tuple(item.value for item in items)
 
     def get_robot_pose(self, fleet_robot_id: str) -> Optional[dict]:
         """Get cached pose for a specific robot."""

@@ -66,7 +66,10 @@ async def test_stop():
 
 
 @pytest.mark.asyncio
-async def test_data_store_stamp_holds_while_the_value_is_unchanged():
+async def test_data_store_stamp_is_the_read_time_even_when_the_value_is_unchanged():
+    """As the live Integration Toolkit behaves: /DataStoreValueLatest fetches from the
+    AMR on every call and stamps the fetch. Three reads of an unchanged value 1s apart
+    came back with three stamps tracking the wall clock."""
     client = MockOmronClient()
     await client.connect()
     client.seed_robot("Robot1", x=1000.0)
@@ -74,20 +77,8 @@ async def test_data_store_stamp_holds_while_the_value_is_unchanged():
     first = await client.get_data_store_value("PoseX", "Robot1")
     second = await client.get_data_store_value("PoseX", "Robot1")
 
-    assert first.upd.millis == second.upd.millis
-
-
-@pytest.mark.asyncio
-async def test_data_store_stamp_advances_when_the_value_changes():
-    client = MockOmronClient()
-    await client.connect()
-    client.seed_robot("Robot1", x=1000.0)
-
-    first = await client.get_data_store_value("PoseX", "Robot1")
-    client.seed_robot("Robot1", x=2000.0)
-    second = await client.get_data_store_value("PoseX", "Robot1")
-
-    assert first.upd.millis != second.upd.millis
+    assert first.value == second.value
+    assert second.upd.millis > first.upd.millis
 
 
 @pytest.mark.asyncio

@@ -179,18 +179,28 @@ async def test_health_key_values_publish_every_tick(
 
 
 @pytest.mark.asyncio
-async def test_pose_publishes_once_while_the_token_holds(
+async def test_pose_and_battery_publish_once_while_their_values_hold(
     connector_config, mock_robot_manager, mock_executor_cls
 ):
+    """The details poll runs between the two ticks on purpose: every
+    /DataStoreValueLatest fetch restamps the items, so a gate comparing stamps
+    republishes here and only a gate comparing values stays quiet."""
     connector = OmronConnector(connector_config, robot_manager=mock_robot_manager)
     connector.publish_robot_pose = MagicMock()
     connector.publish_robot_key_values = MagicMock()
     connector.publish_robot_odometry = MagicMock()
 
     await connector._execution_loop()
+    await mock_robot_manager._update_fleet_details()
     await connector._execution_loop()
 
     assert connector.publish_robot_pose.call_count == 1
+    batteries = [
+        call
+        for call in connector.publish_robot_key_values.call_args_list
+        if "battery_percent" in call.kwargs
+    ]
+    assert len(batteries) == 1
 
 
 @pytest.mark.asyncio
@@ -216,15 +226,15 @@ async def test_pose_republishes_when_the_robot_moves(
 async def test_offline_robot_still_publishes_the_vendor_tier(
     connector_config, mock_robot_manager, mock_executor_cls
 ):
-    """A robot that dropped out of the fleet listing is offline, but the API is still
-    connected, so the vendor tier (FlowCore's own statement about it) must keep
-    publishing. Withholding it is what left a dropped robot displaying its
+    """A robot the Fleet Manager has stopped fetching values from is offline, but the
+    API is still connected, so the vendor tier (FlowCore's own statement about it)
+    must keep publishing. Withholding it is what left a dropped robot displaying its
     pre-disconnect status."""
     connector = OmronConnector(connector_config, robot_manager=mock_robot_manager)
     connector.publish_robot_key_values = MagicMock()
     connector.publish_robot_pose = MagicMock()
     connector.publish_robot_odometry = MagicMock()
-    mock_robot_manager._present.discard("Robot1_FlowCore")
+    mock_robot_manager._last_fetched_at["Robot1_FlowCore"] -= mock_robot_manager._grace_secs + 1
 
     await connector._execution_loop()
 
@@ -240,12 +250,12 @@ async def test_offline_robot_still_publishes_the_vendor_tier(
 
 
 @pytest.mark.asyncio
-async def test_offline_robot_keeps_publishing_the_telemetry_it_still_reports(
+async def test_arcl_lost_robot_is_online_and_keeps_publishing_telemetry(
     connector_config, mock_robot_manager, mock_executor_cls
 ):
-    """A robot whose ARCL link the Fleet Manager has lost is reported offline, yet it
-    keeps reporting its own pose and battery. That live pose is what somebody needs to
-    go and find it, so the telemetry tier gates on its change token alone."""
+    """`OutgoingArclConnectionLost` is the Fleet Manager's command channel, not the
+    robot. A robot carrying it that the Fleet Manager still fetches values from is
+    online, and its live pose is what somebody needs to go and find it."""
     connector = OmronConnector(connector_config, robot_manager=mock_robot_manager)
     connector.publish_robot_pose = MagicMock()
     connector.publish_robot_key_values = MagicMock()
@@ -260,7 +270,8 @@ async def test_offline_robot_keeps_publishing_the_telemetry_it_still_reports(
         sub_status="OutgoingArclConnectionLost",
     )
     await mock_robot_manager._update_fleet_state()
-    assert connector._is_fleet_robot_online("Robot1") is False
+    await mock_robot_manager._update_fleet_details()
+    assert connector._is_fleet_robot_online("Robot1") is True
 
     await connector._execution_loop()
     mock_robot_manager.api.seed_robot(
@@ -327,9 +338,9 @@ async def test_disconnected_robot_still_publishes_vendor_key_values(
     once the robot is reported disconnected.
 
     Telemetry is not asserted here: a truly disconnected robot answers
-    `/DataStoreValueLatest` with nothing, so its token stops advancing and the tier
+    `/DataStoreValueLatest` with nothing, so its cached values hold and the tier
     goes quiet on its own. That is the same mechanism
-    `test_pose_publishes_once_while_the_token_holds` pins."""
+    `test_pose_and_battery_publish_once_while_their_values_hold` pins."""
     connector = OmronConnector(connector_config, robot_manager=mock_robot_manager)
     connector.publish_robot_pose = MagicMock()
     connector.publish_robot_key_values = MagicMock()

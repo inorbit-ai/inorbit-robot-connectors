@@ -78,9 +78,9 @@ def build_vendor_key_values(summary: Optional[RobotResponse]) -> dict[str, Any]:
 def build_robot_key_values(battery: Optional[DataStoreResponse]) -> dict[str, Any]:
     """The robot's own telemetry, from `/DataStoreValueLatest`.
 
-    Published on its change token alone, with no online check on top: a robot whose
+    Published when the value changes, with no online check on top: a robot whose
     ARCL link the Fleet Manager has lost keeps reporting here, and a robot that has
-    truly dropped reports nothing at all, so the token stops advancing by itself.
+    truly dropped reports nothing at all, so the cached value holds by itself.
     """
     if battery is None:
         return {}

@@ -372,40 +372,69 @@ async def test_a_failing_details_poll_does_not_refresh_the_fetch_clock(robot_man
 
 
 @pytest.mark.asyncio
-async def test_update_millis_is_none_until_the_cache_is_populated(robot_manager):
-    assert robot_manager.update_millis("Robot1", ("PoseX", "PoseY")) is None
+async def test_data_values_is_none_until_the_cache_is_populated(robot_manager):
+    assert robot_manager.data_values("Robot1", ("PoseX", "PoseY")) is None
 
 
 @pytest.mark.asyncio
-async def test_update_millis_uses_the_keys_that_are_present(robot_manager):
+async def test_data_values_uses_the_keys_that_are_present(robot_manager):
     await robot_manager._update_fleet_details()
 
-    partial = robot_manager.update_millis("Robot1", ("PoseX", "NeverReported"))
-    full = robot_manager.update_millis("Robot1", ("PoseX",))
+    partial = robot_manager.data_values("Robot1", ("PoseX", "NeverReported"))
+    full = robot_manager.data_values("Robot1", ("PoseX",))
 
     assert partial == full
     assert partial is not None
 
 
 @pytest.mark.asyncio
-async def test_update_millis_holds_while_nothing_changed(robot_manager):
+async def test_data_values_hold_while_nothing_changed_even_though_stamps_advance(robot_manager):
+    """The stamps are our own read time and move on every poll; the values are the
+    only thing that can say the vendor has nothing new."""
     await robot_manager._update_fleet_details()
-    first = robot_manager.update_millis("Robot1", ("PoseX", "PoseY", "PoseTh"))
+    first = robot_manager.data_values("Robot1", ("PoseX", "PoseY", "PoseTh"))
+    first_millis = robot_manager.update_millis("Robot1", ("PoseX",))
 
     await robot_manager._update_fleet_details()
-    second = robot_manager.update_millis("Robot1", ("PoseX", "PoseY", "PoseTh"))
+    second = robot_manager.data_values("Robot1", ("PoseX", "PoseY", "PoseTh"))
+    second_millis = robot_manager.update_millis("Robot1", ("PoseX",))
+
+    assert first is not None
+    assert first == second
+    assert second_millis != first_millis
+
+
+@pytest.mark.asyncio
+async def test_data_values_change_when_the_pose_moves(robot_manager):
+    await robot_manager._update_fleet_details()
+    first = robot_manager.data_values("Robot1", ("PoseX", "PoseY", "PoseTh"))
+
+    robot_manager.api.seed_robot("Robot1", x=9999.0, y=2000.0, theta=90.0, battery=50.0)
+    await robot_manager._update_fleet_details()
+    second = robot_manager.data_values("Robot1", ("PoseX", "PoseY", "PoseTh"))
+
+    assert first != second
+
+
+@pytest.mark.asyncio
+async def test_summary_update_millis_holds_while_the_status_is_unchanged(robot_manager):
+    await robot_manager._update_fleet_state()
+    first = robot_manager.update_millis("Robot1", ("summary",))
+
+    await robot_manager._update_fleet_state()
+    second = robot_manager.update_millis("Robot1", ("summary",))
 
     assert first is not None
     assert first == second
 
 
 @pytest.mark.asyncio
-async def test_update_millis_changes_when_the_pose_moves(robot_manager):
-    await robot_manager._update_fleet_details()
-    first = robot_manager.update_millis("Robot1", ("PoseX", "PoseY", "PoseTh"))
+async def test_summary_update_millis_changes_when_the_status_changes(robot_manager):
+    await robot_manager._update_fleet_state()
+    first = robot_manager.update_millis("Robot1", ("summary",))
 
-    robot_manager.api.seed_robot("Robot1", x=9999.0, y=2000.0, theta=90.0, battery=50.0)
-    await robot_manager._update_fleet_details()
-    second = robot_manager.update_millis("Robot1", ("PoseX", "PoseY", "PoseTh"))
+    robot_manager.api.seed_robot("Robot1", sub_status="Driving")
+    await robot_manager._update_fleet_state()
+    second = robot_manager.update_millis("Robot1", ("summary",))
 
     assert first != second

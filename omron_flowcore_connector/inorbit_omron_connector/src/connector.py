@@ -34,7 +34,9 @@ from .mission.executor import OmronMissionExecutor
 
 LOGGER = logging.getLogger(__name__)
 
-# Cached items whose upd.millis forms each publish's change token
+# Cached items each publish is gated on. The summary tier compares upd.millis, a real
+# change token on /Robot/UpdatedSince; the DataStore tiers compare values, since a
+# DataStore stamp is only the time of our own fetch.
 POSE_KEYS = ("PoseX", "PoseY", "PoseTh")
 SUMMARY_KEYS = ("summary",)
 TELEMETRY_KEYS = ("StateOfCharge",)
@@ -97,8 +99,8 @@ class OmronConnector(FleetConnector):
         # republishes even if FlowCore has nothing newer. The rest are never
         # withheld, so they have nothing to catch up on.
         self._summary_update_millis: dict[str, tuple] = {}
-        self._pose_update_millis: dict[str, tuple] = {}
-        self._telemetry_update_millis: dict[str, tuple] = {}
+        self._pose_values: dict[str, tuple] = {}
+        self._telemetry_values: dict[str, tuple] = {}
         self._mission_payloads: dict[str, dict] = {}
 
         # Initialize Mission Executor
@@ -140,12 +142,13 @@ class OmronConnector(FleetConnector):
           and on the API being connected. This is FlowCore's own statement about the
           robot, and it keeps arriving correctly even while the robot itself is
           unreachable, so it must not wait for the robot to be online.
-        - Robot telemetry, from `/DataStoreValueLatest`: gated on its own change
-          token alone. The token is what makes this data fresh, so no online check
-          is needed on top of it: a robot the Fleet Manager cannot command may still
-          be reporting its own battery and pose, and that pose is what an operator
-          needs to go find it. A robot that has truly dropped reports nothing, so
-          its token never advances and nothing publishes.
+        - Robot telemetry, from `/DataStoreValueLatest`: gated on the values
+          themselves having changed, with no online check on top. Every call to that
+          endpoint fetches from the AMR and stamps the fetch, so its `upd.millis` is
+          our own read time and cannot gate anything; the value can. No online check
+          is needed either: a robot that stops answering stops producing values, so
+          the cache holds and nothing publishes, and a reachable robot's live pose is
+          what an operator needs whatever its status says.
         """
         for robot_id in self.robot_ids:
             try:
@@ -187,28 +190,26 @@ class OmronConnector(FleetConnector):
                             self.publish_robot_key_values(robot_id, **vendor_kv)
                         self._summary_update_millis[robot_id] = summary_millis
 
-                # Token is stored after the publish calls, not before: if a publish
+                # Values are stored after the publish calls, not before: if a publish
                 # raises, the except below skips the store too, so the next tick sees
-                # the same token as unpublished and retries instead of skipping forever.
-                pose_millis = self.robot_manager.update_millis(fleet_robot_id, POSE_KEYS)
-                if pose_millis is not None and pose_millis != self._pose_update_millis.get(
-                    robot_id
-                ):
+                # the same values as unpublished and retries instead of skipping forever.
+                pose_values = self.robot_manager.data_values(fleet_robot_id, POSE_KEYS)
+                if pose_values is not None and pose_values != self._pose_values.get(robot_id):
                     if pose := self.robot_manager.get_robot_pose(fleet_robot_id):
                         self.publish_robot_pose(robot_id, **pose)
-                    # Odometry rides the pose token; if it starts returning real data,
+                    # Odometry rides the pose gate; if it starts returning real data,
                     # check that data is actually covered by POSE_KEYS.
                     if odometry := self.robot_manager.get_robot_odometry(fleet_robot_id):
                         self.publish_robot_odometry(robot_id, **odometry)
-                    self._pose_update_millis[robot_id] = pose_millis
+                    self._pose_values[robot_id] = pose_values
 
-                kv_millis = self.robot_manager.update_millis(fleet_robot_id, TELEMETRY_KEYS)
-                if kv_millis is not None and kv_millis != self._telemetry_update_millis.get(
-                    robot_id
+                telemetry_values = self.robot_manager.data_values(fleet_robot_id, TELEMETRY_KEYS)
+                if telemetry_values is not None and telemetry_values != (
+                    self._telemetry_values.get(robot_id)
                 ):
                     if key_values := self.robot_manager.get_robot_key_values(fleet_robot_id):
                         self.publish_robot_key_values(robot_id, **key_values)
-                    self._telemetry_update_millis[robot_id] = kv_millis
+                    self._telemetry_values[robot_id] = telemetry_values
 
                 # The job streams carry no DataStore token, so the payload itself is
                 # the only thing that can say whether the mission changed

@@ -26,9 +26,10 @@ CHARGING_SUB_STATUSES = frozenset(
     {"Docked", "Docking", "Charging", "DockParking", "DockParked", "ForcedDocking"}
 )
 # `Disconnected` is undocumented: found by probing a live Fleet Manager, not in
-# the manual. Without it, a dropped robot maps to IDLE and looks available. It and
-# `OutgoingArclConnectionLost` are also the two sub-statuses that make a robot
-# offline, and anything reported offline must not also report a healthy status.
+# the manual. Without it, a dropped robot maps to IDLE and looks available.
+# `OutgoingArclConnectionLost` is the Fleet Manager's own command channel being
+# down, not the robot being unreachable, so the robot stays online; ERROR is how
+# an operator learns FlowCore cannot dispatch to it.
 ERROR_SUB_STATUSES = frozenset(
     {
         "EstopPressed",

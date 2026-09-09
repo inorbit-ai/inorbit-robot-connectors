@@ -193,3 +193,177 @@ async def test_start_registers_supervised_tasks(manager_config):
         assert not task.done()
 
     await manager.stop()
+
+
+@pytest.mark.asyncio
+async def test_grace_is_derived_from_the_poll_rate_with_a_floor(manager_config):
+    """Three missed polls, but never under the 10s the Fleet Manager itself takes to
+    reflect a change: at 1 Hz the floor is what protects against a ~2s wildcard fetch."""
+    assert RobotManager(manager_config, api_client=MockOmronClient())._grace_secs == 10.0
+    assert (
+        RobotManager(manager_config, api_client=MockOmronClient(), default_update_freq=0.1)._grace_secs
+        == 30.0
+    )
+
+
+@pytest.mark.asyncio
+async def test_clocks_are_seeded_so_startup_is_not_reported_offline(manager_config):
+    """A freshly constructed manager has not polled yet, but the grace period must
+    cover startup the same way it covers an outage, or every connector start and
+    restart publishes a spurious offline transition."""
+    manager_config.fleet = [MagicMock(fleet_robot_id="Robot1", ip_address=None)]
+    manager = RobotManager(manager_config, api_client=MockOmronClient())
+
+    assert manager.api_connected() is True
+    assert manager.is_online("Robot1") is True
+
+
+@pytest.mark.asyncio
+async def test_online_once_the_fleet_manager_fetches_a_value_from_the_robot(robot_manager):
+    await robot_manager._update_fleet_state()
+    assert robot_manager.is_online("Robot1") is False, "nothing fetched yet"
+
+    await robot_manager._update_fleet_details()
+
+    assert robot_manager.is_reporting("Robot1") is True
+    assert robot_manager.is_online("Robot1") is True
+    assert robot_manager.offline_reason("Robot1") is None
+
+
+def _age_fetch(robot_manager, fleet_robot_id="Robot1"):
+    robot_manager._last_fetched_at[fleet_robot_id] -= robot_manager._grace_secs + 1.0
+
+
+def _age_sweep(robot_manager):
+    robot_manager._last_sweep_ok_at -= robot_manager._grace_secs + 1.0
+
+
+@pytest.mark.asyncio
+async def test_offline_as_no_telemetry_once_fetches_stop(robot_manager):
+    await robot_manager._update_fleet_state()
+    await robot_manager._update_fleet_details()
+    _age_fetch(robot_manager)
+
+    assert robot_manager.api_connected() is True
+    assert robot_manager.is_attached("Robot1") is True
+    assert robot_manager.offline_reason("Robot1") == "no_telemetry"
+
+
+@pytest.mark.asyncio
+async def test_stays_online_while_within_the_grace_period(robot_manager):
+    await robot_manager._update_fleet_state()
+    await robot_manager._update_fleet_details()
+    robot_manager.api._connected = False
+
+    await robot_manager._update_fleet_state()
+    await robot_manager._update_fleet_details()
+
+    assert robot_manager.api_connected() is True
+    assert robot_manager.is_online("Robot1") is True
+
+
+@pytest.mark.asyncio
+async def test_still_online_while_the_fleet_endpoint_fails_if_fetches_succeed(robot_manager):
+    """The fleet sweep is one endpoint; the robot's values are another. A robot the
+    Fleet Manager keeps fetching from is reachable, whatever /Robot/UpdatedSince is
+    doing. The failing endpoint shows up in `api_connected`, not in availability."""
+    await robot_manager._update_fleet_state()
+    await robot_manager._update_fleet_details()
+    _age_sweep(robot_manager)
+
+    assert robot_manager.api_connected() is False
+    assert robot_manager.is_online("Robot1") is True
+
+
+@pytest.mark.asyncio
+async def test_api_unreachable_outranks_every_other_reason(robot_manager):
+    robot_manager.api.seed_robot("Robot1", status="Disconnected", sub_status="Disconnected")
+    await robot_manager._update_fleet_state()
+    await robot_manager._update_fleet_details()
+    _age_sweep(robot_manager)
+    _age_fetch(robot_manager)
+
+    assert robot_manager.offline_reason("Robot1") == "api_unreachable"
+
+
+@pytest.mark.asyncio
+async def test_not_in_fleet_when_the_sweep_dropped_the_robot(robot_manager):
+    await robot_manager._update_fleet_state()
+    await robot_manager._update_fleet_details()
+    robot_manager.api._robots.pop("Robot1")
+    await robot_manager._update_fleet_state()
+    _age_fetch(robot_manager)
+
+    assert robot_manager.api_connected() is True
+    assert robot_manager.is_attached("Robot1") is False
+    assert robot_manager.offline_reason("Robot1") == "not_in_fleet"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "status, sub_status",
+    [
+        ("Disconnected", "Disconnected"),
+        ("Disconnected", "Unallocated"),
+        ("Available", "Disconnected"),
+    ],
+)
+async def test_disconnected_explains_an_offline_robot(robot_manager, status, sub_status):
+    robot_manager.api.seed_robot("Robot1", status=status, sub_status=sub_status)
+    await robot_manager._update_fleet_state()
+    await robot_manager._update_fleet_details()
+    _age_fetch(robot_manager)
+
+    assert robot_manager.is_attached("Robot1") is True
+    assert robot_manager.offline_reason("Robot1") == "disconnected"
+
+
+@pytest.mark.asyncio
+async def test_a_fetched_value_outranks_a_disconnected_verdict(robot_manager):
+    """If the Fleet Manager says Disconnected but is still fetching values from the
+    robot, the robot is reachable and the fetch wins. Statuses explain, they do not
+    decide."""
+    robot_manager.api.seed_robot("Robot1", status="Disconnected", sub_status="Disconnected")
+    await robot_manager._update_fleet_state()
+    await robot_manager._update_fleet_details()
+
+    assert robot_manager.is_online("Robot1") is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "sub_status",
+    ["Fault", "Lost", "EstopPressed", "MotorsDisabled", "OutgoingArclConnectionLost"],
+)
+async def test_stays_online_when_faulted_or_arcl_lost(robot_manager, sub_status):
+    """`OutgoingArclConnectionLost` is the Fleet Manager's command channel, not the
+    robot: a live one kept fetching battery and pose from a robot carrying it for
+    hours, and the robot answered ICMP and its ARCL port."""
+    robot_manager.api.seed_robot(
+        "Robot1", status="Unavailable_NeedsAssistance", sub_status=sub_status, x=1.0, battery=1.0
+    )
+    await robot_manager._update_fleet_state()
+    await robot_manager._update_fleet_details()
+
+    assert robot_manager.is_online("Robot1") is True
+
+
+@pytest.mark.asyncio
+async def test_is_online_and_offline_reason_cannot_disagree(robot_manager):
+    await robot_manager._update_fleet_state()
+    await robot_manager._update_fleet_details()
+    assert robot_manager.is_online("Robot1") is (robot_manager.offline_reason("Robot1") is None)
+
+    _age_fetch(robot_manager)
+    assert robot_manager.is_online("Robot1") is (robot_manager.offline_reason("Robot1") is None)
+
+
+@pytest.mark.asyncio
+async def test_a_failing_details_poll_does_not_refresh_the_fetch_clock(robot_manager):
+    await robot_manager._update_fleet_details()
+    before = robot_manager._last_fetched_at["Robot1"]
+    robot_manager.api._connected = False
+
+    await robot_manager._update_fleet_details()
+
+    assert robot_manager._last_fetched_at["Robot1"] == before

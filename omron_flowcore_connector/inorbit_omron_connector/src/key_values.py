@@ -12,9 +12,12 @@ the robot's own telemetry, which keeps flowing for as long as the robot is
 reporting, whether or not the Fleet Manager can still command it.
 """
 
+import logging
 from typing import Any, Optional
 
 from .omron.models import DataStoreResponse, RobotResponse
+
+LOGGER = logging.getLogger(__name__)
 
 BUSY_SUB_STATUSES = frozenset(
     {"Driving", "BeforePickup", "AfterDropoff", "BeforeDropoff", "BeforeEvery", "AfterEvery"}
@@ -22,9 +25,22 @@ BUSY_SUB_STATUSES = frozenset(
 CHARGING_SUB_STATUSES = frozenset(
     {"Docked", "Docking", "Charging", "DockParking", "DockParked", "ForcedDocking"}
 )
+# `Disconnected` is undocumented: found by probing a live Fleet Manager, not in
+# the manual. Without it, a dropped robot maps to IDLE and looks available.
+# `OutgoingArclConnectionLost` is the Fleet Manager's own command channel being
+# down, not the robot being unreachable, so the robot stays online; ERROR is how
+# an operator learns FlowCore cannot dispatch to it.
 ERROR_SUB_STATUSES = frozenset(
-    {"EStopPressed", "Fault", "MotorsDisabled", "Lost", "NotLocalized"}
+    {
+        "EstopPressed",
+        "Fault",
+        "MotorsDisabled",
+        "Lost",
+        "Disconnected",
+        "OutgoingArclConnectionLost",
+    }
 )
+IDLE_SUB_STATUSES = frozenset({"Available", "Parked", "Allocated", "Unallocated"})
 
 
 def map_status(sub_status: str) -> str:
@@ -35,6 +51,13 @@ def map_status(sub_status: str) -> str:
         return "CHARGING"
     if sub_status in ERROR_SUB_STATUSES:
         return "ERROR"
+    if sub_status in IDLE_SUB_STATUSES:
+        return "IDLE"
+    # Reached only by a documented-but-unclassified value (e.g. AvailableForJobs,
+    # Parking, Interrupted) or a genuinely unknown one. Either way this connector
+    # has no classification for it: the warning is a prompt to classify it, not
+    # noise to silence.
+    LOGGER.warning("Unrecognised sub-status %r, publishing as IDLE.", sub_status)
     return "IDLE"
 
 

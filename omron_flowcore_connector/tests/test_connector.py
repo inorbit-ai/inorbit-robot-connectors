@@ -5,6 +5,7 @@
 import pytest_asyncio
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
+from inorbit_connector.connector import FleetConnector
 from inorbit_omron_connector import __version__
 from inorbit_omron_connector.src.connector import OmronConnector
 from inorbit_omron_connector.src.config.models import FlowCoreConnectorConfig, FlowCoreConfig
@@ -25,6 +26,35 @@ def test_connector_wires_supervisor(connector_config, mock_executor_cls):
 
     assert connector.robot_manager._create_supervised_task == connector._create_supervised_task
     assert connector._mission_tracking._create_supervised_task == connector._create_supervised_task
+
+
+def test_connector_enables_system_stats_publishing(connector_config, mock_executor_cls):
+    """Dropping this kwarg would silently revert every robot's CPU, RAM and disk
+    stats to zeroes with no test failing."""
+    with patch.object(
+        FleetConnector, "__init__", autospec=True, wraps=FleetConnector.__init__
+    ) as mock_init:
+        OmronConnector(connector_config)
+
+    assert mock_init.call_args.kwargs["publish_connector_system_stats"] is True
+
+
+@pytest.mark.asyncio
+async def test_disconnect_stops_robot_manager_last(connector_config, mock_executor_cls):
+    """robot_manager.stop() closes the shared httpx client and must run after the
+    executor and the tracker, or a mission worker cancelled mid-call would hit
+    _request and silently reopen a client nothing closes again."""
+    connector = OmronConnector(connector_config)
+    order = []
+    connector._mission_executor.shutdown = AsyncMock(
+        side_effect=lambda: order.append("executor")
+    )
+    connector._mission_tracking.stop = AsyncMock(side_effect=lambda: order.append("tracking"))
+    connector.robot_manager.stop = AsyncMock(side_effect=lambda: order.append("robot_manager"))
+
+    await connector._disconnect()
+
+    assert order == ["executor", "tracking", "robot_manager"]
 
 
 @pytest.mark.asyncio
@@ -130,6 +160,13 @@ async def test_connector_command_handler_stop(connector_config, mock_robot_manag
     assert job_cancel["cancelReason"] == "Test Stop"
     
     options["result_function"].assert_called_with("0")
+
+
+def test_is_fleet_robot_online_is_actually_overridden():
+    """Every other test calls _is_fleet_robot_online directly, which would still pass
+    against a typo'd method name or a base-class rename: nothing would exercise the
+    framework's own binding. This checks the override took, not just its behavior."""
+    assert OmronConnector._is_fleet_robot_online is not FleetConnector._is_fleet_robot_online
 
 
 @pytest.mark.asyncio

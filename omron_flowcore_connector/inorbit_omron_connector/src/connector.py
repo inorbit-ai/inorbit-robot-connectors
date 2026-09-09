@@ -152,7 +152,7 @@ class OmronConnector(FleetConnector):
         """
         for robot_id in self.robot_ids:
             try:
-                fleet_robot_id = self._robot_id_to_fleet_id.get(robot_id)
+                fleet_robot_id = self._get_fleet_robot_id(robot_id)
                 if not fleet_robot_id:
                     continue
 
@@ -194,7 +194,8 @@ class OmronConnector(FleetConnector):
                 # raises, the except below skips the store too, so the next tick sees
                 # the same values as unpublished and retries instead of skipping forever.
                 pose_values = self.robot_manager.data_values(fleet_robot_id, POSE_KEYS)
-                if pose_values is not None and pose_values != self._pose_values.get(robot_id):
+                last_pose_values = self._pose_values.get(robot_id)
+                if pose_values is not None and pose_values != last_pose_values:
                     if pose := self.robot_manager.get_robot_pose(fleet_robot_id):
                         self.publish_robot_pose(robot_id, **pose)
                     # Odometry rides the pose gate; if it starts returning real data,
@@ -204,9 +205,8 @@ class OmronConnector(FleetConnector):
                     self._pose_values[robot_id] = pose_values
 
                 telemetry_values = self.robot_manager.data_values(fleet_robot_id, TELEMETRY_KEYS)
-                if telemetry_values is not None and telemetry_values != (
-                    self._telemetry_values.get(robot_id)
-                ):
+                last_telemetry_values = self._telemetry_values.get(robot_id)
+                if telemetry_values is not None and telemetry_values != last_telemetry_values:
                     if key_values := self.robot_manager.get_robot_key_values(fleet_robot_id):
                         self.publish_robot_key_values(robot_id, **key_values)
                     self._telemetry_values[robot_id] = telemetry_values

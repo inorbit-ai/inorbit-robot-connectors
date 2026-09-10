@@ -8,9 +8,9 @@ SPDX-License-Identifier: MIT
 
 Status: **proposal**, nothing applied. Cleaning robots are a vertical to support
 properly: this contract targets **any cleaning-robot connector** (reference mappings:
-Gausium and Pudu; Karcher mapped for completeness), so account config
+Gausium and a second OEM connector; a third OEM mapped for completeness), so account config
 (DataSourceDefinitions, KPI definitions, dashboards, per-zone coverage) becomes a vertical
-template that works unchanged across OEMs and customers. When an OEM cannot provide a
+template that works unchanged across OEMs. When an OEM cannot provide a
 field it is declared as a per-OEM gap — the field stays in the contract for everyone
 else.
 
@@ -59,7 +59,7 @@ they land in mission data and are consumed by KPI definitions)
 | `report_image_url` | url | OEM-rendered coverage/report image |
 
 Per-zone coverage fields (`zone_<slug>_planned_m2/actual_m2/pct`) ride alongside; a
-per-zone design spec exists internally and is tracked separately from this doc.
+per-zone design spec is tracked separately from this doc.
 
 ### Live (timeline) datasources — basic observability
 
@@ -97,7 +97,7 @@ key-value:
 
 Deriving in the connector keeps the account config OEM-agnostic and makes the Modes
 panel a trivial 1:1 mapping; raw vendor states remain available through `task_state`
-for debugging. **Current state / migration:** the Pudu connector already publishes this
+for debugging. **Current state / migration:** the OEM B connector already publishes this
 enum; Gausium currently emits raw vendor strings via a tag-level derived datasource
 (bucketed in the Modes config) and should migrate the derivation into the connector
 soon.
@@ -108,7 +108,7 @@ soon.
 `consumable_brush_pct`/`consumable_filter_pct`/`consumable_suction_blade_pct` (per-report
 residuals), `polished_area_planned_m2`/`polished_area_m2`, `operator`, `distance_m`.
 
-Excluded on purpose: `energy_kwh` (Pudu documents its own value as error-prone; Gausium
+Excluded on purpose: `energy_kwh` (OEM B documents its own value as error-prone; Gausium
 has none — battery deltas cover it); distance as a common field (the platform derives
 `estimatedDistance` from poses where they exist; OEM-reported distance is an extra);
 tank end-levels as mission fields (they are live datasources).
@@ -140,7 +140,7 @@ tank end-levels as mission fields (they are live datasources).
 | `speed_kmph` | status `speedKilometerPerHour` | **add/verify** |
 | `mission_status` | derive from `taskState` + `battery.charging` + `emergencyStop.enabled` | **add** (today a tag-level derived DSD emits raw strings, bucketed in the Modes config) |
 
-### Pudu (CC1 / CC1 Pro, Open Platform API)
+### OEM B (Open Platform API)
 
 | Contract key | Source | Status |
 |---|---|---|
@@ -167,7 +167,7 @@ tank end-levels as mission fields (they are live datasources).
 | `speed_kmph` | — | not exposed by the API |
 | `mission_status` | derived from `run_state` + `move_state` + `is_charging` | published (normalized enum) |
 
-### Karcher (KIRA) — for completeness, not planned now
+### OEM C — for completeness, not planned now
 
 Existing integration keys map cleanly: `area cleaned (last mission)` → `cleaned_area_m2`;
 planned = cleaned + `area uncleaned (last mission)`; `coverage (last mission)` →
@@ -191,14 +191,14 @@ extra. Caveat: `dirt_water_full` is bool-only → `recovery_tank_pct` as 0/100.
    Gausium docs, values suggest hours: confirm with OEM); battery health (`battery.soh`,
    `battery.cycleTimes`).
 
-**Pudu connector (all from endpoints it already polls):**
+**OEM B connector (all from endpoints it already polls):**
 1. Publish canonical mission-data keys alongside current labels; add `coverage_pct`,
    `efficiency_m2ph`, `duration_s` derivations, `interruptions_count`, `cleaning_mode`
    mapping, `map_name`, `report_image_url`.
 2. Live key-values: `task_state` (decoded status), `robot_online` (detail `online`),
    `current_map_name` (+ floor), `clean_water_tank_pct` (`rising`), `recovery_tank_pct`
    (`sewage`).
-3. Battery convention: Pudu publishes 0–1 today (matches the contract); Gausium
+3. Battery convention: OEM B publishes 0–1 today (matches the contract); Gausium
    publishes 0–100 — its canonical `battery_pct` must be 0–1 (or keep the tag adapter
    with `scale: 0.01` until then).
 4. High-value: live task progress (`clean.result.area`/`time` mid-run).
@@ -236,15 +236,7 @@ moves to canonical fields → legacy label keys drop.
 ## Field-semantics sources
 
 Gausium developer docs (developer.gs-robot.com, "V1 Get Robot Status": tank levels are %,
-`mapPosition` grid vs world meters, angle in degrees, speed km/h). Pudu portal is JS-only;
-semantics come from the Pudu connector's curated mission code (`rising` = fresh-water %,
+`mapPosition` grid vs world meters, angle in degrees, speed km/h). OEM B's portal is JS-only;
+semantics come from the OEM B connector's curated mission code (`rising` = fresh-water %,
 `sewage` = %, `clean.result.status` map, `cost_water` L) plus live probes (`z` = heading,
 verified against published theta).
-
----
-
-_Migrated from an internal config repo's `specs/DataSourceDefinition/README.md` into this
-public, vertical-agnostic location so it can serve as a shared reference across
-connectors instead of living inside one account's config. Internal links and
-customer-specific evidence paths were removed on migration; the contract content itself
-is unchanged._

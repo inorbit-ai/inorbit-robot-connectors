@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any
+from uuid import uuid4
 
 # InOrbit
 from inorbit_connector.commands import CommandFailure, CommandResultCode
@@ -37,6 +38,7 @@ class CustomScripts:
     EXECUTE_MISSION_ACTION = "executeMissionAction"
     CANCEL_MISSION_ACTION = "cancelMissionAction"
     UPDATE_MISSION_ACTION = "updateMissionAction"
+    GOTO_GOALS = "gotoGoals"
 
 
 class OmronMissionExecutor:
@@ -133,6 +135,7 @@ class OmronMissionExecutor:
             CustomScripts.EXECUTE_MISSION_ACTION,
             CustomScripts.CANCEL_MISSION_ACTION,
             CustomScripts.UPDATE_MISSION_ACTION,
+            CustomScripts.GOTO_GOALS,
         }:
             return False
 
@@ -149,6 +152,9 @@ class OmronMissionExecutor:
                 
             elif script_name == CustomScripts.UPDATE_MISSION_ACTION:
                 await self._handle_update_mission_action(script_args, options)
+
+            elif script_name == CustomScripts.GOTO_GOALS:
+                await self._handle_goto_goals(robot_id, script_args, options)
                 
         except CommandFailure as exc:
             self._report_failure(script_name, exc, options)
@@ -156,6 +162,41 @@ class OmronMissionExecutor:
             self._report_failure(script_name, exc, options, default_detail="Unexpected error")
 
         return True
+
+    async def _handle_goto_goals(self, robot_id: str, args: dict, options: dict) -> None:
+        """Run the gotoGoals action standalone, as a single step mission.
+
+        Example: customCommand ["gotoGoals", {"goals": "Goal1,Goal2"}]
+        """
+        assert self._worker_pool, "Worker pool not initialized"
+
+        goals = str(args.get("goals") or "").strip()
+        if not goals:
+            raise CommandFailure(
+                execution_status_details="goals is required",
+                stderr="Missing goals",
+            )
+
+        label = f"Go to {goals}"
+        mission = Mission(
+            id=f"gotoGoals_{uuid4().hex[:8]}",
+            robot_id=robot_id,
+            definition={
+                "label": label,
+                "steps": [
+                    {
+                        "label": label,
+                        "runAction": {"actionId": "gotoGoals", "arguments": {"goals": goals}},
+                    }
+                ],
+            },
+        )
+
+        try:
+            await self._worker_pool.submit_work(mission, MissionRuntimeOptions())
+        except Exception as exc:
+            raise self._map_worker_pool_error(exc, mission.id, "submit") from exc
+        options["result_function"](CommandResultCode.SUCCESS)
 
     async def _handle_execute_mission_action(
         self, robot_id: str, args: dict, options: dict

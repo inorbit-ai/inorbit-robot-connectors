@@ -101,3 +101,59 @@ async def test_handle_update_mission_pause(mock_executor_dependencies):
         assert handled is True
         pool_instance.pause_mission.assert_awaited_with("m1")
         options["result_function"].assert_called_with(CommandResultCode.SUCCESS)
+
+
+@pytest.mark.asyncio
+async def test_handle_goto_goals(mock_executor_dependencies):
+    api, omron_api, mapping = mock_executor_dependencies
+
+    with patch("inorbit_omron_connector.src.mission.executor.OmronWorkerPool") as MockPool, \
+         patch("inorbit_omron_connector.src.mission.executor.get_db", AsyncMock()):
+
+        pool_instance = MockPool.return_value
+        pool_instance.start = AsyncMock()
+        pool_instance.submit_work = AsyncMock()
+
+        executor = OmronMissionExecutor(
+            api=api, omron_api_client=omron_api, robot_id_to_fleet_id=mapping
+        )
+        await executor.initialize()
+
+        options = {"result_function": MagicMock()}
+
+        handled = await executor.handle_command(
+            "r1", CustomScripts.GOTO_GOALS, {"goals": "Goal1,Goal2"}, options
+        )
+
+        assert handled is True
+        mission = pool_instance.submit_work.await_args.args[0]
+        assert mission.robot_id == "r1"
+        step = mission.definition.steps[0]
+        assert step.run_action.action_id == "gotoGoals"
+        assert step.run_action.arguments == {"goals": "Goal1,Goal2"}
+        options["result_function"].assert_called_with(CommandResultCode.SUCCESS)
+
+
+@pytest.mark.asyncio
+async def test_handle_goto_goals_requires_goals(mock_executor_dependencies):
+    api, omron_api, mapping = mock_executor_dependencies
+
+    with patch("inorbit_omron_connector.src.mission.executor.OmronWorkerPool") as MockPool, \
+         patch("inorbit_omron_connector.src.mission.executor.get_db", AsyncMock()):
+
+        pool_instance = MockPool.return_value
+        pool_instance.start = AsyncMock()
+        pool_instance.submit_work = AsyncMock()
+
+        executor = OmronMissionExecutor(
+            api=api, omron_api_client=omron_api, robot_id_to_fleet_id=mapping
+        )
+        await executor.initialize()
+
+        options = {"result_function": MagicMock()}
+
+        handled = await executor.handle_command("r1", CustomScripts.GOTO_GOALS, {}, options)
+
+        assert handled is True
+        pool_instance.submit_work.assert_not_awaited()
+        assert options["result_function"].call_args.args[0] == CommandResultCode.FAILURE

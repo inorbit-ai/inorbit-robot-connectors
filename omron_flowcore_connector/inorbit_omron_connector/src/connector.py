@@ -273,7 +273,8 @@ class OmronConnector(FleetConnector):
                 CustomScripts.RESUME_ROBOT, 
                 CustomScripts.DOCK, 
                 CustomScripts.UNDOCK, 
-                CustomScripts.SHUTDOWN
+                CustomScripts.SHUTDOWN,
+                CustomScripts.EXECUTE_MACRO
             ):
                 if not fleet_robot_id:
                     raise CommandFailure(stderr=f"No configuration found for robot {robot_id}", execution_status_details="Config Error")
@@ -299,6 +300,15 @@ class OmronConnector(FleetConnector):
 
                 elif script_name == CustomScripts.SHUTDOWN:
                     await client.shutdown_robot()
+
+                elif script_name == CustomScripts.EXECUTE_MACRO:
+                    macro = str(script_args.get("macro") or "").strip()
+                    if not macro:
+                        raise CommandFailure(
+                            stderr="Missing macro",
+                            execution_status_details="macro is required"
+                        )
+                    await client.execute_macro(macro)
 
             elif await self._mission_executor.handle_command(
                 robot_id, script_name, script_args, options

@@ -27,6 +27,7 @@ class CustomScripts(StrEnum):
     DOCK = "dock"
     UNDOCK = "undock"
     SHUTDOWN = "shutdown"
+    EXECUTE_MACRO = "executeMacro"
     EXECUTE_MISSION_ACTION = "executeMissionAction"
     CANCEL_MISSION_ACTION = "cancelMissionAction"
     UPDATE_MISSION_ACTION = "updateMissionAction"

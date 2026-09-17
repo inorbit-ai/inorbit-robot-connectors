@@ -95,7 +95,10 @@ class OmronApiClient:
             "PoseX": "RobotX",
             "PoseY": "RobotY",
             "PoseTh": "RobotTh",
-            "RobotIP": "RobotIP"
+            "RobotIP": "RobotIP",
+            "ChargeState": "RobotChargeState",
+            "ChargeStateNumber": "RobotChargeStateNumber",
+            "DockingState": "DockingState",
         }
 
         try:

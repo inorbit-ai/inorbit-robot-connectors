@@ -39,7 +39,8 @@ LOGGER = logging.getLogger(__name__)
 # DataStore stamp is only the time of our own fetch.
 POSE_KEYS = ("PoseX", "PoseY", "PoseTh")
 SUMMARY_KEYS = ("summary",)
-TELEMETRY_KEYS = ("StateOfCharge",)
+TELEMETRY_KEYS = ("StateOfCharge", "ChargeState", "DockingState")
+CHARGE_KEYS = ("ChargeStateNumber",)
 
 class OmronConnector(FleetConnector):
     """Connector between FlowCore Fleet and InOrbit."""
@@ -62,7 +63,7 @@ class OmronConnector(FleetConnector):
             base_url=api_url,
             api_key=config.api_key,
         )
-        
+
         # Initialize API client (Real or Mock)
         api_client = None
         if config.connector_config.use_mock:
@@ -83,12 +84,12 @@ class OmronConnector(FleetConnector):
             default_update_freq=config.update_freq,
             create_supervised_task=self._create_supervised_task,
         )
-        
+
         # Initialize Mission Tracking
         self._mission_tracking = OmronMissionTracking(
             self.robot_manager.api, create_supervised_task=self._create_supervised_task
         )
-        
+
         # Build robot_id (InOrbit) to fleet_robot_id (FlowCore NameKey) mapping
         self._robot_id_to_fleet_id: dict[str, str] = {}
         for robot_config in config.fleet:
@@ -98,7 +99,7 @@ class OmronConnector(FleetConnector):
         # forgets its token while the API is down, so the first tick after recovery
         # republishes even if FlowCore has nothing newer. The rest are never
         # withheld, so they have nothing to catch up on.
-        self._summary_update_millis: dict[str, tuple] = {}
+        self._vendor_tokens: dict[str, tuple] = {}
         self._pose_values: dict[str, tuple] = {}
         self._telemetry_values: dict[str, tuple] = {}
         self._mission_payloads: dict[str, dict] = {}
@@ -173,7 +174,7 @@ class OmronConnector(FleetConnector):
                 if not api_connected:
                     # Forget the token, so recovery republishes even if FlowCore has
                     # nothing newer than it had before the outage
-                    self._summary_update_millis.pop(robot_id, None)
+                    self._vendor_tokens.pop(robot_id, None)
                 else:
                     # Token is stored after the publish call, not before: if the
                     # publish raises, the except below skips the store too, so the
@@ -182,14 +183,18 @@ class OmronConnector(FleetConnector):
                     summary_millis = self.robot_manager.update_millis(
                         fleet_robot_id, SUMMARY_KEYS
                     )
-                    if summary_millis is not None and summary_millis != (
-                        self._summary_update_millis.get(robot_id)
+                    vendor_token = (
+                        summary_millis,
+                        self.robot_manager.data_values(fleet_robot_id, CHARGE_KEYS),
+                    )
+                    if summary_millis is not None and vendor_token != (
+                        self._vendor_tokens.get(robot_id)
                     ):
                         if vendor_kv := self.robot_manager.get_vendor_key_values(
                             fleet_robot_id
                         ):
                             self.publish_robot_key_values(robot_id, **vendor_kv)
-                        self._summary_update_millis[robot_id] = summary_millis
+                        self._vendor_tokens[robot_id] = vendor_token
 
                 # Values are stored after the publish calls, not before: if a publish
                 # raises, the except below skips the store too, so the next tick sees
@@ -228,7 +233,7 @@ class OmronConnector(FleetConnector):
         self, robot_id: str, command_name: str, args: list, options: dict
     ) -> None:
         """Handle InOrbit commands for a specific robot.
-        
+
         Args:
             robot_id: Robot ID that received the command
             command_name: Name of the command (e.g., 'custom_command')
@@ -263,22 +268,22 @@ class OmronConnector(FleetConnector):
                     robot=fleet_robot_id,
                     cancelReason=cmd.reason
                 )
-                
+
                 success = await self.robot_manager.api.stop(job_cancel.model_dump())
                 if not success:
                     raise CommandFailure(stderr="Failed to cancel job in FlowCore", execution_status_details="API Error")
 
             elif script_name in (
-                CustomScripts.PAUSE_ROBOT, 
-                CustomScripts.RESUME_ROBOT, 
-                CustomScripts.DOCK, 
-                CustomScripts.UNDOCK, 
+                CustomScripts.PAUSE_ROBOT,
+                CustomScripts.RESUME_ROBOT,
+                CustomScripts.DOCK,
+                CustomScripts.UNDOCK,
                 CustomScripts.SHUTDOWN,
                 CustomScripts.EXECUTE_MACRO
             ):
                 if not fleet_robot_id:
                     raise CommandFailure(stderr=f"No configuration found for robot {robot_id}", execution_status_details="Config Error")
-                
+
                 client = await self.robot_manager.get_arcl_client(fleet_robot_id)
 
                 if script_name == CustomScripts.PAUSE_ROBOT:

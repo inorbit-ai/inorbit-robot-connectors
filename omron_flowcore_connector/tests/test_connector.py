@@ -467,7 +467,7 @@ async def test_vendor_key_values_skipped_and_token_forgotten_when_the_api_is_dow
         if "omron_sub_status" in call.kwargs
     ]
     assert vendor_calls == []
-    assert "Robot1" not in connector._summary_update_millis
+    assert "Robot1" not in connector._vendor_tokens
 
     # Recovery republishes even though FlowCore has nothing newer to report
     mock_robot_manager.api_connected = MagicMock(return_value=True)

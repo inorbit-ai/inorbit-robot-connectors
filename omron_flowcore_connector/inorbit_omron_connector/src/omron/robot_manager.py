@@ -209,9 +209,16 @@ class RobotManager:
     async def _update_fleet_details(self) -> None:
         """Fetch detailed telemetry for the entire fleet using bulk endpoint."""
         try:
-            # Map keys to result indices
-            # 0: PoseX, 1: PoseY, 2: PoseTh, 3: StateOfCharge, 4: RobotIP
-            keys = ["PoseX", "PoseY", "PoseTh", "StateOfCharge", "RobotIP"]
+            keys = [
+                "PoseX",
+                "PoseY",
+                "PoseTh",
+                "StateOfCharge",
+                "RobotIP",
+                "ChargeState",
+                "ChargeStateNumber",
+                "DockingState",
+            ]
             calls = [self.api.get_data_store_value(key, "*") for key in keys]
             
             # Bulk fetch using wildcard '*'
@@ -372,14 +379,33 @@ class RobotManager:
         summary = self._robot_data.get(fleet_robot_id, {}).get("summary")
         if summary is None:
             return None
-        return build_vendor_key_values(summary)
+        return build_vendor_key_values(summary, self.is_charging(fleet_robot_id))
+
+    def is_charging(self, fleet_robot_id: str) -> Optional[bool]:
+        """Whether the robot is drawing charge, or None if it does not report it.
+
+        `RobotChargeStateNumber` is 0 while not charging and non-zero in every charge
+        stage (`Not,Bulk,Overcharge,Float`), so this holds for stages this connector has
+        never seen. It is robot-level, unlike the per-pack `Battery1*` items, which are
+        named for a battery index and vary with battery generation.
+        """
+        item = self._robot_data.get(fleet_robot_id, {}).get("ChargeStateNumber")
+        if item is None or item.value is None:
+            return None
+        try:
+            return int(item.value) != 0
+        except (TypeError, ValueError):
+            LOGGER.warning("Unreadable charge state %r, ignoring.", item.value)
+            return None
 
     def get_robot_key_values(self, fleet_robot_id: str) -> Optional[dict]:
         """Get the robot's own cached telemetry key-values for a specific robot."""
-        battery = self._robot_data.get(fleet_robot_id, {}).get("StateOfCharge")
-        if battery is None:
-            return None
-        return build_robot_key_values(battery)
+        data = self._robot_data.get(fleet_robot_id, {})
+        return build_robot_key_values(
+            data.get("StateOfCharge"),
+            data.get("ChargeState"),
+            data.get("DockingState"),
+        ) or None
 
     def get_robot_odometry(self, fleet_robot_id: str) -> Optional[dict]:
         """Get cached odometry for a specific robot.

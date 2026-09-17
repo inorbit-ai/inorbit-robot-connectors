@@ -282,6 +282,14 @@ class ArclClient:
         """Undocks the robot."""
         await self._enqueue_command(CommandType.UNDOCK, "undock\r\n")
 
+    async def execute_macro(self, name: str):
+        """Runs a macro defined in the AMR's map.
+
+        Macros are map objects, so names are only valid while that map is loaded.
+        Example: execute_macro("Macro1") sends `executeMacro Macro1`.
+        """
+        await self._enqueue_command(CommandType.GENERIC, f"executeMacro {name}\r\n")
+
     async def shutdown_robot(self):
         """Shuts down the AMR OS."""
         await self._enqueue_command(CommandType.GENERIC, "shutdown\r\n")

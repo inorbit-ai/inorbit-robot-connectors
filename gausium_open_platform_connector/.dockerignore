@@ -2,6 +2,47 @@
 #
 # SPDX-License-Identifier: MIT
 
-# docker/Dockerfile copies select folders already, so there isn't a lot we have to ignore
-**__pycache__/
-*.env*
+# Secrets and local configuration
+**/*.env*
+!**/example.env
+**/*.pem
+**/*.key
+**/*.crt
+**/*.csr
+config/my_fleet.yaml
+config/*local*.yaml
+docker/docker-compose.yaml
+
+# Virtual environments and build output
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+**.eggs/
+
+# Python bytecode
+**/__pycache__/
+**/*.py[cod]
+
+# Test and lint caches
+.tox/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+
+# Local runtime state
+**/*.log
+**/*.log.*
+logs/
+**/*.db
+**/*.sqlite
+
+# Version control, editors, OS
+.git/
+.idea/
+.vscode/
+**/*.sw[po]
+**/.DS_Store
+**/Thumbs.db

@@ -90,11 +90,7 @@ class OmronApiClient:
         return [RobotResponse(**r) for r in response.json()]
 
     async def get_active_faults(self) -> List[RobotFaultResponse]:
-        """Every active fault in the fleet.
-
-        Raises rather than returning an empty list: no faults and an unreachable Fleet
-        Manager mean opposite things.
-        """
+        """Every active fault in the fleet. Errors propagate."""
         response = await self._request("GET", "/RobotFault/ByActive/true")
         return [RobotFaultResponse(**f) for f in response.json()]
 

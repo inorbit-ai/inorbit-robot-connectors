@@ -109,10 +109,28 @@ def test_vendor_key_values_are_empty_without_data():
     assert build_vendor_key_values(None) == {}
 
 
+def _item(value, name="Item:Robot1"):
+    return DataStoreResponse(namekey=name, upd=OmronUpdate(millis=1), value=value)
+
+
 def test_robot_key_values_carry_battery():
     result = build_robot_key_values(_battery())
 
     assert result == {"battery_percent": 50.0}
+
+
+def test_robot_key_values_carry_charge_and_docking_state():
+    result = build_robot_key_values(_battery(), _item("Overcharge"), _item("UNDOCKED"))
+
+    assert result == {
+        "battery_percent": 50.0,
+        "omron_charge_state": "Overcharge",
+        "omron_docking_state": "UNDOCKED",
+    }
+
+
+def test_robot_key_values_publish_each_item_independently():
+    assert build_robot_key_values(None, _item("Float")) == {"omron_charge_state": "Float"}
 
 
 def test_robot_key_values_are_empty_without_data():
@@ -124,6 +142,23 @@ def test_map_status_maps_the_documented_sub_statuses():
     assert map_status("Docked") == "CHARGING"
     assert map_status("Available") == "IDLE"
     assert map_status("SomethingNew") == "IDLE"
+
+
+def test_map_status_charging_robot_that_never_docks():
+    assert map_status("Available", charging=True) == "CHARGING"
+
+
+def test_map_status_docked_robot_that_is_not_charging():
+    assert map_status("Docked", charging=False) == "IDLE"
+
+
+def test_map_status_work_and_faults_outrank_charging():
+    assert map_status("Driving", charging=True) == "BUSY"
+    assert map_status("EstopPressed", charging=True) == "ERROR"
+
+
+def test_vendor_key_values_carry_the_charging_status():
+    assert build_vendor_key_values(_summary(), charging=True)["status"] == "CHARGING"
 
 
 @pytest.mark.parametrize(

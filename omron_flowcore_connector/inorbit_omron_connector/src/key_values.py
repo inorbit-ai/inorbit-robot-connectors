@@ -22,6 +22,9 @@ LOGGER = logging.getLogger(__name__)
 BUSY_SUB_STATUSES = frozenset(
     {"Driving", "BeforePickup", "AfterDropoff", "BeforeDropoff", "BeforeEvery", "AfterEvery"}
 )
+# Only consulted when the robot does not report `RobotChargeStateNumber`: being on a
+# dock is not the same as drawing charge (FlowCore reports `DockingState: Docking` with
+# `ChargeState: Not`), and a contactless pad charges a robot that never docks at all.
 CHARGING_SUB_STATUSES = frozenset(
     {"Docked", "Docking", "Charging", "DockParking", "DockParked", "ForcedDocking"}
 )
@@ -43,15 +46,22 @@ ERROR_SUB_STATUSES = frozenset(
 IDLE_SUB_STATUSES = frozenset({"Available", "Parked", "Allocated", "Unallocated"})
 
 
-def map_status(sub_status: str) -> str:
-    """Map an AMR sub-status to an InOrbit robot status."""
+def map_status(sub_status: str, charging: Optional[bool] = None) -> str:
+    """Map an AMR sub-status to an InOrbit robot status.
+
+    `charging` is the robot's own charge report, or None when it does not publish one.
+    Work and faults outrank it: an e-stopped robot on a charger is in ERROR, which is
+    what an operator has to act on.
+    """
     if sub_status in BUSY_SUB_STATUSES:
         return "BUSY"
-    if sub_status in CHARGING_SUB_STATUSES:
-        return "CHARGING"
     if sub_status in ERROR_SUB_STATUSES:
         return "ERROR"
-    if sub_status in IDLE_SUB_STATUSES:
+    if charging:
+        return "CHARGING"
+    if charging is None and sub_status in CHARGING_SUB_STATUSES:
+        return "CHARGING"
+    if sub_status in CHARGING_SUB_STATUSES or sub_status in IDLE_SUB_STATUSES:
         return "IDLE"
     # Reached only by a documented-but-unclassified value (e.g. AvailableForJobs,
     # Parking, Interrupted) or a genuinely unknown one. Either way this connector
@@ -90,7 +100,9 @@ def build_health_key_values(
     return key_values
 
 
-def build_vendor_key_values(summary: Optional[RobotResponse]) -> dict[str, Any]:
+def build_vendor_key_values(
+    summary: Optional[RobotResponse], charging: Optional[bool] = None
+) -> dict[str, Any]:
     """FlowCore's own statement about a robot, from `/Robot/UpdatedSince`.
 
     This is the fleet summary, not the robot's own telemetry: it keeps arriving
@@ -102,20 +114,34 @@ def build_vendor_key_values(summary: Optional[RobotResponse]) -> dict[str, Any]:
     key_values: dict[str, Any] = {
         "omron_status": summary.status,
         "omron_sub_status": summary.subStatus,
-        "status": map_status(summary.subStatus),
+        "status": map_status(summary.subStatus, charging),
     }
     if summary.ipAddress:
         key_values["robot_ip"] = summary.ipAddress
     return key_values
 
 
-def build_robot_key_values(battery: Optional[DataStoreResponse]) -> dict[str, Any]:
+def build_robot_key_values(
+    battery: Optional[DataStoreResponse],
+    charge_state: Optional[DataStoreResponse] = None,
+    docking_state: Optional[DataStoreResponse] = None,
+) -> dict[str, Any]:
     """The robot's own telemetry, from `/DataStoreValueLatest`.
 
     Published when the value changes, with no online check on top: a robot whose
     ARCL link the Fleet Manager has lost keeps reporting here, and a robot that has
     truly dropped reports nothing at all, so the cached value holds by itself.
+
+    Each item is published on its own: a robot that reports battery but no charge state
+    still publishes its battery. `omron_charge_state` is passed through verbatim
+    (`Not`, `Bulk`, `Overcharge`, `Float`) rather than derived, so a stage this connector
+    does not know about still reaches the operator.
     """
-    if battery is None:
-        return {}
-    return {"battery_percent": float(battery.value)}
+    key_values: dict[str, Any] = {}
+    if battery is not None:
+        key_values["battery_percent"] = float(battery.value)
+    if charge_state is not None and charge_state.value is not None:
+        key_values["omron_charge_state"] = str(charge_state.value)
+    if docking_state is not None and docking_state.value is not None:
+        key_values["omron_docking_state"] = str(docking_state.value)
+    return key_values

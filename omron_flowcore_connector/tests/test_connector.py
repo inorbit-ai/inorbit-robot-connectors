@@ -243,12 +243,12 @@ async def test_health_key_values_name_why_the_robot_is_offline(
 
 
 @pytest.mark.asyncio
-async def test_pose_and_battery_publish_once_while_their_values_hold(
+async def test_pose_and_battery_keep_publishing_while_their_values_hold(
     connector_config, mock_robot_manager, mock_executor_cls
 ):
-    """The details poll runs between the two ticks on purpose: every
-    /DataStoreValueLatest fetch restamps the items, so a gate comparing stamps
-    republishes here and only a gate comparing values stays quiet."""
+    """A parked robot still has to fill the pose and battery timelines. Its values
+    not moving is a fresh observation that it is idle, not a stale reading, so the
+    only thing that may withhold them is the Fleet Manager going quiet."""
     connector = OmronConnector(connector_config, robot_manager=mock_robot_manager)
     connector.publish_robot_pose = MagicMock()
     connector.publish_robot_key_values = MagicMock()
@@ -258,32 +258,35 @@ async def test_pose_and_battery_publish_once_while_their_values_hold(
     await mock_robot_manager._update_fleet_details()
     await connector._execution_loop()
 
-    assert connector.publish_robot_pose.call_count == 1
+    assert connector.publish_robot_pose.call_count == 2
     batteries = [
         call
         for call in connector.publish_robot_key_values.call_args_list
         if "battery_percent" in call.kwargs
     ]
-    assert len(batteries) == 1
+    assert len(batteries) == 2
 
 
 @pytest.mark.asyncio
-async def test_pose_republishes_when_the_robot_moves(
+async def test_pose_and_battery_stop_when_the_robot_stops_reporting(
     connector_config, mock_robot_manager, mock_executor_cls
 ):
+    """The cache holds a dropped robot's last values forever, so this tier is the one
+    that would republish them as if they were current."""
     connector = OmronConnector(connector_config, robot_manager=mock_robot_manager)
     connector.publish_robot_pose = MagicMock()
     connector.publish_robot_key_values = MagicMock()
     connector.publish_robot_odometry = MagicMock()
+    mock_robot_manager._last_fetched_at["Robot1_FlowCore"] -= mock_robot_manager._grace_secs + 1
 
     await connector._execution_loop()
-    mock_robot_manager.api.seed_robot(
-        "Robot1_FlowCore", x=5000.0, y=2000.0, theta=180.0, battery=80.0
-    )
-    await mock_robot_manager._update_fleet_details()
-    await connector._execution_loop()
 
-    assert connector.publish_robot_pose.call_count == 2
+    assert connector.publish_robot_pose.call_count == 0
+    assert not [
+        call
+        for call in connector.publish_robot_key_values.call_args_list
+        if "battery_percent" in call.kwargs
+    ]
 
 
 @pytest.mark.asyncio
@@ -520,9 +523,8 @@ async def test_vendor_key_values_retry_after_a_failed_publish(
 async def test_pose_retries_after_a_failed_publish(
     connector_config, mock_robot_manager, mock_executor_cls
 ):
-    """A publish that raises must not let its token get stored, or the retry that
-    depends on statement ordering (store after publish, not before) silently
-    regresses back to skipping forever."""
+    """A publish that raises is caught per robot, and the next tick has to try
+    again rather than treat the failed attempt as done."""
     connector = OmronConnector(connector_config, robot_manager=mock_robot_manager)
     connector.publish_robot_pose = MagicMock(side_effect=[Exception("boom"), None])
     connector.publish_robot_key_values = MagicMock()

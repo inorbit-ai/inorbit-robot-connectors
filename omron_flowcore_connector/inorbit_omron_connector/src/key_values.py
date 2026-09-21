@@ -139,9 +139,9 @@ def build_robot_key_values(
 ) -> dict[str, Any]:
     """The robot's own telemetry, from `/DataStoreValueLatest`.
 
-    Published when the value changes, with no online check on top: a robot whose
-    ARCL link the Fleet Manager has lost keeps reporting here, and a robot that has
-    truly dropped reports nothing at all, so the cached value holds by itself.
+    Published every tick for as long as the robot is reporting, with no online check
+    on top: a robot whose ARCL link the Fleet Manager has lost keeps reporting here,
+    and the value being unchanged says the robot is idle, not that it is stale.
 
     Each item is published on its own: a robot that reports battery but no charge state
     still publishes its battery. `omron_charge_state` is passed through verbatim

@@ -17,6 +17,7 @@ from ..config.models import CONNECTOR_TYPE
 from ..metrics import api_endpoint, error_kind
 from .models import (
     DataStoreResponse,
+    RobotFaultResponse,
     RobotResponse
 )
 
@@ -87,6 +88,11 @@ class OmronApiClient:
         """
         response = await self._request("GET", "/Robot/UpdatedSince?sinceTime=0")
         return [RobotResponse(**r) for r in response.json()]
+
+    async def get_active_faults(self) -> List[RobotFaultResponse]:
+        """Every active fault in the fleet. Errors propagate."""
+        response = await self._request("GET", "/RobotFault/ByActive/true")
+        return [RobotFaultResponse(**f) for f in response.json()]
 
     async def get_data_store_value(self, key: str, robot_id: str) -> List[DataStoreResponse]:
         """Fetches data store values for a specific key."""

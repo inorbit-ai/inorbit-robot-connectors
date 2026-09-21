@@ -43,6 +43,7 @@ def error_kind(exc: BaseException) -> str:
 api_endpoint = EndpointMapper(
     [
         ("/Robot/UpdatedSince", "robot_updated_since"),
+        ("/RobotFault/ByActive", "robot_fault_by_active"),
         ("/DataStoreValueLatest", "data_store_value_latest"),
         ("/JobRequest", "job_request"),
         ("/JobCancel", "job_cancel"),

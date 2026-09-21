@@ -11,6 +11,9 @@ from typing import Optional
 # Configure logging
 LOGGER = logging.getLogger(__name__)
 
+# The fault `abds` registers to hold a robot, and the name `/RobotFault` reports it by.
+BLOCK_DRIVING_FAULT = "inorbit_traffic"
+
 class CommandType(Enum):
     GENERIC = auto()
     GO = auto()
@@ -198,7 +201,10 @@ class ArclClient:
                 raise ConnectionResetError("Robot closed connection (EOF)")
             
             msg = line.decode('utf-8', errors='ignore').strip()
-            LOGGER.debug(f"RX: {msg}")
+            if msg.startswith(("CommandError", "SetUpError")):
+                LOGGER.warning("ARCL rejected a command: %s", msg)
+            else:
+                LOGGER.debug(f"RX: {msg}")
 
     async def _write_loop(self):
         """

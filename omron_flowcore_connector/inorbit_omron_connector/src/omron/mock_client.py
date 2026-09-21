@@ -8,7 +8,7 @@ import asyncio
 import logging
 
 from inorbit_omron_connector.src.omron.models import (
-    RobotResponse, OmronUpdate, DataStoreResponse
+    RobotResponse, OmronUpdate, DataStoreResponse, RobotFaultResponse
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -90,6 +90,10 @@ class MockOmronClient:
                 ipAddress=data.get("ipAddress")
             ))
         return response
+
+    async def get_active_faults(self) -> List[RobotFaultResponse]:
+        """No simulated faults: the mock fleet is always healthy and unblocked."""
+        return []
 
     async def get_data_store_value(self, key: str, robot_id: str) -> DataStoreResponse | List[DataStoreResponse]:
         if not self._connected:

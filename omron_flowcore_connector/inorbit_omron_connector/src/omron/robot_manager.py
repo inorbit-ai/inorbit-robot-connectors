@@ -117,6 +117,9 @@ class RobotManager:
                     self._robot_data[robot.fleet_robot_id] = {}
                 self._robot_data[robot.fleet_robot_id]["robot_ip"] = robot.ip_address
 
+        # Active faults per robot. Absent means unknown, which is not the same as none.
+        self._active_faults: Dict[str, list] = {}
+
         # Map of robot_id to ArclClient instance
         self._arcl_clients: Dict[str, ArclClient] = {}
 
@@ -270,6 +273,29 @@ class RobotManager:
         except Exception as e:
             LOGGER.error(f"Error updating fleet details: {e}")
 
+        await self._update_faults()
+
+    async def _update_faults(self) -> None:
+        """Refresh the active-fault cache for the whole fleet.
+
+        Rebuilt wholesale, since that is the only way a cleared fault leaves the cache.
+        A failed poll leaves the previous answer standing.
+        """
+        try:
+            faults = await self.api.get_active_faults()
+        except Exception as e:
+            LOGGER.error(f"Error updating robot faults: {e}")
+            return
+
+        refreshed: Dict[str, list] = {robot_id: [] for robot_id in self._robot_data}
+        for fault in faults:
+            refreshed.setdefault(fault.robot, []).append(fault)
+        self._active_faults = refreshed
+
+    def active_fault_names(self, fleet_robot_id: str) -> tuple[str, ...]:
+        """Names of the robot's active faults, empty when it has none or none are known."""
+        return tuple(fault.name for fault in self._active_faults.get(fleet_robot_id, ()))
+
     def api_connected(self) -> bool:
         """Whether a fleet sweep succeeded within the grace period."""
         return (time.monotonic() - self._last_sweep_ok_at) <= self._grace_secs
@@ -379,7 +405,11 @@ class RobotManager:
         summary = self._robot_data.get(fleet_robot_id, {}).get("summary")
         if summary is None:
             return None
-        return build_vendor_key_values(summary, self.is_charging(fleet_robot_id))
+        return build_vendor_key_values(
+            summary,
+            self.is_charging(fleet_robot_id),
+            self.active_fault_names(fleet_robot_id),
+        )
 
     def is_charging(self, fleet_robot_id: str) -> Optional[bool]:
         """Whether the robot is drawing charge, or None if it does not report it.

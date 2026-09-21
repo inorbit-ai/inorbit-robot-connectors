@@ -20,6 +20,7 @@ from inorbit_edge_executor.inorbit import InOrbitAPI
 # Local
 from .. import __version__
 from .key_values import build_health_key_values
+from .omron.arcl_client import BLOCK_DRIVING_FAULT
 from .omron.robot_manager import RobotManager
 from .omron.models import JobCancelByRobotName
 from .omron.mock_client import MockOmronClient
@@ -186,6 +187,8 @@ class OmronConnector(FleetConnector):
                     vendor_token = (
                         summary_millis,
                         self.robot_manager.data_values(fleet_robot_id, CHARGE_KEYS),
+                        # The summary stamp does not move when a robot is held.
+                        self.robot_manager.active_fault_names(fleet_robot_id),
                     )
                     if summary_millis is not None and vendor_token != (
                         self._vendor_tokens.get(robot_id)
@@ -288,13 +291,13 @@ class OmronConnector(FleetConnector):
 
                 if script_name == CustomScripts.PAUSE_ROBOT:
                     await client.set_block_driving(
-                        name="inorbit_traffic",
+                        name=BLOCK_DRIVING_FAULT,
                         short_desc="Paused by InOrbit",
                         long_desc="Paused by InOrbit Traffic Zone"
                     )
 
                 elif script_name == CustomScripts.RESUME_ROBOT:
-                    await client.clear_block_driving(name="inorbit_traffic")
+                    await client.clear_block_driving(name=BLOCK_DRIVING_FAULT)
                     await client.go()
 
                 elif script_name == CustomScripts.DOCK:

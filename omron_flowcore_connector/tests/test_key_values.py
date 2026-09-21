@@ -12,6 +12,7 @@ from inorbit_omron_connector.src.key_values import (
     build_vendor_key_values,
     map_status,
 )
+from inorbit_omron_connector.src.omron.arcl_client import BLOCK_DRIVING_FAULT
 from inorbit_omron_connector.src.omron.robot_manager import OFFLINE_API_UNREACHABLE
 from inorbit_omron_connector.src.omron.models import (
     DataStoreResponse,
@@ -91,6 +92,7 @@ def test_vendor_key_values_carry_the_fleet_summary():
         "omron_status": "Available",
         "omron_sub_status": "Unallocated",
         "status": "IDLE",
+        "omron_active_faults": "",
         "robot_ip": "10.0.0.1",
     }
 
@@ -102,6 +104,7 @@ def test_vendor_key_values_omit_robot_ip_when_unset():
         "omron_status": "Available",
         "omron_sub_status": "Unallocated",
         "status": "IDLE",
+        "omron_active_faults": "",
     }
 
 
@@ -191,3 +194,22 @@ def test_map_status_known_idle_sub_status_does_not_warn(caplog):
 
     assert result == "IDLE"
     assert caplog.text == ""
+
+
+def test_map_status_our_hold_alone_is_a_pause():
+    # The fleet summary does not report the hold, so a held robot usually still
+    # says Available. The fault list decides, not the sub-status.
+    assert map_status("Available", faults=(BLOCK_DRIVING_FAULT,)) == "PAUSED"
+    assert map_status("Driving", faults=(BLOCK_DRIVING_FAULT,)) == "PAUSED"
+    assert map_status("Fault", faults=(BLOCK_DRIVING_FAULT,)) == "PAUSED"
+
+
+def test_map_status_any_other_fault_is_an_error():
+    assert map_status("Available", faults=("MotorStalled",)) == "ERROR"
+    assert map_status("Available", faults=(BLOCK_DRIVING_FAULT, "MotorStalled")) == "ERROR"
+
+
+def test_map_status_without_faults_falls_back_to_the_sub_status():
+    assert map_status("Available") == "IDLE"
+    assert map_status("Driving") == "BUSY"
+    assert map_status("Fault") == "ERROR"

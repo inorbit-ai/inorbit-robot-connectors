@@ -15,6 +15,7 @@ reporting, whether or not the Fleet Manager can still command it.
 import logging
 from typing import Any, Optional
 
+from .omron.arcl_client import BLOCK_DRIVING_FAULT
 from .omron.models import DataStoreResponse, RobotResponse
 
 LOGGER = logging.getLogger(__name__)
@@ -46,13 +47,20 @@ ERROR_SUB_STATUSES = frozenset(
 IDLE_SUB_STATUSES = frozenset({"Available", "Parked", "Allocated", "Unallocated"})
 
 
-def map_status(sub_status: str, charging: Optional[bool] = None) -> str:
-    """Map an AMR sub-status to an InOrbit robot status.
+def map_status(
+    sub_status: str, charging: Optional[bool] = None, faults: tuple[str, ...] = ()
+) -> str:
+    """Map an AMR sub-status and its active faults to an InOrbit robot status.
 
     `charging` is the robot's own charge report, or None when it does not publish one.
     Work and faults outrank it: an e-stopped robot on a charger is in ERROR, which is
     what an operator has to act on.
+
+    `faults` are the robot's active faults by name. Our own hold alone is PAUSED, any
+    other fault is ERROR.
     """
+    if faults:
+        return "PAUSED" if set(faults) == {BLOCK_DRIVING_FAULT} else "ERROR"
     if sub_status in BUSY_SUB_STATUSES:
         return "BUSY"
     if sub_status in ERROR_SUB_STATUSES:
@@ -101,7 +109,9 @@ def build_health_key_values(
 
 
 def build_vendor_key_values(
-    summary: Optional[RobotResponse], charging: Optional[bool] = None
+    summary: Optional[RobotResponse],
+    charging: Optional[bool] = None,
+    faults: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """FlowCore's own statement about a robot, from `/Robot/UpdatedSince`.
 
@@ -114,7 +124,8 @@ def build_vendor_key_values(
     key_values: dict[str, Any] = {
         "omron_status": summary.status,
         "omron_sub_status": summary.subStatus,
-        "status": map_status(summary.subStatus, charging),
+        "status": map_status(summary.subStatus, charging, faults),
+        "omron_active_faults": ", ".join(faults),
     }
     if summary.ipAddress:
         key_values["robot_ip"] = summary.ipAddress

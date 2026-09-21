@@ -9,7 +9,8 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from inorbit_omron_connector.src.omron.robot_manager import RobotManager
 from inorbit_omron_connector.src.config.models import FlowCoreConfig
 from inorbit_omron_connector.src.omron.mock_client import MockOmronClient
-from inorbit_omron_connector.src.omron.models import RobotResponse
+from inorbit_omron_connector.src.omron.models import RobotFaultResponse, RobotResponse
+from inorbit_omron_connector.src.omron.arcl_client import BLOCK_DRIVING_FAULT
 
 @pytest.fixture
 def manager_config():
@@ -438,3 +439,55 @@ async def test_summary_update_millis_changes_when_the_status_changes(robot_manag
     second = robot_manager.update_millis("Robot1", ("summary",))
 
     assert first != second
+
+
+def _fault(robot, name, blockDriving=True):
+    return RobotFaultResponse(
+        namekey=f"{robot}:{name}",
+        robot=robot,
+        name=name,
+        active=True,
+        blockDriving=blockDriving,
+    )
+
+
+@pytest.mark.asyncio
+async def test_active_fault_names_are_cached_per_robot(robot_manager):
+    robot_manager._robot_data["Robot1"] = {}
+    robot_manager._robot_data["Robot2"] = {}
+    robot_manager.api.get_active_faults = AsyncMock(
+        return_value=[
+            _fault("Robot1", BLOCK_DRIVING_FAULT),
+            _fault("Robot2", "MotorStalled"),
+        ]
+    )
+    await robot_manager._update_faults()
+
+    assert robot_manager.active_fault_names("Robot1") == (BLOCK_DRIVING_FAULT,)
+    assert robot_manager.active_fault_names("Robot2") == ("MotorStalled",)
+
+
+@pytest.mark.asyncio
+async def test_a_cleared_fault_leaves_the_cache(robot_manager):
+    robot_manager._robot_data["Robot1"] = {}
+    robot_manager.api.get_active_faults = AsyncMock(
+        return_value=[_fault("Robot1", BLOCK_DRIVING_FAULT)]
+    )
+    await robot_manager._update_faults()
+
+    robot_manager.api.get_active_faults = AsyncMock(return_value=[])
+    await robot_manager._update_faults()
+    assert robot_manager.active_fault_names("Robot1") == ()
+
+
+@pytest.mark.asyncio
+async def test_a_failed_fault_poll_keeps_the_last_known_state(robot_manager):
+    robot_manager._robot_data["Robot1"] = {}
+    robot_manager.api.get_active_faults = AsyncMock(
+        return_value=[_fault("Robot1", BLOCK_DRIVING_FAULT)]
+    )
+    await robot_manager._update_faults()
+
+    robot_manager.api.get_active_faults = AsyncMock(side_effect=RuntimeError("boom"))
+    await robot_manager._update_faults()
+    assert robot_manager.active_fault_names("Robot1") == (BLOCK_DRIVING_FAULT,)

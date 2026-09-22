@@ -319,3 +319,33 @@ class TestSafeLocalizeTimestamp:
         expected = expected_dt.timestamp()
 
         assert result == expected
+
+
+@pytest.mark.asyncio
+async def test_unfetchable_definition_does_not_pin_tracking(
+    mission_tracking, sample_metrics_data, sample_status_data
+):
+    """A definition deleted while its queue entry survives must not stop tracking.
+
+    executing_mission_id is only reassigned when it is None, so a raise before the
+    final-state reset would pin this entry and kill mission tracking for the process.
+    """
+    status = {**sample_status_data, "mission_queue_id": 42}
+    mission_tracking.mir_api.get_mission_queue_entry = AsyncMock(
+        return_value={
+            "state": "Done",
+            "id": 42,
+            "mission_id": "gone",
+            "started": "2026-08-10T10:00:00",
+            "finished": "2026-08-10T10:01:00",
+        }
+    )
+    mission_tracking.mir_api.get_mission_definition = AsyncMock(side_effect=Exception("404"))
+
+    await mission_tracking.report_mission(status, sample_metrics_data)
+
+    reported = mission_tracking.inorbit_sess.publish_key_values.call_args.kwargs["key_values"][
+        "mission_tracking"
+    ]
+    assert reported["missionId"] == 42 and "label" not in reported
+    assert mission_tracking.executing_mission_id is None

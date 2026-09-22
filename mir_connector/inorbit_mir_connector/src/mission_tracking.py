@@ -375,17 +375,22 @@ class MirInorbitMissionTracking:
             return None
         queue_id = self.executing_mission_id
         mission = await self.mir_api.get_mission_queue_entry(queue_id)
-        # Fleet-dispatched ActionLists carry no mission_id, and are the majority of the queue
-        # on a fleet-managed robot. There is no definition to fetch (GET /missions/None is a
-        # 400) and their queue actions have a null action_id, so they are reported without a
-        # task list rather than raising on every tick.
+        # Fleet-dispatched ActionLists carry no mission_id: GET /missions/None is a 400 and
+        # their queue actions have a null action_id, so they are reported without a task
+        # list. A definition that cannot be fetched (deleted while its entry survives) is
+        # reported the same way; raising here would pin executing_mission_id forever.
         if mission.get("mission_id") and self._mission_definition is None:
-            definition = await self.mir_api.get_mission_definition(mission["mission_id"])
-            definition["actions"] = await self.mir_api.get_mission_actions(mission["mission_id"])
-            self._mission_definition = definition
-            self._tasks_tracker = MirNativeMissionTasks(
-                self.mir_api, queue_id, await self._build_tasks(definition["actions"])
-            )
+            try:
+                definition = await self.mir_api.get_mission_definition(mission["mission_id"])
+                definition["actions"] = await self.mir_api.get_mission_actions(
+                    mission["mission_id"]
+                )
+                self._mission_definition = definition
+                self._tasks_tracker = MirNativeMissionTasks(
+                    self.mir_api, queue_id, await self._build_tasks(definition["actions"])
+                )
+            except Exception as e:
+                self.logger.warning(f"Failed to fetch definition of mission {queue_id}: {e}")
         mission["definition"] = self._mission_definition
         if mission["state"] != MISSION_STATE_EXECUTING:
             # Update executing_mission_id so the next call to this method returns the next

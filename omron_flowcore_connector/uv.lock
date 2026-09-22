@@ -377,7 +377,7 @@ telemetry = [
 
 [[package]]
 name = "inorbit-edge-executor"
-version = "4.0.4"
+version = "4.0.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiosql" },
@@ -387,9 +387,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e6/f6/570960affb4fbbb9c857eae026357cf04eeaa4b9ced0fd67d5fcb2c70042/inorbit_edge_executor-4.0.4.tar.gz", hash = "sha256:2a925e25f58f554e0b0e3722fb983e4229b0280722cfb648c6bf425e5ff38440", size = 50445, upload-time = "2026-06-29T19:38:20.406Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/05/f3/ee5e203e0db08fb9b1646c90467f73a20b7f06d463012ddf22883aaacf9d/inorbit_edge_executor-4.0.5.tar.gz", hash = "sha256:2a8c92d7f1082e8f1f8a693ee8e077b1aa1830e0fbbb33695dec1bdbd7722f50", size = 50895, upload-time = "2026-09-22T02:54:46.869Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6b/bb/e2d4174f4ef1856d93154597efc73e65cf912967f15b2ee8b52b41c7a9eb/inorbit_edge_executor-4.0.4-py3-none-any.whl", hash = "sha256:9199ff4380de20a5cd8f8864a74338b84c626c22fde19f8d55039d4572a3f924", size = 41955, upload-time = "2026-06-29T19:38:19.557Z" },
+    { url = "https://files.pythonhosted.org/packages/f8/9d/1e61a281655594a4acbf810c4a834727158ecf63c71661d867d6082cd27a/inorbit_edge_executor-4.0.5-py3-none-any.whl", hash = "sha256:1c39815e75286a2f6c93a5484d51d071b91a3473b29d23c6f6fee303caf1c171", size = 41982, upload-time = "2026-09-22T02:54:45.949Z" },
 ]
 
 [[package]]
@@ -430,7 +430,7 @@ requires-dist = [
     { name = "coverage", marker = "extra == 'dev'", specifier = "~=7.11" },
     { name = "httpx", specifier = "~=0.28.1" },
     { name = "inorbit-connector", extras = ["system-stats"], specifier = "~=3.2.3" },
-    { name = "inorbit-edge-executor", specifier = "~=4.0.4" },
+    { name = "inorbit-edge-executor", specifier = "~=4.0.5" },
     { name = "pydantic", specifier = "~=2.12.5" },
     { name = "pydantic-settings", specifier = "~=2.14.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = "~=8.4" },

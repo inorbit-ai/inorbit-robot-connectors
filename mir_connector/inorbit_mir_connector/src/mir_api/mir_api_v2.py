@@ -172,18 +172,6 @@ class MirApiV2(MirApiBaseClass):
         )
         return response.json()
 
-    async def get_mission(self, mission_queue_id):
-        """Queries a mission using the mission_queue/{mission_id} endpoint"""
-        mission_api_url = f"/{MISSION_QUEUE_ENDPOINT_V2}/{mission_queue_id}"
-        mission = (await self._get(mission_api_url)).json()
-        actions = (await self._get(f"{mission_api_url}/actions")).json()
-
-        mission_id = mission["mission_id"]
-        mission["definition"] = await self.get_mission_definition(mission_id)
-        mission["actions"] = actions
-        mission["definition"]["actions"] = await self.get_mission_actions(mission_id)
-        return mission
-
     async def get_mission_definition(self, mission_id):
         """Queries a mission definition using the missions/{mission_id} endpoint"""
         mission_api_url = f"/{MISSIONS_ENDPOINT_V2}/{mission_id}"
@@ -212,12 +200,7 @@ class MirApiV2(MirApiBaseClass):
         return response.json()
 
     async def get_mission_queue_entry(self, queue_id):
-        """Return full details of a single mission queue entry.
-
-        Single ``GET /mission_queue/{id}`` — distinct from the heavyweight
-        ``get_mission`` (which composes four GETs), so it is light enough for
-        the ~1 s native-mission completion poll.
-        """
+        """Return full details of a single mission queue entry."""
         mission_api_url = f"/{MISSION_QUEUE_ENDPOINT_V2}/{queue_id}"
         response = await self._get(mission_api_url)
         return response.json()
@@ -230,8 +213,7 @@ class MirApiV2(MirApiBaseClass):
         url, no ``action_id``/``state``/``finished``. The list grows as the
         mission runs (the last entry is the one executing). To resolve which
         mission-definition action an entry is (its ``action_id``) and whether it
-        finished, fetch each entry via ``get_mission_queue_action``. Distinct
-        from ``get_mission`` (4 GETs), so it is light enough for the ~1 s poll.
+        finished, fetch each entry via ``get_mission_queue_action``.
         """
         actions_api_url = f"/{MISSION_QUEUE_ENDPOINT_V2}/{queue_id}/actions"
         response = await self._get(actions_api_url)

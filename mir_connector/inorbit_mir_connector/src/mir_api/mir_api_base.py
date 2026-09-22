@@ -349,11 +349,6 @@ class MirApiBaseClass(ABC):
         pass
 
     @abstractmethod
-    async def get_mission(self, mission_queue_id):
-        """Queries a mission using the mission_queue/{mission_id} endpoint"""
-        pass
-
-    @abstractmethod
     async def get_metrics(self):
         """Queries /metrics endpoint
 

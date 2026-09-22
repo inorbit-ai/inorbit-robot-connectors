@@ -372,9 +372,9 @@ class RobotManager:
     def data_values(self, fleet_robot_id: str, keys: tuple[str, ...]) -> Optional[tuple]:
         """The values of cached DataStore items, or None if none is cached.
 
-        The change token for robot telemetry, since a DataStore stamp only says when we
-        last asked. Items the vendor never reported are skipped rather than vetoing the
-        whole result, so a robot missing one of them still publishes on the others.
+        A change token for items whose DataStore stamp cannot be one, since that stamp
+        only says when we last asked. Items the vendor never reported are skipped rather
+        than vetoing the whole result, so a robot missing one still yields the others.
         """
         data = self._robot_data.get(fleet_robot_id, {})
         items = [data[key] for key in keys if key in data]

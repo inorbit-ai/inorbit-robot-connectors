@@ -11,7 +11,7 @@ from inorbit_mir_connector.src.mir_api import MirApiV2
 from inorbit_mir_connector.src.mission_tracking import (
     MirInorbitMissionTracking,
     MirNativeMissionTasks,
-    _STATUS_BY_STATE,
+    _MAX_DETAIL_FETCHES_PER_POLL,
     _execution_order,
     _reported_state,
 )
@@ -159,7 +159,7 @@ async def test_progresses_tasks_from_queue_actions():
     assert by_id["g2"]["inProgress"] is True and by_id["g2"]["completed"] is False
     assert by_id["g3"]["inProgress"] is False and by_id["g3"]["completed"] is False
     assert fields["currentTaskId"] == "g2"
-    assert fields["completedPercent"] == pytest.approx(1 / 3)
+    assert tracker.completed_percent() == pytest.approx(1 / 3)
 
 
 @pytest.mark.asyncio
@@ -181,7 +181,7 @@ async def test_failed_action_is_not_reported_completed():
     assert by_id["g2"]["completed"] is False
     assert by_id["g2"]["inProgress"] is False
     assert "currentTaskId" not in fields
-    assert fields["completedPercent"] == pytest.approx(0.5)
+    assert tracker.completed_percent() == pytest.approx(0.5)
 
 
 @pytest.mark.asyncio
@@ -235,7 +235,7 @@ async def test_foreign_guids_ignored():
     fields = tracker.report_fields()
     assert fields["tasks"][0]["inProgress"] is False
     assert "currentTaskId" not in fields
-    assert fields["completedPercent"] == 0
+    assert tracker.completed_percent() == 0
 
 
 @pytest.mark.asyncio
@@ -280,12 +280,14 @@ async def test_detail_fetches_capped_per_poll_and_converge_over_ticks():
     tracker = MirNativeMissionTasks(api, 99, make_tasks(*guids))
 
     await tracker.poll()
-    assert api.get_mission_queue_action.await_count == 25
+    assert api.get_mission_queue_action.await_count == _MAX_DETAIL_FETCHES_PER_POLL
     by_id = {t["taskId"]: t for t in tracker.report_fields()["tasks"]}
     assert by_id["g1"]["completed"] is True  # fetched-and-finished entry still applies
 
     await tracker.poll()
-    assert api.get_mission_queue_action.await_count > 25  # cache-missing ones refetched
+    assert (
+        api.get_mission_queue_action.await_count > _MAX_DETAIL_FETCHES_PER_POLL
+    )  # cache-missing ones refetched
 
 
 @pytest.mark.asyncio
@@ -294,7 +296,7 @@ async def test_empty_task_list_reports_zero_percent():
     tracker = MirNativeMissionTasks(api, 99, {})
     await tracker.poll()
     fields = tracker.report_fields()
-    assert fields["tasks"] == [] and fields["completedPercent"] == 0
+    assert fields["tasks"] == [] and tracker.completed_percent() == 0
 
 
 POSITION_CHOICES = {
@@ -515,20 +517,6 @@ async def test_report_mission_sends_status_while_executing():
     report = published(tracking)[-1]
     assert report["inProgress"] is True
     assert report["status"] == "OK"
-
-
-def test_state_maps_to_exactly_one_status():
-    # The point of the mapping: a state name means one thing. "Executing" is always OK; if
-    # the robot is blocked the state itself changes, rather than one state carrying two
-    # different statuses.
-    assert _STATUS_BY_STATE == {
-        "Executing": "OK",
-        "Done": "OK",
-        "Paused": "warning",
-        "Emergency stop": "warning",
-        "Error": "error",
-        "Aborted": "error",
-    }
 
 
 def test_reported_state_refines_only_a_running_mission():

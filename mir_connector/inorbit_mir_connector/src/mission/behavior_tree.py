@@ -34,8 +34,8 @@
 #     `finished` timestamp. Matching by guid (not list length) ignores a load_mission's
 #     inlined sub-actions, whose guids are foreign to our set, so nested missions no longer
 #     over-complete. Best-effort: a tracking error never aborts the completion poll.
-#   - 2026-08-13: completion now also requires an empty `state`, since a queue action's
-#     `finished` timestamp is set on failures too ("Failed"/"Aborted" did not succeed)
+#     Completion requires an empty `state` as well as the `finished` timestamp, which MiR
+#     sets on failures too ("Failed"/"Aborted" did not succeed).
 
 """Custom behavior tree nodes for executing compiled native MiR missions.
 

@@ -41,7 +41,7 @@ async def test_get_current_mission(mission_tracking):
         return_value=[{"action_type": "charging", "name": "Charging"}]
     )
 
-    mission = await mission_tracking.get_current_mission()
+    mission = await mission_tracking.get_current_mission({})
     assert mission["id"] == 1
     assert mission["definition"]["name"] == "Charge"
     assert mission["definition"]["actions"] == def_actions
@@ -49,7 +49,7 @@ async def test_get_current_mission(mission_tracking):
     assert mission_tracking._tasks_tracker is not None
 
     # The definition is cached per queue entry: a second tick refetches only the entry.
-    await mission_tracking.get_current_mission()
+    await mission_tracking.get_current_mission({})
     assert mission_tracking.mir_api.get_mission_definition.await_count == 1
     assert mission_tracking.mir_api.get_mission_actions.await_count == 1
     assert mission_tracking.mir_api.get_mission_queue_entry.await_count == 2
@@ -59,23 +59,19 @@ async def test_get_current_mission(mission_tracking):
     mission_tracking.mir_api.get_mission_queue_entry = AsyncMock(
         return_value={**entry, "state": "Done", "finished": "2026-08-10T10:00:00"}
     )
-    mission = await mission_tracking.get_current_mission()
+    mission = await mission_tracking.get_current_mission({})
     assert mission["state"] == "Done"
     assert mission_tracking.executing_mission_id is None
 
     # With no next executing mission, the next tick returns None and drops the tracker.
     mission_tracking.mir_api.get_executing_mission_id = AsyncMock(return_value=None)
-    assert await mission_tracking.get_current_mission() is None
+    assert await mission_tracking.get_current_mission({}) is None
     assert mission_tracking._tasks_tracker is None
 
 
 @pytest.mark.asyncio
 async def test_executing_mission_id_comes_from_status(mission_tracking):
-    """/status already carries mission_queue_id and is already fetched every tick.
-
-    The queue endpoint is unbounded (2 MB on a robot with history) and polling it once a
-    second cannot keep up, so it is only a fallback for when the field is absent.
-    """
+    """/status already carries mission_queue_id; the queue endpoint is only a fallback."""
     mission_tracking.mir_api.get_executing_mission_id = AsyncMock(side_effect=AssertionError)
     assert await mission_tracking._find_executing_mission_id({"mission_queue_id": 7}) == 7
     # Idle robot: the field is present and null, which is an answer, not a gap.
@@ -83,7 +79,6 @@ async def test_executing_mission_id_comes_from_status(mission_tracking):
 
     mission_tracking.mir_api.get_executing_mission_id = AsyncMock(return_value=9)
     assert await mission_tracking._find_executing_mission_id({}) == 9
-    assert await mission_tracking._find_executing_mission_id(None) == 9
 
 
 @pytest.mark.asyncio

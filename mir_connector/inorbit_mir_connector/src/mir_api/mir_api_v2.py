@@ -35,18 +35,6 @@ DIAGNOSTICS_ENDPOINT_V2 = "experimental/diagnostics"
 POSITIONS_ENDPOINT_V2 = "positions"
 SOFTWARE_STATUS_ENDPOINT_V2 = "software/system_status"
 
-# Fields requested for mission definition actions. Everything but scope_reference is in the
-# default response; asking for it is what exposes the nesting between actions.
-MISSION_ACTION_FIELDS = "guid,action_type,priority,scope_reference,parameters"
-
-# Fields requested for action-type definitions. The default response has only action_type
-# and url; these are what task labels are rendered from.
-ACTION_DEFINITION_FIELDS = "action_type,name,description,parameters"
-
-# How much of the tail of the mission queue to read when looking for the executing entry.
-# Slack for entries queued behind it; the queue itself is never truncated by the robot.
-RECENT_QUEUE_ENTRIES = 20
-
 
 class SetStateId(int, Enum):
     """Defined states for the set_state method"""
@@ -185,11 +173,13 @@ class MirApiV2(MirApiBaseClass):
 
         ``scope_reference`` has to be whitelisted; it is not in the default response. It
         holds the guid of a parameter of the action containing this one, or null at the
-        top level, and is what makes the list a tree. See
-        ``mission_tracking._execution_order``.
+        top level, and is what makes the list a tree.
         """
         actions_api_url = f"/{MISSIONS_ENDPOINT_V2}/{mission_id}/actions"
-        response = await self._get(actions_api_url, params={"whitelist": MISSION_ACTION_FIELDS})
+        response = await self._get(
+            actions_api_url,
+            params={"whitelist": "guid,action_type,priority,scope_reference,parameters"},
+        )
         actions = response.json()
         return actions
 
@@ -239,7 +229,9 @@ class MirApiV2(MirApiBaseClass):
 
         Reads the newest slice of the queue rather than all of it: the robot never
         truncates the queue, so unbounded this grows to megabytes and takes longer than
-        the poll interval. An executing entry is always among the newest.
+        the poll interval. Queue ids are assigned in ascending order as entries are
+        appended, so ``sort_by=id,desc`` is newest-first and an executing entry is always
+        in the first page, with slack for entries queued behind it.
 
         ``limit`` and ``sort_by`` must be sent together. MiR ignores query params it does
         not recognise rather than rejecting them, so ``limit`` alone would read the
@@ -248,7 +240,7 @@ class MirApiV2(MirApiBaseClass):
         missions_api_url = f"/{MISSION_QUEUE_ENDPOINT_V2}"
         response = await self._get(
             missions_api_url,
-            params={"limit": RECENT_QUEUE_ENTRIES, "sort_by": "id,desc", "whitelist": "id,state"},
+            params={"limit": 20, "sort_by": "id,desc", "whitelist": "id,state"},
         )
         missions = response.json()
         executing = [m for m in missions if m["state"] == MISSION_STATE_EXECUTING]
@@ -429,7 +421,8 @@ class MirApiV2(MirApiBaseClass):
         localized by the Accept-Language header (en_US).
         """
         response = await self._get(
-            f"/{ACTIONS_ENDPOINT_V2}", params={"whitelist": ACTION_DEFINITION_FIELDS}
+            f"/{ACTIONS_ENDPOINT_V2}",
+            params={"whitelist": "action_type,name,description,parameters"},
         )
         return response.json()
 

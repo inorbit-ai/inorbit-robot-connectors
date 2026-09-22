@@ -7,53 +7,46 @@ import re
 from datetime import datetime
 from inorbit_edge.missions import MISSION_STATE_EXECUTING, MISSION_STATE_ABORTED
 
-from .mission.translator import _SCOPE_BEARING_DENIED
-
 # Mission states
 MISSION_STATE_DONE = "Done"
 MISSION_STATE_ABORT = "Abort"
 
-# Max detail GETs issued in a single poll tick.
+# Action types whose MiR schema carries a Scope parameter, i.e. a body of nested child
+# actions. Deliberately not shared with the translator's deny list: that one is about what
+# can be posted as a flat native step and may shrink, this one is about what is a container
+# rather than a mission step.
+_SCOPE_BEARING_TYPES = (
+    "if",
+    "while",
+    "loop",
+    "try_catch",
+    "prompt_user",
+    "reduce_protective_fields",
+    "set_reset_io",
+    "set_reset_plc",
+)
+
 _MAX_DETAIL_FETCHES_PER_POLL = 25
 
-# InOrbit mission statuses. Matched exactly by the platform, so the case matters.
-MISSION_STATUS_OK = "OK"
-MISSION_STATUS_WARNING = "warning"
-MISSION_STATUS_ERROR = "error"
-
-# Mission states derived from the robot rather than the queue. MiR leaves a queue entry
-# "Executing" whether the robot is driving, paused or e-stopped, so a stalled mission is
-# invisible in the queue state alone.
-MISSION_STATE_PAUSED = "Paused"
-MISSION_STATE_EMERGENCY_STOP = "Emergency stop"
-MISSION_STATE_ERROR = "Error"
-
 # Robot state_id -> the mission state it implies while the queue entry is still executing.
-# Only 4 is confirmed (MirApiV2.SetStateId.PAUSE); an unrecognised id leaves the mission
-# executing.
-_STATE_BY_ROBOT_STATE_ID = {
-    4: MISSION_STATE_PAUSED,
-    10: MISSION_STATE_EMERGENCY_STOP,
-    12: MISSION_STATE_ERROR,
-}
+# MiR leaves the entry "Executing" whether the robot is driving, paused or e-stopped, so a
+# stalled mission is invisible in the queue state alone. Only 4 is confirmed
+# (MirApiV2.SetStateId.PAUSE).
+_STATE_BY_ROBOT_STATE_ID = {4: "Paused", 10: "Emergency stop", 12: "Error"}
 
-# Every reported state maps to exactly one status. Unlisted MiR states are reported as OK.
+# Statuses are matched exactly by the platform, so the case matters.
 _STATUS_BY_STATE = {
-    MISSION_STATE_EXECUTING: MISSION_STATUS_OK,
-    MISSION_STATE_DONE: MISSION_STATUS_OK,
-    MISSION_STATE_PAUSED: MISSION_STATUS_WARNING,
-    MISSION_STATE_EMERGENCY_STOP: MISSION_STATUS_WARNING,
-    MISSION_STATE_ERROR: MISSION_STATUS_ERROR,
-    MISSION_STATE_ABORTED: MISSION_STATUS_ERROR,
+    MISSION_STATE_EXECUTING: "OK",
+    MISSION_STATE_DONE: "OK",
+    "Paused": "warning",
+    "Emergency stop": "warning",
+    "Error": "error",
+    MISSION_STATE_ABORTED: "error",
 }
 
 
 def _reported_state(mir_state, robot_status):
-    """Mission state to report: MiR's queue state, refined by the robot's own state.
-
-    Only a still-executing entry can be refined; once the entry reaches a final state that
-    is the whole story.
-    """
+    """Mission state to report: MiR's queue state, refined by the robot's own state."""
     if mir_state != MISSION_STATE_EXECUTING:
         return mir_state
     return _STATE_BY_ROBOT_STATE_ID.get(robot_status.get("state_id"), MISSION_STATE_EXECUTING)
@@ -101,13 +94,11 @@ def _resolve_parameter(value, spec):
 def _render_label(action, definition):
     """Operator-facing label for a definition action, built from MiR's own metadata.
 
-    Every action type ships a ``description`` template ("Move to %(position)s") and, per
-    parameter, the type and value list needed to fill it in. Falls back to the action's
-    display name, then to its raw type, so an unresolvable placeholder yields "Move"
-    rather than a guid. Nothing here is per-action-type.
+    Every action type ships a ``description`` template ("Move to %(position)s") and the
+    per-parameter metadata to fill it in. Falls back to the action's display name, then to
+    its raw type, so an unresolvable placeholder yields "Move" rather than a guid.
     """
-    # Not every action type is listed in GET /actions (load_mission is not), so the raw
-    # type is the last resort: "load_mission" -> "Load mission".
+    # GET /actions does not list every action type (load_mission is not there).
     name = definition.get("name") or action["action_type"].replace("_", " ").capitalize()
     template = definition.get("description")
     if not template:
@@ -118,32 +109,17 @@ def _render_label(action, definition):
         for p in action.get("parameters") or []
         if p.get("id")
     }
-    complete = True
-
-    def substitute(match):
-        nonlocal complete
-        text = resolved.get(match.group(1))
-        if not text:
-            complete = False
-            return ""
-        return text
-
-    label = _PLACEHOLDER.sub(substitute, template).strip()
-    return label if complete and label else name
+    if not all(resolved.get(key) for key in _PLACEHOLDER.findall(template)):
+        return name
+    return _PLACEHOLDER.sub(lambda m: resolved[m.group(1)], template).strip() or name
 
 
 def _execution_order(actions):
     """Mission definition actions in the order the robot runs them.
 
-    ``GET /missions/{id}/actions`` returns them in no useful order, and ``priority`` is
-    not a global rank: it orders siblings within one scope only, and each scope numbers
-    its own children (two actions in different scopes routinely share a priority). The
-    list is a tree, linked by ``scope_reference`` -> the guid of a *parameter* of the
-    containing action, null at the top level. So this is a DFS pre-order, which is also
-    what an operator reads top to bottom.
-
-    No list of scope-bearing action types is needed: a parameter guid that something
-    points at is, by definition, a scope.
+    ``priority`` only orders siblings within one scope, and ``scope_reference`` holds the
+    guid of a *parameter* of the containing action (null at the top level), so the list is
+    a tree and this is a depth-first walk of it.
     """
     children = {}
     for action in actions:
@@ -151,34 +127,24 @@ def _execution_order(actions):
     for siblings in children.values():
         siblings.sort(key=lambda a: a.get("priority") or 0)
     ordered = []
-    # Guards against a parameter guid that loops back to an enclosing scope. Malformed
-    # input would otherwise hang the poll loop; None is seeded because it is the root key
-    # and an unset parameter guid must not be read as "nested at the top level".
-    walked = {None}
 
     def walk(scope):
-        for action in children.get(scope, []):
+        # Popping is also the cycle guard: a scope guid that loops back finds nothing.
+        for action in children.pop(scope, []):
             ordered.append(action)
             for param in action.get("parameters") or []:
-                nested = param.get("guid")
-                if nested in children and nested not in walked:
-                    walked.add(nested)
-                    walk(nested)
+                walk(param.get("guid"))
 
     walk(None)
-    # Actions unreachable from the root are appended rather than dropped, so a malformed
-    # scope_reference cannot silently lose a task.
-    placed = {id(a) for a in ordered}
-    return ordered + [a for a in actions if id(a) not in placed]
+    # Whatever the walk could not reach is appended rather than dropped.
+    return ordered + [a for group in children.values() for a in group]
 
 
 def _action_outcome(detail):
     """``(finished, succeeded)`` for a queue action detail.
 
-    ``finished`` is a timestamp on failures too, so it alone does not mean success: a
-    successful action reports an empty ``state``, a failed one "Failed" or "Aborted".
-    The two flags are kept apart because a failed action is neither still running nor
-    completed, and InOrbit tasks express that as both booleans false.
+    ``finished`` is a timestamp on failures too: a successful action reports an empty
+    ``state``, a failed one "Failed" or "Aborted".
     """
     finished = detail.get("finished") is not None
     return finished, finished and not detail.get("state")
@@ -187,10 +153,9 @@ def _action_outcome(detail):
 class MirNativeMissionTasks:
     """Per-action InOrbit task progress for one native (robot-triggered) mission.
 
-    Tasks are the mission definition's actions. Progress comes from the mission
-    queue actions endpoints: each executed queue action's ``action_id`` equals a
-    definition action guid. Completed tasks never downgrade; poll failures keep
-    the previous states.
+    Tasks are the mission definition's actions; an executed queue action's ``action_id``
+    equals a definition action guid. Completed tasks never downgrade, and poll failures
+    keep the previous states.
     """
 
     def __init__(self, mir_api, queue_id, tasks):
@@ -200,8 +165,7 @@ class MirNativeMissionTasks:
         # Ordered {definition action guid: task dict}, mutated in place as progress arrives.
         self._tasks = tasks
         self._current_task_id = None
-        # queue-action int id -> (action_id guid, finished bool, succeeded bool). Finished
-        # entries are never re-fetched, so steady state costs one shallow GET per poll.
+        # queue-action int id -> (action_id guid, finished bool, succeeded bool).
         self._detail_cache = {}
 
     async def poll(self):
@@ -227,7 +191,7 @@ class MirNativeMissionTasks:
         self._apply()
 
     def _apply(self):
-        """Fold the detail cache (in execution order) into task states."""
+        """Fold the detail cache into task states."""
         current = None
         for guid, finished, succeeded in self._detail_cache.values():
             task = self._tasks.get(guid)
@@ -237,7 +201,6 @@ class MirNativeMissionTasks:
                 task["completed"] = True
                 task["inProgress"] = False
             elif finished:
-                # Ran and failed: not completed, and no longer running either.
                 task["inProgress"] = False
             elif not task["completed"]:
                 task["inProgress"] = True
@@ -245,16 +208,15 @@ class MirNativeMissionTasks:
         self._current_task_id = current
 
     def report_fields(self):
-        """``tasks``/``completedPercent``/``currentTaskId`` fields for the report payload."""
-        tasks = list(self._tasks.values())
-        completed = sum(1 for t in tasks if t["completed"])
-        fields = {
-            "tasks": [dict(t) for t in tasks],
-            "completedPercent": completed / len(tasks) if tasks else 0,
-        }
+        """``tasks``/``currentTaskId`` fields for the report payload."""
+        fields = {"tasks": [dict(t) for t in self._tasks.values()]}
         if self._current_task_id:
             fields["currentTaskId"] = self._current_task_id
         return fields
+
+    def completed_percent(self):
+        tasks = self._tasks.values()
+        return sum(t["completed"] for t in tasks) / len(tasks) if tasks else 0
 
     def signature(self):
         """Hashable snapshot of task states, for report deduplication."""
@@ -282,8 +244,7 @@ class MirInorbitMissionTracking:
         self.inorbit_sess = inorbit_sess
         self.robot_tz_info = robot_tz_info
         self.mission_executor = mission_executor
-        # {action_type: definition}, one fetch for the life of the connector. Carries the
-        # label templates and the parameter value lists task labels are rendered from.
+        # {action_type: definition}, fetched once for the life of the connector.
         self._action_definitions = None
         self._mission_definition = None  # definition of the tracked mission, one fetch per entry
         self._tasks_tracker = None  # MirNativeMissionTasks for the tracked queue entry
@@ -309,15 +270,14 @@ class MirInorbitMissionTracking:
         """{guid: task dict} in execution order, one task per real mission step.
 
         Scope-bearing actions (loop, if, try_catch, ...) are containers, not steps: they
-        are what the nested actions hang off, they need not ever report finished, and
-        while their body runs they would show as a second task in progress. Their
-        children stay, in place.
+        need not ever report finished, and while their body runs they would show as a
+        second task in progress. Their children stay, in place.
         """
         definitions = await self._get_action_definitions()
         tasks = {}
         for action in _execution_order(actions):
             guid = action.get("guid")
-            if not guid or action.get("action_type") in _SCOPE_BEARING_DENIED:
+            if not guid or action.get("action_type") in _SCOPE_BEARING_TYPES:
                 continue
             tasks[guid] = {
                 "taskId": guid,
@@ -349,18 +309,18 @@ class MirInorbitMissionTracking:
     async def _find_executing_mission_id(self, robot_status):
         """Queue id of the mission the robot is running, or None.
 
-        ``/status`` carries it and is already fetched every tick, so this normally costs
-        nothing. The queue endpoint is only consulted when the field is missing.
+        ``/status`` carries it and is already fetched every tick. The queue endpoint is
+        only consulted when the field is missing.
         """
-        if robot_status and "mission_queue_id" in robot_status:
+        if "mission_queue_id" in robot_status:
             queue_id = robot_status["mission_queue_id"]
         else:
             queue_id = await self.mir_api.get_executing_mission_id()
-        # An already-finished entry is refused: the field clears when a mission ends, but
-        # a firmware that left it set would make the entry republish on every tick.
+        # status is a cached snapshot and can still name an entry that has since finished,
+        # which would republish it on every tick.
         return None if queue_id == self._finished_mission_id else queue_id
 
-    async def get_current_mission(self, robot_status=None):
+    async def get_current_mission(self, robot_status):
         """Return the current mission, it's either executing or just ended.
 
         The queue entry is fetched every tick; the definition (with actions) once per
@@ -393,9 +353,8 @@ class MirInorbitMissionTracking:
                 self.logger.warning(f"Failed to fetch definition of mission {queue_id}: {e}")
         mission["definition"] = self._mission_definition
         if mission["state"] != MISSION_STATE_EXECUTING:
-            # Update executing_mission_id so the next call to this method returns the next
-            # executing mission or None.
-            # Note that the current call in this case returns the just finished mission
+            # The current call still returns the just-finished mission; the next one moves
+            # on to the next executing entry.
             self.executing_mission_id = None
             self._finished_mission_id = queue_id
         return mission
@@ -414,16 +373,15 @@ class MirInorbitMissionTracking:
         if tracker is not None:
             await tracker.poll()
             task_fields = tracker.report_fields()
-            completed_percent = task_fields.pop("completedPercent")
+            completed_percent = tracker.completed_percent()
         # Merge 'Abort' and 'Aborted' values into a single state
         if mission["state"] == MISSION_STATE_ABORT:
             mission["state"] = MISSION_STATE_ABORTED
-        # A paused mission is still open, so inProgress follows MiR's queue state, not the
-        # reported one. Reporting it false would make the platform stamp an end time and
-        # close the mission.
+        # inProgress follows MiR's queue state, not the reported one: reporting it false
+        # for a paused mission would make the platform stamp an end time and close it.
         in_progress = mission["state"] == MISSION_STATE_EXECUTING
         reported_state = _reported_state(mission["state"], status)
-        mission_status = _STATUS_BY_STATE.get(reported_state, MISSION_STATUS_OK)
+        mission_status = _STATUS_BY_STATE.get(reported_state, "OK")
         tasks_signature = tracker.signature() if tracker is not None else None
         if (
             mission["id"] == self.last_reported_mission_id
@@ -457,8 +415,8 @@ class MirInorbitMissionTracking:
             mission_values["data"]["Mission Steps"] = len(definition["actions"])
         if mission.get("finished") is not None:
             mission_values["endTs"] = self._safe_localize_timestamp(mission["finished"]) * 1000
-            # Only a mission that ran to the end is 100%; an aborted one keeps the
-            # progress it reached, matching the task list sent alongside it.
+            # Only a mission that ran to the end is 100%; an aborted one keeps the progress
+            # it reached.
             if mission["state"] == MISSION_STATE_DONE:
                 completed_percent = 1
         if completed_percent is not None:

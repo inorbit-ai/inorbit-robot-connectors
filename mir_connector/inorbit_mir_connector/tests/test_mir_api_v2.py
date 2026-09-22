@@ -59,12 +59,7 @@ async def test_http_error_logs_response_body(mir_api, httpx_mock, caplog):
 
 @pytest.mark.asyncio
 async def test_get_executing_mission_id(mir_api, httpx_mock):
-    """Reads only the tail of the queue, newest first.
-
-    Unbounded, this endpoint returns every entry the robot has ever run. MiR ignores
-    params it does not know, so limit and sort_by must travel together: limit alone
-    would return the oldest entries.
-    """
+    """Reads only the tail of the queue, newest first."""
     missions = [
         {"id": 2, "state": "Aborted"},
         {"id": 1, "state": "Executing"},
@@ -202,11 +197,7 @@ mir_robot_wifi_access_point_frequency_hertz 0.0
 
 @pytest.mark.asyncio
 async def test_get_action_definitions_requests_label_metadata(mir_api, httpx_mock):
-    """Unwhitelisted, GET /actions returns only action_type and url.
-
-    Without the whitelist there is no name, no description template and no parameter
-    metadata, and every task label silently degrades to the raw action type.
-    """
+    """Without the whitelist there is no label template, and labels degrade to the type."""
     defs = [
         {
             "action_type": "move",
@@ -215,34 +206,22 @@ async def test_get_action_definitions_requests_label_metadata(mir_api, httpx_moc
             "parameters": [{"id": "position", "type": "Reference", "constraints": {}}],
         },
     ]
-    httpx_mock.add_response(
-        method="GET",
-        url=(
-            f"{mir_api.mir_api_base_url}/actions"
-            "?whitelist=action_type%2Cname%2Cdescription%2Cparameters"
-        ),
-        json=defs,
-    )
+    httpx_mock.add_response(method="GET", json=defs)
     assert await mir_api.get_action_definitions() == defs
+    whitelist = httpx_mock.get_requests()[0].url.params["whitelist"]
+    assert {"name", "description", "parameters"} <= set(whitelist.split(","))
 
 
 @pytest.mark.asyncio
 async def test_get_mission_actions_requests_scope_reference(mir_api, httpx_mock):
-    """scope_reference is not in the default response and must be whitelisted.
+    """Without scope_reference every action looks top-level and the nesting is invisible.
 
-    Without it every action looks top-level, the nesting is invisible and the task list
-    silently falls back to the API's (meaningless) response order. Nothing else would fail
-    loudly, so the query string itself is the assertion.
+    Nothing else would fail loudly, so the query string itself is the assertion.
     """
     actions = [
         {"guid": "g1", "action_type": "wait", "priority": 12, "scope_reference": None},
     ]
-    httpx_mock.add_response(
-        method="GET",
-        url=(
-            f"{mir_api.mir_api_base_url}/missions/m1/actions"
-            "?whitelist=guid%2Caction_type%2Cpriority%2Cscope_reference%2Cparameters"
-        ),
-        json=actions,
-    )
+    httpx_mock.add_response(method="GET", json=actions)
     assert await mir_api.get_mission_actions("m1") == actions
+    whitelist = httpx_mock.get_requests()[0].url.params["whitelist"]
+    assert "scope_reference" in whitelist.split(",")

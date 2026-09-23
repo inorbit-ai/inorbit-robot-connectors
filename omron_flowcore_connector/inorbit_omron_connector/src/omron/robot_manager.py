@@ -474,6 +474,7 @@ class RobotManager:
             data.get("StateOfCharge"),
             data.get("ChargeState"),
             data.get("DockingState"),
+            data.get("robot_ip"),
         ) or None
 
     def get_robot_odometry(self, fleet_robot_id: str) -> Optional[dict]:

@@ -100,23 +100,23 @@ Exported metrics include connector liveness (`inorbit_connector_up`), per-robot 
 
 ## Poll loops
 
-Three background loops, all at `update_freq`: the fleet summary (`/Robot/UpdatedSince`), the
-slow telemetry (battery, charge, docking, IP), and pose.
+Three background loops run at `update_freq`: the fleet summary (`/Robot/UpdatedSince`), the
+slow telemetry (battery, charge state, docking state, IP), and pose.
 
-Pose runs on its own loop and fetches `/DataStoreValueLatest/{item}:{AMR}` per robot. The
-wildcard `:*` form the other loops use collects from every AMR before it answers, measured at
-2050ms on a live Fleet Manager against 102ms for the per-AMR form, which is what held pose to
-about 0.5 Hz whatever `update_freq` was set to. Raising `update_freq` now raises the pose rate,
-up to a measured ceiling of about 7.5 Hz; the slow loop self-throttles at its own latency,
-since each cycle waits on the fetch and the interval together.
+Pose has its own loop because it uses a different form of the same endpoint. The other loops
+fetch an item for the whole fleet with `/DataStoreValueLatest/{item}:*`, which collects from
+every AMR before it answers and takes seconds to do so. Pose fetches
+`/DataStoreValueLatest/{item}:{AMR}` per robot, which does not, so the pose rate follows
+`update_freq` rather than the wildcard's pace. Each loop awaits its fetch and its interval
+together, so a slow endpoint throttles its own loop instead of queueing.
 
-Each pose tick is 3 requests per robot, so `update_freq` and fleet size multiply. A fleet
-large enough for that to matter wants a separate pose frequency rather than a higher
+Each pose tick costs three requests per robot, so `update_freq` and fleet size multiply. A
+fleet large enough for that to matter wants a pose frequency of its own rather than a higher
 `update_freq`.
 
 ## Robot availability
 
-A robot is reported online to InOrbit while the Fleet Manager has fetched a DataStore value from it within the grace window. That is the whole rule. `/DataStoreValueLatest` reaches the AMR on every call, confirmed by polling a moving robot and getting a new pose back on 150 of 152 samples, so a value coming back is the Fleet Manager saying it just reached the robot, and a robot it cannot reach returns nothing. Availability is measured, not read off a status label.
+A robot is reported online to InOrbit while the Fleet Manager has fetched a DataStore value from it within the grace window. That is the whole rule. `/DataStoreValueLatest` reaches the AMR on every call, so a value coming back is the Fleet Manager saying it just reached the robot, and a robot it cannot reach returns nothing. Availability is measured, not read off a status label.
 
 The grace window is three missed polls, with a floor of 10 seconds: every poll loop runs at `update_freq`, the Fleet Manager takes up to 10 seconds to reflect an attach or detach, and a wildcard `/DataStoreValueLatest` fetch takes about 2 seconds by design. There is no knob for it, since the only meaning a grace can have is missed polls and a value set without knowing the poll period can keep every robot offline between successful polls. Both clocks are seeded at startup so a connector start or restart is not reported as an offline transition while the first polls are in flight.
 

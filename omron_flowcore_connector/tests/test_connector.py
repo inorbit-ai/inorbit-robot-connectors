@@ -94,6 +94,7 @@ async def mock_robot_manager(connector_config):
     # Manually populate cache for test stability (bypassing async poll timing issues)
     await manager._update_fleet_state()
     await manager._update_fleet_details()
+    await manager._update_poses()
     
     return manager
 
@@ -256,6 +257,7 @@ async def test_pose_and_battery_keep_publishing_while_their_values_hold(
 
     await connector._execution_loop()
     await mock_robot_manager._update_fleet_details()
+    await mock_robot_manager._update_poses()
     await connector._execution_loop()
 
     assert connector.publish_robot_pose.call_count == 2
@@ -338,6 +340,7 @@ async def test_arcl_lost_robot_is_online_and_keeps_publishing_telemetry(
     )
     await mock_robot_manager._update_fleet_state()
     await mock_robot_manager._update_fleet_details()
+    await mock_robot_manager._update_poses()
     assert connector._is_fleet_robot_online("Robot1") is True
 
     await connector._execution_loop()
@@ -350,6 +353,7 @@ async def test_arcl_lost_robot_is_online_and_keeps_publishing_telemetry(
         sub_status="OutgoingArclConnectionLost",
     )
     await mock_robot_manager._update_fleet_details()
+    await mock_robot_manager._update_poses()
     await connector._execution_loop()
 
     assert connector.publish_robot_pose.call_count == 2

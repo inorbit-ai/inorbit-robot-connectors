@@ -29,9 +29,32 @@ async def robot_manager(manager_config):
     await client.connect()
     # Seed a robot
     client.seed_robot("Robot1", x=1000.0, y=2000.0, theta=90.0, battery=50.0)
-    
+
     manager = RobotManager(manager_config, api_client=client)
     return manager
+
+
+@pytest_asyncio.fixture
+async def pose_manager(manager_config):
+    """A manager with Robot1 configured: the pose loop iterates the fleet config."""
+    manager_config.fleet = [MagicMock(fleet_robot_id="Robot1", ip_address=None)]
+    client = MockOmronClient()
+    await client.connect()
+    client.seed_robot("Robot1", x=1000.0, y=2000.0, theta=90.0, battery=50.0)
+    return RobotManager(manager_config, api_client=client)
+
+
+def _spy_on_fetches(manager) -> list[tuple[str, str]]:
+    """Record every (key, robot_id) the manager asks the API for."""
+    calls: list[tuple[str, str]] = []
+    original = manager.api.get_data_store_value
+
+    async def spy(key, robot_id):
+        calls.append((key, robot_id))
+        return await original(key, robot_id)
+
+    manager.api.get_data_store_value = spy
+    return calls
 
 @pytest.mark.asyncio
 async def test_update_fleet_state(robot_manager):
@@ -52,18 +75,65 @@ async def test_update_fleet_details(robot_manager):
     robot_manager.api.seed_robot("Robot2", x=3000.0, y=4000.0, theta=180.0, battery=80.0)
     
     await robot_manager._update_fleet_details()
-    
+
     # Check Robot1
     data1 = robot_manager._robot_data["Robot1"]
-    assert data1["PoseX"].value == 1000.0
-    assert data1["PoseY"].value == 2000.0
     assert data1["StateOfCharge"].value == 50.0
 
     # Check Robot2
     data2 = robot_manager._robot_data["Robot2"]
-    assert data2["PoseX"].value == 3000.0
-    assert data2["PoseY"].value == 4000.0 
     assert data2["StateOfCharge"].value == 80.0
+
+    # Pose is the pose loop's job, not this one
+    assert "PoseX" not in data1
+    assert "PoseX" not in data2
+
+
+@pytest.mark.asyncio
+async def test_update_poses_asks_for_each_robot_by_name_never_the_wildcard(pose_manager):
+    """The `:*` form carries a ~2s collection delay; the per-AMR form does not, and
+    that is the whole reason pose has its own loop."""
+    calls = _spy_on_fetches(pose_manager)
+
+    await pose_manager._update_poses()
+
+    assert calls == [("PoseX", "Robot1"), ("PoseY", "Robot1"), ("PoseTh", "Robot1")]
+
+
+@pytest.mark.asyncio
+async def test_update_poses_caches_the_pose_and_stamps_the_fetch_clock(pose_manager):
+    pose_manager._last_fetched_at["Robot1"] = 0.0
+
+    await pose_manager._update_poses()
+
+    assert pose_manager._robot_data["Robot1"]["PoseX"].value == 1000.0
+    assert pose_manager._robot_data["Robot1"]["PoseY"].value == 2000.0
+    assert pose_manager._robot_data["Robot1"]["PoseTh"].value == 90.0
+    assert pose_manager.get_robot_pose("Robot1")["x"] == 1.0
+    assert pose_manager._last_fetched_at["Robot1"] > 0.0
+
+
+@pytest.mark.asyncio
+async def test_a_failing_pose_poll_does_not_refresh_the_fetch_clock(pose_manager):
+    await pose_manager._update_poses()
+    before = pose_manager._last_fetched_at["Robot1"]
+    pose_manager.api._connected = False
+
+    await pose_manager._update_poses()
+
+    assert pose_manager._last_fetched_at["Robot1"] == before
+
+
+@pytest.mark.asyncio
+async def test_update_poses_skips_a_robot_that_is_not_configured(pose_manager):
+    """Unconfigured AMRs are never published, so fetching them is wasted load."""
+    pose_manager.api.seed_robot("Robot2", x=3000.0, y=4000.0, theta=180.0)
+    calls = _spy_on_fetches(pose_manager)
+
+    await pose_manager._update_poses()
+
+    assert {robot_id for _, robot_id in calls} == {"Robot1"}
+    assert "Robot2" not in pose_manager._robot_data
 
 @pytest.mark.asyncio
 async def test_getters(robot_manager):
@@ -93,8 +163,8 @@ async def test_getters(robot_manager):
 @pytest.mark.asyncio
 async def test_start_stop(robot_manager):
     await robot_manager.start()
-    # Should start the fleet state and fleet details loops
-    assert len(robot_manager._running_tasks) == 2
+    # Should start the fleet state, fleet details and pose loops
+    assert len(robot_manager._running_tasks) == 3
 
     await robot_manager.stop()
     assert robot_manager._running_tasks == []
@@ -189,7 +259,11 @@ async def test_start_registers_supervised_tasks(manager_config):
     )
     await manager.start()
 
-    assert registered == ["flowcore-fleet-state", "flowcore-fleet-details"]
+    assert registered == [
+        "flowcore-fleet-state",
+        "flowcore-fleet-details",
+        "flowcore-poses",
+    ]
 
     await asyncio.sleep(0.1)
     for task in manager._running_tasks:
@@ -381,8 +455,8 @@ async def test_data_values_is_none_until_the_cache_is_populated(robot_manager):
 async def test_data_values_uses_the_keys_that_are_present(robot_manager):
     await robot_manager._update_fleet_details()
 
-    partial = robot_manager.data_values("Robot1", ("PoseX", "NeverReported"))
-    full = robot_manager.data_values("Robot1", ("PoseX",))
+    partial = robot_manager.data_values("Robot1", ("StateOfCharge", "NeverReported"))
+    full = robot_manager.data_values("Robot1", ("StateOfCharge",))
 
     assert partial == full
     assert partial is not None
@@ -393,12 +467,12 @@ async def test_data_values_hold_while_nothing_changed_even_though_stamps_advance
     """The stamps are our own read time and move on every poll; the values are the
     only thing that can say the vendor has nothing new."""
     await robot_manager._update_fleet_details()
-    first = robot_manager.data_values("Robot1", ("PoseX", "PoseY", "PoseTh"))
-    first_millis = robot_manager.update_millis("Robot1", ("PoseX",))
+    first = robot_manager.data_values("Robot1", ("StateOfCharge",))
+    first_millis = robot_manager.update_millis("Robot1", ("StateOfCharge",))
 
     await robot_manager._update_fleet_details()
-    second = robot_manager.data_values("Robot1", ("PoseX", "PoseY", "PoseTh"))
-    second_millis = robot_manager.update_millis("Robot1", ("PoseX",))
+    second = robot_manager.data_values("Robot1", ("StateOfCharge",))
+    second_millis = robot_manager.update_millis("Robot1", ("StateOfCharge",))
 
     assert first is not None
     assert first == second
@@ -406,13 +480,13 @@ async def test_data_values_hold_while_nothing_changed_even_though_stamps_advance
 
 
 @pytest.mark.asyncio
-async def test_data_values_change_when_the_pose_moves(robot_manager):
-    await robot_manager._update_fleet_details()
-    first = robot_manager.data_values("Robot1", ("PoseX", "PoseY", "PoseTh"))
+async def test_data_values_change_when_the_pose_moves(pose_manager):
+    await pose_manager._update_poses()
+    first = pose_manager.data_values("Robot1", ("PoseX", "PoseY", "PoseTh"))
 
-    robot_manager.api.seed_robot("Robot1", x=9999.0, y=2000.0, theta=90.0, battery=50.0)
-    await robot_manager._update_fleet_details()
-    second = robot_manager.data_values("Robot1", ("PoseX", "PoseY", "PoseTh"))
+    pose_manager.api.seed_robot("Robot1", x=9999.0, y=2000.0, theta=90.0, battery=50.0)
+    await pose_manager._update_poses()
+    second = pose_manager.data_values("Robot1", ("PoseX", "PoseY", "PoseTh"))
 
     assert first != second
 

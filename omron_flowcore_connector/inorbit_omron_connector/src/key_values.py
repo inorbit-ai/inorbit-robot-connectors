@@ -118,24 +118,26 @@ def build_vendor_key_values(
     This is the fleet summary, not the robot's own telemetry: it keeps arriving
     correctly even while the robot itself is unreachable, so it publishes whenever
     the API is connected, regardless of whether the robot is online.
+
+    `robot_ip` is not built here. The summary's `ipAddress` is only one of three
+    sources for it and the weakest, so it is published from the resolved value
+    instead, by :func:`build_robot_key_values`.
     """
     if summary is None:
         return {}
-    key_values: dict[str, Any] = {
+    return {
         "omron_status": summary.status,
         "omron_sub_status": summary.subStatus,
         "status": map_status(summary.subStatus, charging, faults),
         "omron_active_faults": ", ".join(faults),
     }
-    if summary.ipAddress:
-        key_values["robot_ip"] = summary.ipAddress
-    return key_values
 
 
 def build_robot_key_values(
     battery: Optional[DataStoreResponse],
     charge_state: Optional[DataStoreResponse] = None,
     docking_state: Optional[DataStoreResponse] = None,
+    robot_ip: Optional[str] = None,
 ) -> dict[str, Any]:
     """The robot's own telemetry, from `/DataStoreValueLatest`.
 
@@ -147,6 +149,10 @@ def build_robot_key_values(
     still publishes its battery. `omron_charge_state` is passed through verbatim
     (`Not`, `Bulk`, `Overcharge`, `Float`) rather than derived, so a stage this connector
     does not know about still reaches the operator.
+
+    `robot_ip` is the address the connector resolved for this robot, which is what it
+    dials over ARCL. It is published here rather than from the fleet summary because
+    the summary reports no address on some Fleet Managers.
     """
     key_values: dict[str, Any] = {}
     if battery is not None:
@@ -155,4 +161,6 @@ def build_robot_key_values(
         key_values["omron_charge_state"] = str(charge_state.value)
     if docking_state is not None and docking_state.value is not None:
         key_values["omron_docking_state"] = str(docking_state.value)
+    if robot_ip:
+        key_values["robot_ip"] = robot_ip
     return key_values

@@ -93,19 +93,14 @@ def test_vendor_key_values_carry_the_fleet_summary():
         "omron_sub_status": "Unallocated",
         "status": "IDLE",
         "omron_active_faults": "",
-        "robot_ip": "10.0.0.1",
     }
 
 
-def test_vendor_key_values_omit_robot_ip_when_unset():
-    result = build_vendor_key_values(_summary(ip=None))
-
-    assert result == {
-        "omron_status": "Available",
-        "omron_sub_status": "Unallocated",
-        "status": "IDLE",
-        "omron_active_faults": "",
-    }
+def test_vendor_key_values_leave_robot_ip_to_the_telemetry_tier():
+    """The summary reports no address on some Fleet Managers, so the resolved one is
+    published instead. Two sources for one key would race."""
+    assert "robot_ip" not in build_vendor_key_values(_summary())
+    assert "robot_ip" not in build_vendor_key_values(_summary(ip=None))
 
 
 def test_vendor_key_values_are_empty_without_data():
@@ -138,6 +133,11 @@ def test_robot_key_values_publish_each_item_independently():
 
 def test_robot_key_values_are_empty_without_data():
     assert build_robot_key_values(None) == {}
+
+
+def test_robot_key_values_publish_the_resolved_robot_ip():
+    assert build_robot_key_values(None, robot_ip="10.0.0.9") == {"robot_ip": "10.0.0.9"}
+    assert "robot_ip" not in build_robot_key_values(None, robot_ip=None)
 
 
 def test_map_status_maps_the_documented_sub_statuses():

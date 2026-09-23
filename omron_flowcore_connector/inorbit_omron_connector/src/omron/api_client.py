@@ -98,7 +98,9 @@ class OmronApiClient:
         """Fetch one DataStore item, for one AMR by namekey or for all of them with "*".
 
         Always a list, empty on any failure. The `"*"` form collects from every AMR
-        before it answers, costing seconds; the per-AMR form does not.
+        before answering and so costs seconds per call whatever the fleet size; the
+        per-AMR form answers as fast as the round trip allows. Either form re-reads the
+        AMR, so a value coming back means the Fleet Manager just reached that robot.
 
         Example: ``await client.get_data_store_value("PoseX", "Gemini_48")``
         """

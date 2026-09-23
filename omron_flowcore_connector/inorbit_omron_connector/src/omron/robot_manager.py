@@ -2,18 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Robot manager for FlowCore connector.
-
-Two forms of the DataStore endpoint matter here:
-
-- ``/DataStoreValueLatest/{item}:{AMR}``, one item from one AMR, which answers as fast
-  as the round trip allows.
-- ``/DataStoreValueLatest/{item}:*``, the same item from every AMR, which collects them
-  all before answering and so costs seconds per call, whatever the fleet size.
-
-Either form reaches the AMR on every call, which is what makes a returned value proof
-that the Fleet Manager just reached the robot rather than a cached reading.
-"""
+"""Robot manager for FlowCore connector."""
 
 # Standard
 import asyncio

@@ -2,7 +2,18 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Robot manager for FlowCore connector."""
+"""Robot manager for FlowCore connector.
+
+Two forms of the DataStore endpoint matter here:
+
+- ``/DataStoreValueLatest/{item}:{AMR}``, one item from one AMR, which answers as fast
+  as the round trip allows.
+- ``/DataStoreValueLatest/{item}:*``, the same item from every AMR, which collects them
+  all before answering and so costs seconds per call, whatever the fleet size.
+
+Either form reaches the AMR on every call, which is what makes a returned value proof
+that the Fleet Manager just reached the robot rather than a cached reading.
+"""
 
 # Standard
 import asyncio
@@ -19,10 +30,10 @@ from ..key_values import build_robot_key_values, build_vendor_key_values
 
 LOGGER = logging.getLogger(__name__)
 
-# Undocumented status/subStatus value found by probing a live Fleet Manager: it is
-# not mentioned anywhere in the Integration Toolkit manual, but both fields carry it
-# for a robot that has been unreachable for a long time, and it is a first-class
-# value of /Robot/ByStatus. Used to explain an offline robot, never to decide it.
+# Undocumented status/subStatus value, found by probing a live Fleet Manager: both
+# fields carry it for a robot that has been unreachable for a long time, and it is a
+# first-class value of /Robot/ByStatus. Used to explain an offline robot, never to
+# decide it.
 DISCONNECTED_STATUS = "Disconnected"
 
 # Reasons a robot is offline, most fundamental first
@@ -32,15 +43,31 @@ OFFLINE_DISCONNECTED = "disconnected"
 OFFLINE_NO_TELEMETRY = "no_telemetry"
 
 # Missed polls tolerated before a robot or the API counts as gone, and the floor on
-# that window whatever update_freq is. The Fleet Manager takes up to 10s to reflect
-# an attach or detach, and a wildcard /DataStoreValueLatest fetch takes ~2s by design
-# (manual, Table 4-7), so a tighter window at high poll rates flaps on one slow cycle.
+# that window whatever update_freq is. The Fleet Manager takes up to 10s to reflect an
+# attach or detach, and the wildcard fetch costs seconds, so a tighter window at high
+# poll rates flaps on one slow cycle.
 MISSED_POLLS_TOLERATED = 3
 MIN_GRACE_SECS = 10.0
 
+# The split between the two endpoint forms: pose is fetched per AMR, everything else
+# with the wildcard. Pose is the only item whose rate an operator notices, and the
+# wildcard's collection delay is charged per call, so it alone is worth the extra
+# requests.
+POSE_KEYS = ("PoseX", "PoseY", "PoseTh")
+DETAIL_KEYS = (
+    "StateOfCharge",
+    "RobotIP",
+    "ChargeState",
+    "ChargeStateNumber",
+    "DockingState",
+)
+
 
 def to_inorbit_pose(x_mm: float, y_mm: float, theta_deg: float, frame_id: str = "map") -> dict[str, float]:
-    """Convert FlowCore pose (mm, deg) to InOrbit pose (m, rad)."""
+    """Convert FlowCore pose (mm, deg) to InOrbit pose (m, rad).
+
+    `RobotTh` is degrees counter-clockwise with 0 on the x axis.
+    """
     return {
         "x": x_mm / 1000.0,
         "y": y_mm / 1000.0,
@@ -84,8 +111,8 @@ class RobotManager:
         # from the fleet.
         #
         # Monotonic time the Fleet Manager last fetched any DataStore value from each
-        # robot. /DataStoreValueLatest reaches the AMR on every call (manual, p.23), so
-        # a value coming back is the Fleet Manager saying it just reached the robot.
+        # robot. /DataStoreValueLatest reaches the AMR on every call, so a value
+        # coming back is the Fleet Manager saying it just reached the robot.
         # That is the availability signal; the status vocabulary only explains it.
         #
         # Both clocks are seeded at construction so the grace period covers startup
@@ -132,13 +159,17 @@ class RobotManager:
             LOGGER.error(f"Failed to connect to FlowCore API: {e}")
             raise
 
-        # One loop for high-level status (fleet state), one for details (telemetry)
+        # One loop for high-level status (fleet state), one for details (telemetry),
+        # one for pose. Pose gets its own so the slow wildcard sweep cannot hold it back.
         self._running_tasks = [
             self._create_supervised_task(
                 "flowcore-fleet-state", partial(self._poll_loop, self._update_fleet_state)
             ),
             self._create_supervised_task(
                 "flowcore-fleet-details", partial(self._poll_loop, self._update_fleet_details)
+            ),
+            self._create_supervised_task(
+                "flowcore-poses", partial(self._poll_loop, self._update_poses)
             ),
         ]
 
@@ -209,23 +240,48 @@ class RobotManager:
         except Exception as e:
             LOGGER.error(f"Error updating fleet state: {e}")
 
+    async def _update_poses(self) -> None:
+        """Fetch pose for each configured robot with the per-AMR form of the endpoint.
+
+        The per-AMR form answers in a fraction of what the wildcard form
+        `_update_fleet_details` uses costs, so pose follows `update_freq` here instead of
+        the sub-Hz rate the wildcard imposed. The price is 3 requests per robot per tick
+        rather than 3 for the whole fleet, which is why only pose is fetched this way,
+        and only for configured robots: the rest are never published.
+
+        A robot the Fleet Manager cannot reach yields nothing and so does not refresh
+        its fetch clock, which is what turns it offline.
+        """
+        wanted = [(robot_id, key) for robot_id in self._fleet_config for key in POSE_KEYS]
+        results = await asyncio.gather(
+            *(self.api.get_data_store_value(key, robot_id) for robot_id, key in wanted),
+            return_exceptions=True,
+        )
+
+        now = time.monotonic()
+        for (robot_id, key), result in zip(wanted, results):
+            if isinstance(result, Exception):
+                LOGGER.error(f"Error fetching {key} for {robot_id}: {result}")
+                continue
+            if not result:
+                continue
+            self._robot_data.setdefault(robot_id, {})[key] = result[0]
+            self._last_fetched_at[robot_id] = now
+
     async def _update_fleet_details(self) -> None:
-        """Fetch detailed telemetry for the entire fleet using bulk endpoint."""
+        """Fetch the slow telemetry for the whole fleet with the wildcard endpoint.
+
+        One call per item covers every AMR, at the cost of the collection delay on each.
+        That delay sets this loop's real period whatever `update_freq` says, since
+        `_poll_loop` awaits the fetch and the interval together. Acceptable
+        here because battery, charge, docking and IP do not move on a human timescale;
+        pose does, which is why `_update_poses` pays per robot instead.
+        """
         try:
-            keys = [
-                "PoseX",
-                "PoseY",
-                "PoseTh",
-                "StateOfCharge",
-                "RobotIP",
-                "ChargeState",
-                "ChargeStateNumber",
-                "DockingState",
-            ]
+            keys = list(DETAIL_KEYS)
+            # Each wildcard call answers with one entry per AMR, keyed "{item}:{AMR}"
             calls = [self.api.get_data_store_value(key, "*") for key in keys]
-            
-            # Bulk fetch using wildcard '*'
-            # Each call returns a list of DataStoreResponse objects for all robots
+
             results = await asyncio.gather(*calls, return_exceptions=True)
             fetched: set[str] = set()
 
@@ -233,14 +289,8 @@ class RobotManager:
                 if isinstance(result, Exception):
                     LOGGER.error(f"Error bulk fetching {keys[i]}: {result}")
                     continue
-                
-                # result is assumed to be List[DataStoreResponse]
-                if not isinstance(result, list):
-                    # Should not happen with '*' but defensive check
-                    continue
 
                 for item in result:
-                    # namekey format: "Key:RobotID"
                     parts = item.namekey.split(":")
                     if len(parts) >= 2:
                         robot_id = parts[1]

@@ -95,7 +95,7 @@ class MockOmronClient:
         """No simulated faults: the mock fleet is always healthy and unblocked."""
         return []
 
-    async def get_data_store_value(self, key: str, robot_id: str) -> DataStoreResponse | List[DataStoreResponse]:
+    async def get_data_store_value(self, key: str, robot_id: str) -> List[DataStoreResponse]:
         if not self._connected:
             raise ConnectionError("Not connected")
         
@@ -141,18 +141,13 @@ class MockOmronClient:
             raise ValueError(f"Robot {robot_id} not found")
         
         val = _get_value_from_robot(data, attr_path)
-        if val is None:
-            return DataStoreResponse(
+        return [
+            DataStoreResponse(
                 namekey=f"{key}:{robot_id}",
                 upd=OmronUpdate(millis=self._now_millis()),
-                value=0 # Default value
+                value=0 if val is None else val,
             )
-
-        return DataStoreResponse(
-            namekey=f"{key}:{robot_id}",
-            upd=OmronUpdate(millis=self._now_millis()),
-            value=val
-        )
+        ]
 
     async def create_job(self, job_request: Dict[str, Any]) -> bool:
         """Accept dict or JobRequest model."""

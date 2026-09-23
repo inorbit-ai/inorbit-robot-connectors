@@ -29,8 +29,8 @@ BUSY_SUB_STATUSES = frozenset(
 CHARGING_SUB_STATUSES = frozenset(
     {"Docked", "Docking", "Charging", "DockParking", "DockParked", "ForcedDocking"}
 )
-# `Disconnected` is undocumented: found by probing a live Fleet Manager, not in
-# the manual. Without it, a dropped robot maps to IDLE and looks available.
+# `Disconnected` is undocumented: found by probing a live Fleet Manager. Without
+# it, a dropped robot maps to IDLE and looks available.
 # `OutgoingArclConnectionLost` is the Fleet Manager's own command channel being
 # down, not the robot being unreachable, so the robot stays online; ERROR is how
 # an operator learns FlowCore cannot dispatch to it.
@@ -71,7 +71,7 @@ def map_status(
         return "CHARGING"
     if sub_status in CHARGING_SUB_STATUSES or sub_status in IDLE_SUB_STATUSES:
         return "IDLE"
-    # Reached only by a documented-but-unclassified value (e.g. AvailableForJobs,
+    # Reached only by a known-but-unclassified value (e.g. AvailableForJobs,
     # Parking, Interrupted) or a genuinely unknown one. Either way this connector
     # has no classification for it: the warning is a prompt to classify it, not
     # noise to silence.

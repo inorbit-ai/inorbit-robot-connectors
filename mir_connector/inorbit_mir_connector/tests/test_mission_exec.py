@@ -18,11 +18,13 @@ import unittest.mock as mock
 from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 from inorbit_connector.commands import CommandResultCode
 from inorbit_edge_executor.datatypes import (
     MissionDefinition,
     MissionStepPoseWaypoint,
     Pose,
+    RouteSegment,
 )
 from inorbit_edge_executor.exceptions import TranslationException
 from inorbit_edge_executor.mission import Mission
@@ -32,8 +34,10 @@ from inorbit_mir_connector.src.mission.behavior_tree import (
 )
 from inorbit_mir_connector.src.mission.datatypes import (
     MirInOrbitMission,
+    MirWaypoint,
     MissionStepExecuteMirNativeMission,
 )
+from inorbit_mir_connector.src.mission.translator import InOrbitToMirTranslator
 from inorbit_mir_connector.src.mission.tree_builder import MirTreeBuilder
 from inorbit_mir_connector.src.mission_exec import MirMissionExecutor, MirWorkerPool
 
@@ -78,6 +82,41 @@ def test_translate_mission_compiles_to_native():
     assert isinstance(result, MirInOrbitMission)
     assert len(result.definition.steps) == 1
     assert isinstance(result.definition.steps[0], MissionStepExecuteMirNativeMission)
+
+
+def test_translate_mission_accepts_unlabeled_steps():
+    # Graph-planner dispatches omit label (and theta) on auto-generated waypoints.
+    pool = _make_pool()
+    mission = Mission(
+        id="mission-002",
+        robot_id=ROBOT_ID,
+        definition=MissionDefinition(
+            label="route",
+            steps=[
+                MissionStepPoseWaypoint(waypoint=Pose(x=1, y=2)),
+                MissionStepPoseWaypoint(
+                    waypoint=Pose(x=3, y=4), routeSegment=RouteSegment(routeId="r1")
+                ),
+            ],
+        ),
+    )
+    result = pool.translate_mission(mission)
+    assert isinstance(result.definition.steps[0], MissionStepExecuteMirNativeMission)
+
+
+def test_translate_validation_error_is_summarized():
+    # The error string propagates to the InOrbit UI: raw pydantic output must not leak.
+    pool = _make_pool()
+    try:
+        MirWaypoint(label=None, x=1, y=1, orientation=0)
+    except ValidationError as e:
+        pydantic_error = e
+    with mock.patch.object(InOrbitToMirTranslator, "translate", side_effect=pydantic_error):
+        with pytest.raises(ValueError) as exc_info:
+            pool.translate_mission(_waypoint_mission())
+    msg = str(exc_info.value)
+    assert "label" in msg
+    assert "pydantic" not in msg
 
 
 def test_create_builder_context_carries_handles():

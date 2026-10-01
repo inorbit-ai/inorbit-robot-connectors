@@ -398,3 +398,58 @@ class TestMirActionTypePositioning:
         assert len(step.actions) == 2
         assert isinstance(step.actions[0], MirWaypoint)
         assert step.actions[1].action_type == "adjust_localization"
+
+
+class TestUnlabeledSteps:
+    """A step the operator never named arrives with no label at all.
+
+    ``MissionStep.label`` is typed ``str`` with default None, so an omitted label reads
+    back as None (pydantic does not validate defaults) but passing that None on to
+    MirWaypoint/MirAction is validated and raises. One unnamed step aborted the whole
+    mission before any robot call.
+    """
+
+    def test_waypoint_without_label(self):
+        m = _mission([MissionStepPoseWaypoint(waypoint=Pose(x=1.0, y=2.0, theta=0.0))])
+        result = InOrbitToMirTranslator.translate(m)
+
+        step = result.definition.steps[0]
+        assert isinstance(step.actions[0], MirWaypoint)
+        assert step.actions[0].label == ""
+        assert step.label == "Navigate to waypoint"
+
+    def test_wait_without_label(self):
+        m = _mission([MissionStepWait(timeoutSecs=5)])
+        result = InOrbitToMirTranslator.translate(m)
+
+        assert result.definition.steps[0].actions[0].label == ""
+
+    def test_native_action_without_label(self):
+        m = _mission(
+            [
+                MissionStepRunAction(
+                    runAction={
+                        "actionId": "x",
+                        "arguments": {"mir_actionType": "adjust_localization"},
+                    }
+                )
+            ]
+        )
+        result = InOrbitToMirTranslator.translate(m)
+
+        assert result.definition.steps[0].actions[0].label == ""
+
+    def test_unlabeled_first_step_does_not_abort_the_mission(self):
+        # The shape that failed live: an unnamed leading waypoint, named steps after it.
+        m = _mission(
+            [
+                MissionStepPoseWaypoint(waypoint=Pose(x=1.0, y=2.0, theta=0.0)),
+                _pose_wp(3, 4, label="stage back door"),
+                _wait(1, label="Wait 1 sec"),
+            ]
+        )
+        result = InOrbitToMirTranslator.translate(m)
+
+        step = result.definition.steps[0]
+        assert len(step.actions) == 3
+        assert [a.label for a in step.actions] == ["", "stage back door", "Wait 1 sec"]

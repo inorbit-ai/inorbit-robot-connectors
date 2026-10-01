@@ -21,7 +21,7 @@ def mission_tracking():
         mission_executor=MagicMock(),
     )
     # No InOrbit-dispatched mission active by default.
-    mission_tracking.mission_executor.has_active_mission = AsyncMock(return_value=False)
+    mission_tracking.mission_executor.owns_queue_entry = AsyncMock(return_value=False)
     return mission_tracking
 
 
@@ -148,7 +148,7 @@ async def test_skips_reporting_while_edge_executor_busy(
     mission_tracking.get_current_mission = AsyncMock(return_value=sample_mir_mission_data)
 
     # No InOrbit-dispatched mission active — robot-side tracking should publish.
-    mission_tracking.mission_executor.has_active_mission = AsyncMock(return_value=False)
+    mission_tracking.mission_executor.owns_queue_entry = AsyncMock(return_value=False)
     await mission_tracking.report_mission(sample_status_data, sample_metrics_data)
     assert len(mission_tracking.get_current_mission.call_args_list) == 1
     assert len(mission_tracking.inorbit_sess.publish_key_values.call_args_list) == 1
@@ -156,7 +156,7 @@ async def test_skips_reporting_while_edge_executor_busy(
     mission_tracking.inorbit_sess.publish_key_values.reset_mock()
 
     # An InOrbit-dispatched mission is running in the edge executor — tracker must stay silent.
-    mission_tracking.mission_executor.has_active_mission = AsyncMock(return_value=True)
+    mission_tracking.mission_executor.owns_queue_entry = AsyncMock(return_value=True)
     await mission_tracking.report_mission(sample_status_data, sample_metrics_data)
     assert len(mission_tracking.get_current_mission.call_args_list) == 0
     assert len(mission_tracking.inorbit_sess.publish_key_values.call_args_list) == 0

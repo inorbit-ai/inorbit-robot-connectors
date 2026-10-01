@@ -362,9 +362,9 @@ class MirInorbitMissionTracking:
         return mission
 
     async def report_mission(self, status, metrics):
-        # When the edge mission executor is running an InOrbit-dispatched mission, it owns
-        # mission tracking. Skip robot-side polling to avoid duplicate reports.
-        if await self.mission_executor.has_active_mission():
+        # The edge executor reports the queue entries of InOrbit-dispatched missions itself.
+        # Skip those to avoid duplicate reports.
+        if await self.mission_executor.owns_queue_entry(status.get("mission_queue_id")):
             return
         mission = await self.get_current_mission(status)
         if not mission:

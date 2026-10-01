@@ -352,7 +352,7 @@ def make_tracking():
         robot_tz_info=pytz.timezone("UTC"),
         mission_executor=MagicMock(),
     )
-    tracking.mission_executor.has_active_mission = AsyncMock(return_value=False)
+    tracking.mission_executor.owns_queue_entry = AsyncMock(return_value=False)
     tracking.mir_api.get_action_definitions = AsyncMock(return_value=ACTION_DEFS)
     return tracking
 

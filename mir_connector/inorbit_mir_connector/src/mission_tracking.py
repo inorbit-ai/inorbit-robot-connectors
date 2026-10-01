@@ -7,7 +7,9 @@ import re
 from datetime import datetime
 from inorbit_edge.missions import MISSION_STATE_EXECUTING, MISSION_STATE_ABORTED
 
-# Mission states
+# Mission states. These are MiR's queue states, not the platform's ("in-progress", "completed",
+# ...) that the edge executor reports for dispatched missions.
+# TODO: homogenize with inorbit_edge_executor's MissionState. Breaking change for existing users.
 MISSION_STATE_DONE = "Done"
 MISSION_STATE_ABORT = "Abort"
 

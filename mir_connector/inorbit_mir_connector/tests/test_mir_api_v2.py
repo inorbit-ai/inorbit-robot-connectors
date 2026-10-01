@@ -59,13 +59,19 @@ async def test_http_error_logs_response_body(mir_api, httpx_mock, caplog):
 
 @pytest.mark.asyncio
 async def test_get_executing_mission_id(mir_api, httpx_mock):
+    """Reads only the tail of the queue, newest first."""
     missions = [
         {"id": 2, "state": "Aborted"},
         {"id": 1, "state": "Executing"},
         {"id": 3, "state": "Completed"},
     ]
     httpx_mock.add_response(
-        method="GET", url=f"{mir_api.mir_api_base_url}/mission_queue", json=missions
+        method="GET",
+        url=(
+            f"{mir_api.mir_api_base_url}/mission_queue"
+            "?limit=20&sort_by=id%2Cdesc&whitelist=id%2Cstate"
+        ),
+        json=missions,
     )
     assert await mir_api.get_executing_mission_id() == 1
 
@@ -187,3 +193,35 @@ mir_robot_wifi_access_point_frequency_hertz 0.0
     metrics = await mir_api.get_metrics()
 
     assert DeepDiff(expected_output, metrics) == {}
+
+
+@pytest.mark.asyncio
+async def test_get_action_definitions_requests_label_metadata(mir_api, httpx_mock):
+    """Without the whitelist there is no label template, and labels degrade to the type."""
+    defs = [
+        {
+            "action_type": "move",
+            "name": "Move",
+            "description": "Move to %(position)s",
+            "parameters": [{"id": "position", "type": "Reference", "constraints": {}}],
+        },
+    ]
+    httpx_mock.add_response(method="GET", json=defs)
+    assert await mir_api.get_action_definitions() == defs
+    whitelist = httpx_mock.get_requests()[0].url.params["whitelist"]
+    assert {"name", "description", "parameters"} <= set(whitelist.split(","))
+
+
+@pytest.mark.asyncio
+async def test_get_mission_actions_requests_scope_reference(mir_api, httpx_mock):
+    """Without scope_reference every action looks top-level and the nesting is invisible.
+
+    Nothing else would fail loudly, so the query string itself is the assertion.
+    """
+    actions = [
+        {"guid": "g1", "action_type": "wait", "priority": 12, "scope_reference": None},
+    ]
+    httpx_mock.add_response(method="GET", json=actions)
+    assert await mir_api.get_mission_actions("m1") == actions
+    whitelist = httpx_mock.get_requests()[0].url.params["whitelist"]
+    assert "scope_reference" in whitelist.split(",")

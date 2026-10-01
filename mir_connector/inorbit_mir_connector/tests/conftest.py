@@ -75,7 +75,7 @@ def sample_metrics_data():
 
 @pytest.fixture
 def sample_mir_mission_data():
-    # Sample return value from mir_api.get_mission(id)
+    # Sample return value from mir_api.get_mission_queue_entry(id)
     return {
         "priority": 0,
         "ordered": "2023-12-07T10:54:31",

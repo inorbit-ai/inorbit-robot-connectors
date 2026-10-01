@@ -64,7 +64,7 @@ def connector(monkeypatch, tmp_path):
     connector.mir_api.add_action_to_mission = AsyncMock()
     connector.mir_api.get_mission_group_missions = AsyncMock()
     connector.mir_api.get_missions_queue = AsyncMock()
-    connector.mir_api.get_mission = AsyncMock()
+    connector.mir_api.get_mission_queue_entry = AsyncMock()
     connector.mir_api.delete_mission_definition = AsyncMock()
     connector.mir_api.get_mission_groups = AsyncMock(return_value=[])
     connector.mir_api.create_mission_group = AsyncMock()
@@ -119,7 +119,7 @@ def connector_with_mission_tracking(monkeypatch, tmp_path):
     connector.mir_api.add_action_to_mission = AsyncMock()
     connector.mir_api.get_mission_group_missions = AsyncMock()
     connector.mir_api.get_missions_queue = AsyncMock()
-    connector.mir_api.get_mission = AsyncMock()
+    connector.mir_api.get_mission_queue_entry = AsyncMock()
     connector.mir_api.delete_mission_definition = AsyncMock()
     connector.mir_api.get_mission_groups = AsyncMock(return_value=[])
     connector.mir_api.create_mission_group = AsyncMock()
@@ -768,7 +768,7 @@ async def test_missions_garbage_collector(connector):
             "id": 4,
         },  # Not safe to delete
     }
-    connector.mir_api.get_mission.side_effect = lambda id: defs[id]
+    connector.mir_api.get_mission_queue_entry.side_effect = lambda id: defs[id]
     await connector.mission_group._delete_unused_missions()
     # Only deletes the mission definition of mission with id 1
     # and mission that is not in the queue

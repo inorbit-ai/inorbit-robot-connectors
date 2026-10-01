@@ -26,6 +26,7 @@ API_V2_CONTEXT_URL = "/api/v2.0.0"
 
 # Endpoints
 METRICS_ENDPOINT_V2 = "metrics"
+ACTIONS_ENDPOINT_V2 = "actions"
 MISSION_QUEUE_ENDPOINT_V2 = "mission_queue"
 MISSION_GROUPS_ENDPOINT_V2 = "mission_groups"
 MISSIONS_ENDPOINT_V2 = "missions"
@@ -159,18 +160,6 @@ class MirApiV2(MirApiBaseClass):
         )
         return response.json()
 
-    async def get_mission(self, mission_queue_id):
-        """Queries a mission using the mission_queue/{mission_id} endpoint"""
-        mission_api_url = f"/{MISSION_QUEUE_ENDPOINT_V2}/{mission_queue_id}"
-        mission = (await self._get(mission_api_url)).json()
-        actions = (await self._get(f"{mission_api_url}/actions")).json()
-
-        mission_id = mission["mission_id"]
-        mission["definition"] = await self.get_mission_definition(mission_id)
-        mission["actions"] = actions
-        mission["definition"]["actions"] = await self.get_mission_actions(mission_id)
-        return mission
-
     async def get_mission_definition(self, mission_id):
         """Queries a mission definition using the missions/{mission_id} endpoint"""
         mission_api_url = f"/{MISSIONS_ENDPOINT_V2}/{mission_id}"
@@ -180,9 +169,17 @@ class MirApiV2(MirApiBaseClass):
 
     async def get_mission_actions(self, mission_id):
         """Queries a list of actions a mission executes using
-        the missions/{mission_id}/actions endpoint"""
+        the missions/{mission_id}/actions endpoint.
+
+        ``scope_reference`` has to be whitelisted; it is not in the default response. It
+        holds the guid of a parameter of the action containing this one, or null at the
+        top level, and is what makes the list a tree.
+        """
         actions_api_url = f"/{MISSIONS_ENDPOINT_V2}/{mission_id}/actions"
-        response = await self._get(actions_api_url)
+        response = await self._get(
+            actions_api_url,
+            params={"whitelist": "guid,action_type,priority,scope_reference,parameters"},
+        )
         actions = response.json()
         return actions
 
@@ -193,12 +190,7 @@ class MirApiV2(MirApiBaseClass):
         return response.json()
 
     async def get_mission_queue_entry(self, queue_id):
-        """Return full details of a single mission queue entry.
-
-        Single ``GET /mission_queue/{id}`` — distinct from the heavyweight
-        ``get_mission`` (which composes four GETs), so it is light enough for
-        the ~1 s native-mission completion poll.
-        """
+        """Return full details of a single mission queue entry."""
         mission_api_url = f"/{MISSION_QUEUE_ENDPOINT_V2}/{queue_id}"
         response = await self._get(mission_api_url)
         return response.json()
@@ -211,8 +203,7 @@ class MirApiV2(MirApiBaseClass):
         url, no ``action_id``/``state``/``finished``. The list grows as the
         mission runs (the last entry is the one executing). To resolve which
         mission-definition action an entry is (its ``action_id``) and whether it
-        finished, fetch each entry via ``get_mission_queue_action``. Distinct
-        from ``get_mission`` (4 GETs), so it is light enough for the ~1 s poll.
+        finished, fetch each entry via ``get_mission_queue_action``.
         """
         actions_api_url = f"/{MISSION_QUEUE_ENDPOINT_V2}/{queue_id}/actions"
         response = await self._get(actions_api_url)
@@ -224,18 +215,33 @@ class MirApiV2(MirApiBaseClass):
         ``GET /mission_queue/{id}/actions/{action_int_id}`` returns the rich
         entry: ``{id, action_id, state, started, finished, action_type,
         parameters}``. ``action_id`` equals the mission-definition action guid
-        (what ``add_action_to_mission`` returns), so it maps a running queue
-        action back to the action we created. Completion signal is ``finished``
-        (a timestamp once done); ``state`` can be ``""`` even when finished.
+        (what ``add_action_to_mission`` returns), which is what maps a running
+        queue action back to its definition. ``finished`` is a timestamp once the
+        action is over; an empty ``state`` is what distinguishes success from
+        ``"Failed"`` or ``"Aborted"``.
         """
         action_api_url = f"/{MISSION_QUEUE_ENDPOINT_V2}/{queue_id}/actions/{action_int_id}"
         response = await self._get(action_api_url)
         return response.json()
 
     async def get_executing_mission_id(self):
-        """Returns the id of the mission being currently executed by the robot"""
+        """Returns the id of the mission being currently executed by the robot.
+
+        Reads the newest slice of the queue rather than all of it: the robot never
+        truncates the queue, so unbounded this grows to megabytes and takes longer than
+        the poll interval. Queue ids are assigned in ascending order as entries are
+        appended, so ``sort_by=id,desc`` is newest-first and an executing entry is always
+        in the first page, with slack for entries queued behind it.
+
+        ``limit`` and ``sort_by`` must be sent together. MiR ignores query params it does
+        not recognise rather than rejecting them, so ``limit`` alone would read the
+        oldest entries.
+        """
         missions_api_url = f"/{MISSION_QUEUE_ENDPOINT_V2}"
-        response = await self._get(missions_api_url)
+        response = await self._get(
+            missions_api_url,
+            params={"limit": 20, "sort_by": "id,desc", "whitelist": "id,state"},
+        )
         missions = response.json()
         executing = [m for m in missions if m["state"] == MISSION_STATE_EXECUTING]
         return executing[0]["id"] if len(executing) else None
@@ -404,6 +410,20 @@ class MirApiV2(MirApiBaseClass):
         """
         offsets_api_url = f"/{POSITIONS_ENDPOINT_V2}/{position_guid}/docking_offsets"
         response = await self._get(offsets_api_url)
+        return response.json()
+
+    async def get_action_definitions(self):
+        """Metadata for every action type (``GET /actions``), one entry per action_type.
+
+        The default response carries only ``action_type`` and ``url``; the whitelist is
+        what adds ``name``, the ``description`` label template ("Move to %(position)s")
+        and the per-parameter metadata used to fill that template in. All of it is
+        localized by the Accept-Language header (en_US).
+        """
+        response = await self._get(
+            f"/{ACTIONS_ENDPOINT_V2}",
+            params={"whitelist": "action_type,name,description,parameters"},
+        )
         return response.json()
 
 

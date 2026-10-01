@@ -194,7 +194,7 @@ class TmpMissionsGroupHandler(MirMissionsGroupHandler):
             missions_queue = await self.mir_api.get_missions_queue()
             # Do not delete definitions of missions that are pending or executing
             protected_mission_defs = [
-                (await self.mir_api.get_mission(mission["id"]))["mission_id"]
+                (await self.mir_api.get_mission_queue_entry(mission["id"]))["mission_id"]
                 for mission in missions_queue
                 if mission["state"].lower() in ["pending", "executing"]
             ]

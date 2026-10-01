@@ -15,7 +15,7 @@ from inorbit_edge_executor.db import get_db
 from .mir_api import MirApiV2
 from .mir_api import SetStateId
 from .mir_api.missions_group import MirMissionsGroupHandler
-from .mission.behavior_tree import MirBehaviorTreeBuilderContext
+from .mission.behavior_tree import MirBehaviorTreeBuilderContext, SharedMemoryKeys
 from .mission.datatypes import MirInOrbitMission
 from .mission.translator import InOrbitToMirTranslator
 from .mission.tree_builder import MirTreeBuilder
@@ -190,8 +190,7 @@ class MirMissionExecutor:
     async def has_active_mission(self) -> bool:
         """True if an InOrbit-dispatched mission is currently executing for this robot.
 
-        Used by robot-side mission tracking to avoid double-reporting a mission the edge
-        executor already owns. Backed by the executor's persisted busy-check (the same
+        Backed by the executor's persisted busy-check (the same
         query ``submit_work`` uses to reject new work for a busy robot), so it stays
         accurate after a mission finishes even though completed workers linger in the
         in-memory pool. Returns False before initialization (no executor, so no
@@ -205,6 +204,26 @@ class MirMissionExecutor:
         # `return await self._worker_pool.has_active_mission(self.robot_id)`.
         active = await self._worker_pool._db.fetch_robot_active_mission(self.robot_id)
         return active is not None
+
+    async def owns_queue_entry(self, queue_id) -> bool:
+        """True if the MiR queue entry was posted by the active InOrbit-dispatched mission.
+
+        Lets robot-side mission tracking skip only the entries the edge executor already
+        reports, so an unfinished mission left in the DB (e.g. paused and never resumed)
+        does not silence tracking of every other native mission.
+        """
+        if not self._initialized or not self._worker_pool:
+            return False
+        db = self._worker_pool._db
+        mission_id = await db.fetch_robot_active_mission(self.robot_id)
+        if mission_id is None:
+            return False
+        mission = await db.fetch_mission(mission_id)
+        if mission is None:
+            return False
+        owned = mission.state["shared_memory"]["data"].get(SharedMemoryKeys.MIR_QUEUE_ID)
+        # Not posted yet: the next queue entry is about to be this mission's.
+        return owned is None or owned == queue_id
 
     async def handle_command(self, script_name: str, script_args: dict, options: dict) -> bool:
         """

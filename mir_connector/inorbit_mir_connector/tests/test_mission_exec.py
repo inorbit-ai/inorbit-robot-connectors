@@ -142,3 +142,34 @@ async def test_translate_failure_surfaces_reason():
     result_function.assert_called_once()
     assert result_function.call_args.args[0] == CommandResultCode.FAILURE
     assert reason in result_function.call_args.kwargs["execution_status_details"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "active_id, posted_queue_id, queue_id, owned",
+    [
+        (None, None, 7, False),  # no dispatched mission
+        ("m1", 7, 7, True),  # the dispatched mission's own entry
+        ("m1", 7, 8, False),  # stale unfinished row: another entry is running
+        ("m1", None, 8, True),  # dispatched mission has not posted its entry yet
+    ],
+)
+async def test_owns_queue_entry(active_id, posted_queue_id, queue_id, owned):
+    state = {"shared_memory": {"data": {"mir_queue_id": posted_queue_id}}}
+
+    async def fetch_robot_active_mission(robot_id):
+        return active_id
+
+    async def fetch_mission(mission_id):
+        return SimpleNamespace(state=state)
+
+    executor = MirMissionExecutor.__new__(MirMissionExecutor)
+    executor.robot_id = ROBOT_ID
+    executor._initialized = True
+    executor._worker_pool = SimpleNamespace(
+        _db=SimpleNamespace(
+            fetch_robot_active_mission=fetch_robot_active_mission, fetch_mission=fetch_mission
+        )
+    )
+
+    assert await executor.owns_queue_entry(queue_id) is owned

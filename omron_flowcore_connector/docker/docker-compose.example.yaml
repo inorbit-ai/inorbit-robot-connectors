@@ -19,7 +19,7 @@
 # Every property can then be overriden for each service instance.
 x-flowcore-connector:
   &flowcore-connector # Image to use for the connector instances
-  image: us-central1-docker.pkg.dev/inorbit-integrations/connectors/flowcore_connector:0.1.0
+  image: us-central1-docker.pkg.dev/inorbit-integrations/connectors/flowcore_connector:0.3.1
 
   # Build from local source
   # Not required if using the provided image
@@ -35,6 +35,10 @@ x-flowcore-connector:
   # Connector-specific environment variables not present in config/.env
   environment:
     - LOG_LEVEL=${LOG_LEVEL:-INFO}
+
+  # Uncomment together with the `metrics:` block in fleet.yaml
+  # ports:
+  #   - "9090:9090"
 
   # Volume mounts. Defaults are usually sufficient.
   # Adjust as needed the left side filenames to the name and path of your config files.

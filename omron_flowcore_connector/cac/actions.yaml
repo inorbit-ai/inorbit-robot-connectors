@@ -101,6 +101,48 @@ spec:
   description: Resume Robot
   label: Resume Robot
 ---
+# Runs a macro defined in the AMR's map, over ARCL. Macro names come from the map,
+# list them with the ARCL `getMacros` command on the robot.
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+  id: runMacro
+  scope: tag/[account_id]/[tag_id]
+spec:
+  type: RunScript
+  arguments:
+    - name: filename
+      type: string
+      value: executeMacro
+    - input:
+        control: text
+      name: macro
+      type: string
+  confirmation:
+    required: true
+  description: Run an AMR macro by name
+  label: Run Macro
+---
+# Same action with the macro name fixed, for a one-click button per macro.
+apiVersion: v0.1
+kind: ActionDefinition
+metadata:
+  id: runMacroExample
+  scope: tag/[account_id]/[tag_id]
+spec:
+  type: RunScript
+  arguments:
+    - name: filename
+      type: string
+      value: executeMacro
+    - name: macro
+      type: string
+      value: Macro1
+  confirmation:
+    required: true
+  description: Run the Macro1 macro
+  label: Run Macro1
+---
 apiVersion: v0.1
 kind: ActionDefinition
 metadata:

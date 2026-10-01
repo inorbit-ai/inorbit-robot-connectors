@@ -1,0 +1,115 @@
+# SPDX-FileCopyrightText: 2026 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
+# ActionDefinitions for the connector's custom commands.
+# The `filename` argument value must match the script names handled by the connector
+# (src/commands.py CustomScripts).
+# Replace <ACCOUNT_ID> and <TAG_ID> with real values before applying.
+
+---
+kind: ActionDefinition
+apiVersion: v0.1
+metadata:
+  id: submit-task
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  type: RunScript
+  label: Submit Cleaning Task
+  group: Tasks
+  description: Start a cleaning task on an area of the robot's current map
+  arguments:
+    - name: filename
+      type: string
+      value: submit_task
+    - name: area_id
+      type: string
+      value: ""
+      input:
+        control: text
+    - name: cleaning_mode
+      type: string
+      value: CLEAN
+      input:
+        control: select
+        values:
+          - label: Clean
+            value: CLEAN
+          - label: Sweep
+            value: SWEEP
+          - label: Dust
+            value: DUST
+          - label: Vacuum
+            value: VACUUM
+  confirmation:
+    required: true
+  lock: false
+
+---
+kind: ActionDefinition
+apiVersion: v0.1
+metadata:
+  id: task-command
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  type: RunScript
+  label: Task Command
+  group: Tasks
+  description: Pause, resume or stop the task currently executed by the robot
+  arguments:
+    - name: filename
+      type: string
+      value: task_command
+    - name: command
+      type: string
+      value: PAUSE_TASK
+      input:
+        control: select
+        values:
+          - label: Pause
+            value: PAUSE_TASK
+          - label: Resume
+            value: RESUME_TASK
+          - label: Stop
+            value: STOP_TASK
+  confirmation:
+    required: false
+  lock: false
+
+---
+kind: ActionDefinition
+apiVersion: v0.1
+metadata:
+  id: navigate
+  scope: tag/<ACCOUNT_ID>/<TAG_ID>
+spec:
+  type: RunScript
+  label: Navigate
+  group: Navigation
+  description: Send a remote navigation command. `position` is a named position on the current map
+  arguments:
+    - name: filename
+      type: string
+      value: navigate
+    - name: command
+      type: string
+      value: CROSS_NAVIGATE
+      input:
+        control: select
+        values:
+          - label: Navigate to position
+            value: CROSS_NAVIGATE
+          - label: Pause navigation
+            value: PAUSE_NAVIGATE
+          - label: Resume navigation
+            value: RESUME_NAVIGATE
+          - label: Stop navigation
+            value: STOP_NAVIGATE
+    - name: position
+      type: string
+      value: ""
+      input:
+        control: text
+  confirmation:
+    required: false
+  lock: false

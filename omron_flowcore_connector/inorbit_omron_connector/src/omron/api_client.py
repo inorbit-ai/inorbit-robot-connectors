@@ -17,6 +17,7 @@ from ..config.models import CONNECTOR_TYPE
 from ..metrics import api_endpoint, error_kind
 from .models import (
     DataStoreResponse,
+    RobotFaultResponse,
     RobotResponse
 )
 
@@ -80,37 +81,54 @@ class OmronApiClient:
         return response
 
     async def get_fleet_state(self) -> List[RobotResponse]:
-        """Fetches fleet state from /Robot/UpdatedSince."""
-        try:
-            response = await self._request("GET", "/Robot/UpdatedSince?sinceTime=0")
-            data = response.json()
-            return [RobotResponse(**r) for r in data]
-        except Exception as e:
-            LOGGER.error(f"Error fetching fleet state: {e}")
-            return []
+        """Fetch fleet state from /Robot/UpdatedSince.
+
+        Raises rather than returning an empty list: an empty fleet and an
+        unreachable Fleet Manager mean opposite things to the health state.
+        """
+        response = await self._request("GET", "/Robot/UpdatedSince?sinceTime=0")
+        return [RobotResponse(**r) for r in response.json()]
+
+    async def get_active_faults(self) -> List[RobotFaultResponse]:
+        """Every active fault in the fleet. Errors propagate."""
+        response = await self._request("GET", "/RobotFault/ByActive/true")
+        return [RobotFaultResponse(**f) for f in response.json()]
 
     async def get_data_store_value(self, key: str, robot_id: str) -> List[DataStoreResponse]:
-        """Fetches data store values for a specific key."""
+        """Fetch one DataStore item, for one AMR by namekey or for all of them with "*".
+
+        Always a list, empty on any failure. The `"*"` form collects from every AMR
+        before answering and so costs seconds per call whatever the fleet size; the
+        per-AMR form answers as fast as the round trip allows. Either form re-reads the
+        AMR, so a value coming back means the Fleet Manager just reached that robot.
+
+        Example: ``await client.get_data_store_value("PoseX", "Gemini_48")``
+        """
         mappedKey = {
             "StateOfCharge": "BatteryStateOfCharge",
             "PoseX": "RobotX",
             "PoseY": "RobotY",
             "PoseTh": "RobotTh",
-            "RobotIP": "RobotIP"
+            "RobotIP": "RobotIP",
+            "ChargeState": "RobotChargeState",
+            "ChargeStateNumber": "RobotChargeStateNumber",
+            "DockingState": "DockingState",
         }
 
         try:
-            # The endpoint structure based on the curl: /DataStoreValueLatest/{key}
             url = f"/DataStoreValueLatest/{mappedKey[key]}:{robot_id}"
             response = await self._request("GET", url)
             data = response.json()
-            
-            # If robot_id is not '*', we might need to filter the results
-            # but usually the API returns all robots for that key.
+
+            # The wildcard answers with a list; a named AMR may answer with the bare
+            # object. Normalized so callers can index the result either way rather
+            # than silently reading nothing.
+            if isinstance(data, dict):
+                data = [data]
             results = [DataStoreResponse(**item) for item in data]
             if robot_id != "*":
                 results = [r for r in results if r.namekey.endswith(f":{robot_id}")]
-            
+
             return results
         except Exception as e:
             LOGGER.error(f"Error fetching data store value for {key}: {e}")
@@ -136,7 +154,7 @@ class OmronApiClient:
         """Streams events from /Job/Stream."""
         if not self.client:
             await self.connect()
-        
+
         try:
             async with self.client.stream(
                 "GET",
@@ -145,14 +163,14 @@ class OmronApiClient:
                 timeout=None  # No timeout for streaming
             ) as response:
                 response.raise_for_status()
-                
+
                 async for line in response.aiter_lines():
                     line = line.strip()
-                    
+
                     # SSE format: "data: {json}"
                     if line.startswith("data:"):
                         data_str = line[5:].strip()  # Remove "data:" prefix
-                        
+
                         if data_str:
                             try:
                                 event_data = json.loads(data_str)
@@ -162,7 +180,7 @@ class OmronApiClient:
                     # Ignore empty lines and comments
                     elif line.startswith(":") or not line:
                         continue
-                        
+
         except httpx.HTTPStatusError as e:
             LOGGER.error(f"HTTP error in job stream: {e}")
             record_upstream_http_error(
@@ -188,7 +206,7 @@ class OmronApiClient:
         """Streams events from /JobSegment/Stream."""
         if not self.client:
             await self.connect()
-        
+
         try:
             async with self.client.stream(
                 "GET",
@@ -197,14 +215,14 @@ class OmronApiClient:
                 timeout=None  # No timeout for streaming
             ) as response:
                 response.raise_for_status()
-                
+
                 async for line in response.aiter_lines():
                     line = line.strip()
-                    
+
                     # SSE format: "data: {json}"
                     if line.startswith("data:"):
                         data_str = line[5:].strip()  # Remove "data:" prefix
-                        
+
                         if data_str:
                             try:
                                 event_data = json.loads(data_str)
@@ -214,7 +232,7 @@ class OmronApiClient:
                     # Ignore empty lines and comments
                     elif line.startswith(":") or not line:
                         continue
-                        
+
         except httpx.HTTPStatusError as e:
             LOGGER.error(f"HTTP error in job segment stream: {e}")
             record_upstream_http_error(
@@ -242,7 +260,7 @@ class OmronApiClient:
             data = response.json()
             return data
         except Exception as e:
-            LOGGER.error(f"Error fetching fleet state: {e}")
+            LOGGER.error(f"Error fetching job segment list: {e}")
             return []
 
     async def get_job_details_by_job_id(self, job_id: str) -> Optional[Dict[str, Any]]:

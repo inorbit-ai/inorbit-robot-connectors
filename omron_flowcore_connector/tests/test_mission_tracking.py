@@ -65,25 +65,32 @@ async def test_mission_tracking_flow():
 
 @pytest.mark.asyncio
 async def test_tracking_lifecycle():
-    """Verify that start() invokes tasks and stop() cleans them up."""
+    """start() registers three supervised tasks and stop() cancels them."""
     client = MockOmronClient()
     await client.connect()
     client.seed_robot("AMR_LIFECYCLE")
-    
-    tracker = OmronMissionTracking(client)
-    
+
+    registered = []
+
+    def fake_supervisor(name, coro_factory):
+        registered.append(name)
+        return asyncio.create_task(coro_factory(), name=name)
+
+    tracker = OmronMissionTracking(client, create_supervised_task=fake_supervisor)
+
     tracker.start()
-    assert len(tracker._running_tasks) == 3
-    
+    assert registered == [
+        "flowcore-job-stream",
+        "flowcore-segment-stream",
+        "flowcore-mission-cleanup",
+    ]
+
     await asyncio.sleep(0.1)
-    
     for task in tracker._running_tasks:
         assert not task.done()
-        
+
     await tracker.stop()
-    
-    assert len(tracker._running_tasks) == 0
-    assert tracker._stop_event.is_set()
+    assert tracker._running_tasks == []
 
 @pytest.mark.asyncio
 async def test_mission_catchup():

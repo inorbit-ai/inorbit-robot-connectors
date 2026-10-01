@@ -23,7 +23,6 @@ from inorbit_omron_connector.src.mission.behavior_tree import (
     OmronBehaviorTreeBuilderContext,
     OmronMissionAbortedNode,
     OmronNodeFromStepBuilder,
-    CleanupOmronJobNode,
 )
 
 
@@ -65,8 +64,9 @@ class OmronTreeBuilder(DefaultTreeBuilder):
             OmronMissionAbortedNode(context, status=MissionStatus.ok, label="mission cancelled")
         )
         
+        # Only reached when the paused step has no job of its own to cancel: a job step
+        # carries its own pause handler, since it also has to reset itself for the resume.
         on_pause = BehaviorTreeSequential(label="pause handlers")
-        on_pause.add_node(CleanupOmronJobNode(context, label="cleanup omron jobs"))
         on_pause.add_node(MissionPausedNode(context, label="mission paused"))
 
         tree = BehaviorTreeErrorHandler(

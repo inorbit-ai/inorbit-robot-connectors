@@ -30,10 +30,10 @@ async def test_get_data_store_value():
     client.seed_robot("robot1", battery=0.5, x=1.0, y=2.0, theta=3.14)
     
     soc = await client.get_data_store_value("StateOfCharge", "robot1")
-    assert soc.value == 0.5
-    
+    assert [item.value for item in soc] == [0.5]
+
     pose_x = await client.get_data_store_value("PoseX", "robot1")
-    assert pose_x.value == 1.0
+    assert [item.value for item in pose_x] == [1.0]
 
 @pytest.mark.asyncio
 async def test_create_job():
@@ -55,7 +55,7 @@ async def test_stop():
     client = MockOmronClient()
     await client.connect()
     client.seed_robot("robot1")
-    
+
     cancel = JobCancelByRobotName(
         robot="robot1",
         cancelReason="Stop"
@@ -63,3 +63,31 @@ async def test_stop():
     result = await client.stop(cancel.model_dump())
     assert result["namekey"] == "robot1"
     assert result["status"] == "Aborted"
+
+
+@pytest.mark.asyncio
+async def test_data_store_stamp_is_the_read_time_even_when_the_value_is_unchanged():
+    """As the live Integration Toolkit behaves: /DataStoreValueLatest fetches from the
+    AMR on every call and stamps the fetch. Three reads of an unchanged value 1s apart
+    came back with three stamps tracking the wall clock."""
+    client = MockOmronClient()
+    await client.connect()
+    client.seed_robot("Robot1", x=1000.0)
+
+    first = (await client.get_data_store_value("PoseX", "Robot1"))[0]
+    second = (await client.get_data_store_value("PoseX", "Robot1"))[0]
+
+    assert first.value == second.value
+    assert second.upd.millis > first.upd.millis
+
+
+@pytest.mark.asyncio
+async def test_fleet_state_stamp_holds_while_the_status_is_unchanged():
+    client = MockOmronClient()
+    await client.connect()
+    client.seed_robot("Robot1")
+
+    first = (await client.get_fleet_state())[0]
+    second = (await client.get_fleet_state())[0]
+
+    assert first.upd.millis == second.upd.millis

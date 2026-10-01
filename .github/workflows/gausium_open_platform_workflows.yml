@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2025 InOrbit, Inc.
+# SPDX-FileCopyrightText: 2026 InOrbit, Inc.
 #
 # SPDX-License-Identifier: MIT
 
@@ -26,19 +26,21 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        python-version: ["3.12", "3.13"]
+        python-version: ["3.13"]
     steps:
       - uses: actions/checkout@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install tox tox-gh-actions
+        run: uv sync --extra dev
       - name: Test with tox
-        run: tox
+        run: uv run tox
 
   reuse:
     runs-on: ubuntu-latest
@@ -50,19 +52,23 @@ jobs:
           args: --root gausium_open_platform_connector lint
 
   publish-docker:
-    if: ${{ contains(github.event.head_commit.message, 'Bump inorbit_gausium_open_platform_connector version') }}
+    if: ${{ contains(github.event.head_commit.message, 'Bump gausium-open-platform-connector version') }}
     needs: [lint-and-test, reuse]
     runs-on: ubuntu-latest
     environment: release
     steps:
       - name: Check out the repo
         uses: actions/checkout@v5
-      - name: Set version environment variable
+      - name: Read version from pyproject
+        id: version
+        uses: cssnr/toml-action@v1
+        with:
+          file: gausium_open_platform_connector/pyproject.toml
+          path: $.project.version
+      - name: Export version to env
         run: |
-          INORBIT_GAUSIUM_OPEN_PLATFORM_CONNECTOR_VERSION=$(grep -oP '(?<=current_version = ")[^"]*' pyproject.toml | head -1)
-          echo "INORBIT_GAUSIUM_OPEN_PLATFORM_CONNECTOR_VERSION=$INORBIT_GAUSIUM_OPEN_PLATFORM_CONNECTOR_VERSION" >> $GITHUB_ENV
-          echo "INORBIT_GAUSIUM_OPEN_PLATFORM_CONNECTOR_VERSION is '$INORBIT_GAUSIUM_OPEN_PLATFORM_CONNECTOR_VERSION'"
-        working-directory: gausium_open_platform_connector
+          echo "GAUSIUM_OPEN_PLATFORM_CONNECTOR_VERSION=${{ steps.version.outputs.value }}" >> $GITHUB_ENV
+          echo "GAUSIUM_OPEN_PLATFORM_CONNECTOR_VERSION is '${{ steps.version.outputs.value }}'"
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
@@ -70,7 +76,7 @@ jobs:
           images: us-central1-docker.pkg.dev/inorbit-integrations/connectors/gausium_open_platform_connector
           tags: |
             type=raw,value=latest
-            type=raw,value=${{ env.INORBIT_GAUSIUM_OPEN_PLATFORM_CONNECTOR_VERSION }}
+            type=raw,value=${{ env.GAUSIUM_OPEN_PLATFORM_CONNECTOR_VERSION }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Login to Google Artifact Registry
@@ -79,7 +85,6 @@ jobs:
           registry: us-central1-docker.pkg.dev
           username: _json_key
           password: ${{ secrets.GAR_JSON_KEY }}
-
       - name: Build and push
         uses: docker/build-push-action@v6
         with:

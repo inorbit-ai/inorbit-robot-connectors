@@ -4,7 +4,7 @@
 
 [project]
 name = "inorbit-omron-connector"
-version = "0.3.1"
+version = "1.0.0"
 description = "InOrbit Connector for Omron FlowCore"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -26,9 +26,9 @@ dependencies = [
     "httpx~=0.28.1",
     "pydantic~=2.12.5",
     "pydantic-settings~=2.14.0",
-    "inorbit-connector>=3.2,<4.0",
+    "inorbit-connector[system-stats]~=3.2.3",
     "typing-extensions~=4.15.0",
-    "inorbit-edge-executor~=4.0.3",
+    "inorbit-edge-executor~=4.0.5",
     "aiosql~=9.5",
     "aiosqlite~=0.19.0",
     "async-timeout~=4.0.3",

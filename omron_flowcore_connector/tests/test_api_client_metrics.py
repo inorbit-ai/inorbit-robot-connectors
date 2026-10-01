@@ -80,10 +80,37 @@ async def test_request_timeout_records_error_metric_and_raises():
 
 
 @pytest.mark.asyncio
-async def test_public_method_keeps_fallback_on_error():
-    """get_fleet_state still swallows errors and returns [] (behavior unchanged)."""
+async def test_get_data_store_value_keeps_fallback_on_error():
+    """get_data_store_value still swallows errors and returns [] (behavior unchanged)."""
     api = _client()
     api.client.request = AsyncMock(side_effect=httpx.ConnectError("down"))
 
     with patch("inorbit_omron_connector.src.omron.api_client.record_upstream_http_error"):
-        assert await api.get_fleet_state() == []
+        assert await api.get_data_store_value("PoseX", "*") == []
+
+
+@pytest.mark.asyncio
+async def test_get_data_store_value_normalizes_a_named_amr_response():
+    """A named-AMR fetch returns one object where `:*` returns a list. Callers index
+    the result, so an unnormalized object silently yields nothing."""
+    api = _client()
+    body = {"namekey": "RobotX:Robot1", "upd": {"millis": 1}, "value": "1000"}
+    api.client.request = AsyncMock(
+        return_value=httpx.Response(
+            200, json=body, request=httpx.Request("GET", "https://x/DataStoreValueLatest")
+        )
+    )
+
+    with patch("inorbit_omron_connector.src.omron.api_client.record_upstream_http_request"):
+        result = await api.get_data_store_value("PoseX", "Robot1")
+
+    assert [item.value for item in result] == ["1000"]
+
+
+@pytest.mark.asyncio
+async def test_get_fleet_state_raises_on_transport_error():
+    api = _client()
+    api.client.request = AsyncMock(side_effect=httpx.ConnectError("boom"))
+
+    with pytest.raises(httpx.ConnectError):
+        await api.get_fleet_state()

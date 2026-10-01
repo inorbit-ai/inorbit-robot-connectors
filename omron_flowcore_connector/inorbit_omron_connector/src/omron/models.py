@@ -22,6 +22,16 @@ class DataStoreResponse(BaseModel):
     upd: OmronUpdate
     value: Any
 
+class RobotFaultResponse(BaseModel):
+    namekey: str
+    robot: str
+    name: str
+    active: bool
+    blockDriving: bool = False
+    critical: bool = False
+    shortDescription: str | None = None
+    longDescription: str | None = None
+
 class JobRequestDetail(BaseModel):
     pickupGoal: str | None = None
     dropoffGoal: str | None = None

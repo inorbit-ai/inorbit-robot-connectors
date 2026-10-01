@@ -1,0 +1,140 @@
+# SPDX-FileCopyrightText: 2026 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
+"""Vendor to cleaning contract normalization, shared by the live key-values and the reports."""
+
+# Standard
+import re
+from datetime import datetime
+from enum import StrEnum
+
+
+class TaskState(StrEnum):
+    """Task states reported by the Gausium status endpoints."""
+
+    OTHER = "OTHER"
+    IDLE = "IDLE"
+    RUNNING = "RUNNING"
+    PAUSED = "PAUSED"
+
+
+# Vendor `taskState` to the cleaning contract task state
+TASK_STATE_MAP = {
+    "IDLE": "idle",
+    "RUNNING": "cleaning",
+    "PAUSED": "paused",
+    "OTHER": "unknown",
+}
+
+# Vendor cleaning mode to the cleaning contract mode. Only unambiguous modes are mapped:
+# intensity variants, carpet cleaning and test modes fall back to "other" instead of being
+# guessed into a category.
+CLEANING_MODE_MAP = {
+    "洗地": "scrub",
+    "清洗": "scrub",
+    "滚刷洗地": "scrub",
+    "尘推": "dust_mop",
+    "快速尘推": "dust_mop",
+    "低速尘推": "dust_mop",
+    "静音推尘": "dust_mop",
+    "布刷尘推": "dust_mop",
+    "抛光": "polish",
+    "深度抛光": "polish",
+    "结晶模式": "polish",
+    "吸尘": "vacuum",
+    "吸风清洁": "vacuum",
+    "suction_cleaning": "vacuum",
+    "扫地": "sweep",
+    "清扫": "sweep",
+    "喷雾消毒": "disinfect",
+}
+
+# Cleaning modes are reported in Chinese
+CLEANING_MODE_LABELS = {
+    "尘推": "Dust mop",
+    "抛光": "Polish",
+    "快速尘推": "High-speed dust mop",
+    "深度抛光": "Deep polish",
+    "低速尘推": "Low-speed dust mop",
+    "结晶模式": "Crystallization mode",
+    "地毯清洁": "Carpet cleaning",
+    "静音推尘": "Silent dust mopping",
+    "喷雾消毒": "Disinfection spray",
+    "滚刷洗地": "Roller brush scrubbing",
+    "布刷尘推": "Cloth brush dust mopping",
+    "轻度清洁": "Light cleaning",
+    "中度清洁": "Middle cleaning",
+    "重度清洁": "Heavy cleaning",
+    "吸风清洁": "Suction cleaning",
+    "测试": "Test",
+    "扫地": "Sweep the floor",
+    "洗地": "Wash the floor",
+    "吸尘": "Vacuum",
+    "清洗": "Wash",
+    "清扫": "Sweep",
+    "扫洗": "Sweep and wash",
+    "轻度": "Light",
+    "light_cleaning": "Light cleaning",
+    "middle_cleaning": "Middle cleaning",
+    "heavy_cleaning": "Heavy cleaning",
+    "suction_cleaning": "Suction cleaning",
+}
+
+
+def report_time_to_millis(value: str | int | None) -> int | None:
+    """Report timestamp as epoch milliseconds. Accepts ISO 8601 and epoch milliseconds."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, str) and not value.isdigit():
+        return int(datetime.fromisoformat(value).timestamp() * 1000)
+    return int(value)
+
+
+def report_times(status: dict, status_v2: dict) -> tuple[str, ...]:
+    """The report timestamps present in the v1 and v2 status payloads.
+
+    Doubles as a change token: the vendor advances these whenever it has new data for the
+    robot. Empty for a model that reports neither, where staleness is not knowable.
+    """
+    times = (status.get("latestReportTime"), status_v2.get("latestReportTime"))
+    return tuple(time for time in times if time)
+
+
+def pct(value: float | None) -> float | None:
+    """Vendor 0-100 percentage as the contract's 0-1 fraction."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return value / 100
+
+
+def slug(name: str) -> str:
+    """Key fragment from a free-form name. e.g. "Main Floor #2" -> "main_floor_2"."""
+    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+
+
+def camel_to_snake(name: str) -> str:
+    """e.g. "softSqueegee" -> "soft_squeegee"."""
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+
+
+def normalize_task_state(task_state: str | None) -> str:
+    """Contract task state for a vendor `taskState`."""
+    return TASK_STATE_MAP.get(task_state, "unknown")
+
+
+def cleaning_mode_keys(mode: str | None) -> dict[str, str]:
+    """Cleaning mode published three ways, or nothing when the vendor reported no mode.
+
+    Vendor names carry leading underscores in `cleanModes[]` and `workModes[]` and none in
+    reports. e.g. "__洗地" -> {"cleaning_mode": "scrub", "cleaning_mode_raw": "__洗地",
+    "cleaning_mode_label": "Wash the floor"}
+    """
+    if not mode:
+        return {}
+    name = mode.lstrip("_")
+    return {
+        "cleaning_mode": CLEANING_MODE_MAP.get(name, "other"),
+        "cleaning_mode_raw": mode,
+        "cleaning_mode_label": CLEANING_MODE_LABELS.get(name, name),
+    }

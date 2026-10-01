@@ -13,10 +13,14 @@ from typing import Any, Optional, override
 import time
 
 from inorbit_edge_executor.behavior_tree import (
+    NODE_STATE_CANCELLED,
+    NODE_STATE_ERROR,
     BehaviorTree,
     BehaviorTreeBuilderContext,
+    BehaviorTreeErrorHandler,
     BehaviorTreeSequential,
     MissionAbortedNode,
+    MissionPausedNode,
     NodeFromStepBuilder,
     register_accepted_node_types,
 )
@@ -44,6 +48,7 @@ class SharedMemoryKeys(StrEnum):
     OMRON_NAME_KEY = "omron_name_key"
     OMRON_JOB_STATUS = "omron_job_status"
     OMRON_ERROR_MESSAGE = "omron_error_message"
+    OMRON_JOB_ATTEMPT = "omron_job_attempt"
 
 
 # Polling interval for job state checks
@@ -102,10 +107,14 @@ class CreateOmronJobNode(BehaviorTree):
         self._shared_memory.add(SharedMemoryKeys.OMRON_NAME_KEY, None)
         self._shared_memory.add(SharedMemoryKeys.OMRON_JOB_STATUS, "")
         self._shared_memory.add(SharedMemoryKeys.OMRON_ERROR_MESSAGE, None)
+        self._shared_memory.add(SharedMemoryKeys.OMRON_JOB_ATTEMPT, 0)
 
     @override
     async def _execute(self):
-        job_id = self._step.job_id
+        # Pausing cancels the job, so a resumed step creates a new one under a new key:
+        # FlowCore keys jobs by namekey, and polling the cancelled one would fail at once.
+        attempt = self._shared_memory.get(SharedMemoryKeys.OMRON_JOB_ATTEMPT) or 0
+        job_id = f"{self._step.job_id}_r{attempt}" if attempt else self._step.job_id
         # We construct a namekey for the job. FlowCore usually expects unique namekeys.
         namekey = job_id
 
@@ -165,6 +174,11 @@ class CreateOmronJobNode(BehaviorTree):
             self._shared_memory.set(SharedMemoryKeys.OMRON_ERROR_MESSAGE, error_msg)
             raise RuntimeError(error_msg) from e
 
+    def dump_object(self):
+        object = super().dump_object()
+        object["step"] = self._step.model_dump(by_alias=True, exclude_none=True)
+        return object
+
     @classmethod
     def from_object(cls, context, step, **kwargs):
         if isinstance(step, dict):
@@ -181,6 +195,7 @@ class CleanupOmronJobNode(BehaviorTree):
         self._shared_memory = context.shared_memory
         self._robot_id_to_fleet_id = context.robot_id_to_fleet_id
         self._mission = context.mission
+        self._shared_memory.add(SharedMemoryKeys.OMRON_JOB_ATTEMPT, 0)
 
     @override
     async def _execute(self):
@@ -211,6 +226,14 @@ class CleanupOmronJobNode(BehaviorTree):
             logger.info(f"Cancelled Omron Job {job_namekey} during cleanup")
         except Exception as e:
             logger.warning(f"Failed to cancel Omron job during cleanup: {e}")
+
+        # The job is gone, so the next attempt of this step has to create a fresh one
+        self._shared_memory.set(
+            SharedMemoryKeys.OMRON_JOB_ATTEMPT,
+            (self._shared_memory.get(SharedMemoryKeys.OMRON_JOB_ATTEMPT) or 0) + 1,
+        )
+        self._shared_memory.set(SharedMemoryKeys.OMRON_JOB_ID_KEY, None)
+        self._shared_memory.set(SharedMemoryKeys.OMRON_NAME_KEY, None)
 
     @classmethod
     def from_object(cls, context, **kwargs):
@@ -288,6 +311,16 @@ class WaitForOmronJobCompletionNode(BehaviorTree):
             
             await asyncio.sleep(self.POLL_INTERVAL)
 
+    def dump_object(self):
+        object = super().dump_object()
+        object["timeout_secs"] = self._timeout_secs
+        return object
+
+    @classmethod
+    def from_object(cls, context, timeout_secs=None, **kwargs):
+        return WaitForOmronJobCompletionNode(context, timeout_secs=timeout_secs, **kwargs)
+
+
 class OmronMissionAbortedNode(MissionAbortedNode):
     """Extended abort node that also cancels the Omron Job."""
 
@@ -341,6 +374,33 @@ class OmronMissionAbortedNode(MissionAbortedNode):
         return OmronMissionAbortedNode(context, MissionStatus(status), **kwargs)
 
 
+class OmronStepFailedNode(BehaviorTree):
+    """Carries a failed step's state and error up to the mission's own handlers.
+
+    A step that handles its own pause has to handle its own errors too, and the
+    handler's state is what the mission sees, so this restates both.
+    """
+
+    def __init__(self, context: OmronBehaviorTreeBuilderContext, node_state: str, **kwargs):
+        super().__init__(**kwargs)
+        self._node_state = node_state
+        self._error_context = context.error_context
+
+    @override
+    async def _execute(self):
+        self.state = self._node_state
+        self.last_error = self._error_context.get("last_error", "")
+
+    def dump_object(self):
+        object = super().dump_object()
+        object["node_state"] = self._node_state
+        return object
+
+    @classmethod
+    def from_object(cls, context, node_state, **kwargs):
+        return OmronStepFailedNode(context, node_state, **kwargs)
+
+
 class OmronNodeFromStepBuilder(NodeFromStepBuilder):
     """Step builder that handles Omron-specific step types."""
 
@@ -349,12 +409,18 @@ class OmronNodeFromStepBuilder(NodeFromStepBuilder):
         self._omron_context = context
 
     def visit_execute_omron_job(self, step: MissionStepExecuteOmronJob) -> BehaviorTree:
-        """Build behavior tree for executing an Omron job."""
+        """Build behavior tree for executing an Omron job.
+
+        The step handles its own pause because FlowCore cannot hold a job: pausing
+        cancels it, and resetting the step on pause is what makes the resumed step
+        create a new one instead of polling a job that no longer exists.
+        """
+        context = self._omron_context
         sequence = BehaviorTreeSequential(label=step.label)
 
         sequence.add_node(
             CreateOmronJobNode(
-                self._omron_context,
+                context,
                 step,
                 label=f"Create Omron Job '{step.label}'",
             )
@@ -362,13 +428,42 @@ class OmronNodeFromStepBuilder(NodeFromStepBuilder):
 
         sequence.add_node(
             WaitForOmronJobCompletionNode(
-                self._omron_context,
+                context,
                 timeout_secs=step.timeout_secs,
                 label=f"Wait for Omron Job '{step.label}'",
             )
         )
 
-        return sequence
+        on_pause = BehaviorTreeSequential(label="pause handlers")
+        on_pause.add_node(CleanupOmronJobNode(context, label=f"cancel Omron Job '{step.label}'"))
+        on_pause.add_node(MissionPausedNode(context, label="mission paused"))
+
+        # Errors and cancellations are still the mission's to handle, and the abort node
+        # there already cancels the job. These only carry the state up to it.
+        on_error = BehaviorTreeSequential(label="error handlers")
+        on_error.add_node(
+            OmronStepFailedNode(
+                context, node_state=NODE_STATE_ERROR, label=f"step error '{step.label}'"
+            )
+        )
+
+        on_cancel = BehaviorTreeSequential(label="cancel handlers")
+        on_cancel.add_node(
+            OmronStepFailedNode(
+                context, node_state=NODE_STATE_CANCELLED, label=f"step cancelled '{step.label}'"
+            )
+        )
+
+        return BehaviorTreeErrorHandler(
+            context,
+            sequence,
+            on_error,
+            on_cancel,
+            on_pause,
+            context.error_context,
+            reset_execution_on_pause=True,
+            label=step.label,
+        )
 
 # Register types
 omron_node_types = [
@@ -376,5 +471,6 @@ omron_node_types = [
     WaitForOmronJobCompletionNode,
     OmronMissionAbortedNode,
     CleanupOmronJobNode,
+    OmronStepFailedNode,
 ]
 register_accepted_node_types(omron_node_types)

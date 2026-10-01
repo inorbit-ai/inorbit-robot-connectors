@@ -8,17 +8,55 @@
 import asyncio
 import logging
 import math
-from typing import Any, Callable, Coroutine, Dict, Optional
+import time
+from functools import partial
+from typing import Any, Callable, Dict, Optional
 
 # Local
 from .api_client import OmronApiClient
 from .arcl_client import ArclClient
+from ..key_values import build_robot_key_values, build_vendor_key_values
 
 LOGGER = logging.getLogger(__name__)
 
+# Undocumented status/subStatus value, found by probing a live Fleet Manager: both
+# fields carry it for a robot that has been unreachable for a long time, and it is a
+# first-class value of /Robot/ByStatus. Used to explain an offline robot, never to
+# decide it.
+DISCONNECTED_STATUS = "Disconnected"
+
+# Reasons a robot is offline, most fundamental first
+OFFLINE_API_UNREACHABLE = "api_unreachable"
+OFFLINE_NOT_IN_FLEET = "not_in_fleet"
+OFFLINE_DISCONNECTED = "disconnected"
+OFFLINE_NO_TELEMETRY = "no_telemetry"
+
+# Missed polls tolerated before a robot or the API counts as gone, and the floor on
+# that window whatever update_freq is. The Fleet Manager takes up to 10s to reflect an
+# attach or detach, and the wildcard fetch costs seconds, so a tighter window at high
+# poll rates flaps on one slow cycle.
+MISSED_POLLS_TOLERATED = 3
+MIN_GRACE_SECS = 10.0
+
+# The split between the two endpoint forms: pose is fetched per AMR, everything else
+# with the wildcard. Pose is the only item whose rate an operator notices, and the
+# wildcard's collection delay is charged per call, so it alone is worth the extra
+# requests.
+POSE_KEYS = ("PoseX", "PoseY", "PoseTh")
+DETAIL_KEYS = (
+    "StateOfCharge",
+    "RobotIP",
+    "ChargeState",
+    "ChargeStateNumber",
+    "DockingState",
+)
+
 
 def to_inorbit_pose(x_mm: float, y_mm: float, theta_deg: float, frame_id: str = "map") -> dict[str, float]:
-    """Convert FlowCore pose (mm, deg) to InOrbit pose (m, rad)."""
+    """Convert FlowCore pose (mm, deg) to InOrbit pose (m, rad).
+
+    `RobotTh` is degrees counter-clockwise with 0 on the x axis.
+    """
     return {
         "x": x_mm / 1000.0,
         "y": y_mm / 1000.0,
@@ -40,6 +78,7 @@ class RobotManager:
         config,
         api_client: Optional[Any] = None,
         default_update_freq: float = 1.0,
+        create_supervised_task: Optional[Callable] = None,
     ):
         """Initialize the robot manager.
 
@@ -47,17 +86,41 @@ class RobotManager:
             config: FlowCore connector configuration
             api_client: Optional API client instance (for testing)
             default_update_freq: Default update frequency in Hz
+            create_supervised_task: Callable scheduling a supervised background task,
+                normally FleetConnector._create_supervised_task
         """
         self.config = config
         # Allow injection of api_client for testing/mocking
         self.api = api_client if api_client else OmronApiClient(config.connector_config)
         self._default_update_freq = default_update_freq
-        
-        self._stop_event = asyncio.Event()
+        self._grace_secs = max(MISSED_POLLS_TOLERATED / default_update_freq, MIN_GRACE_SECS)
+        # Monotonic time of the last /Robot/UpdatedSince that did not raise, and the
+        # robots it listed. Listing tracks fleet membership, not reachability: a
+        # robot stays listed indefinitely after it disconnects, until it is removed
+        # from the fleet.
+        #
+        # Monotonic time the Fleet Manager last fetched any DataStore value from each
+        # robot. /DataStoreValueLatest reaches the AMR on every call, so a value
+        # coming back is the Fleet Manager saying it just reached the robot.
+        # That is the availability signal; the status vocabulary only explains it.
+        #
+        # Both clocks are seeded at construction so the grace period covers startup
+        # the same way it covers an outage. Without this every start and restart
+        # publishes a spurious offline tick while the first polls are in flight.
+        now = time.monotonic()
+        self._last_sweep_ok_at: float = now
+        self._present: set[str] = set()
+        self._last_fetched_at: Dict[str, float] = {r.fleet_robot_id: now for r in config.fleet}
+
+        # Falls back to a bare task when no supervisor is injected, which is what the
+        # tests use. In production the connector passes the framework's supervisor.
+        self._create_supervised_task = create_supervised_task or (
+            lambda name, coro_factory: asyncio.create_task(coro_factory(), name=name)
+        )
         self._running_tasks: list[asyncio.Task] = []
         
-        # Cached data per InOrbit robot_id
-        # Structure: {robot_id: {data_type: value}}
+        # Cached data keyed by FlowCore namekey (fleet_robot_id)
+        # Structure: {fleet_robot_id: {data_type: value}}
         self._robot_data: Dict[str, Dict[str, Any]] = {}
 
         # Map of FlowCore robot_id (NameKey) to configuration
@@ -69,6 +132,9 @@ class RobotManager:
                 if robot.fleet_robot_id not in self._robot_data:
                     self._robot_data[robot.fleet_robot_id] = {}
                 self._robot_data[robot.fleet_robot_id]["robot_ip"] = robot.ip_address
+
+        # Active faults per robot. Absent means unknown, which is not the same as none.
+        self._active_faults: Dict[str, list] = {}
 
         # Map of robot_id to ArclClient instance
         self._arcl_clients: Dict[str, ArclClient] = {}
@@ -82,29 +148,29 @@ class RobotManager:
             LOGGER.error(f"Failed to connect to FlowCore API: {e}")
             raise
 
-        # We start two loops: one for high-level status (fleet state), one for details (telemetry)
-        self._run_in_loop(self._update_fleet_state)
-        self._run_in_loop(self._update_fleet_details)
-        
+        # One loop for high-level status (fleet state), one for details (telemetry),
+        # one for pose. Pose gets its own so the slow wildcard sweep cannot hold it back.
+        self._running_tasks = [
+            self._create_supervised_task(
+                "flowcore-fleet-state", partial(self._poll_loop, self._update_fleet_state)
+            ),
+            self._create_supervised_task(
+                "flowcore-fleet-details", partial(self._poll_loop, self._update_fleet_details)
+            ),
+            self._create_supervised_task(
+                "flowcore-poses", partial(self._poll_loop, self._update_poses)
+            ),
+        ]
+
         LOGGER.info("Started FlowCore API polling")
 
     async def stop(self) -> None:
         """Stop all background polling tasks."""
-        self._stop_event.set()
-
+        for task in self._running_tasks:
+            task.cancel()
         if self._running_tasks:
-            try:
-                done, pending = await asyncio.wait(
-                    self._running_tasks,
-                    timeout=1.0,
-                    return_when=asyncio.ALL_COMPLETED,
-                )
-                for task in pending:
-                    task.cancel()
-                if pending:
-                    await asyncio.wait(pending, timeout=0.5)
-            except Exception as e:
-                LOGGER.error(f"Error during graceful shutdown: {e}")
+            await asyncio.gather(*self._running_tasks, return_exceptions=True)
+        self._running_tasks.clear()
 
         for client in self._arcl_clients.values():
             try:
@@ -113,14 +179,17 @@ class RobotManager:
                 LOGGER.error(f"Error disconnecting ARCL client: {e}")
         self._arcl_clients.clear()
 
-        self._running_tasks.clear()
+        await self.api.close()
+
         LOGGER.info("Stopped FlowCore API polling")
 
     async def _update_fleet_state(self) -> None:
         """Fetch fleet state and update cached data for all robots."""
         try:
             fleet_state = await self.api.get_fleet_state()
-            
+            self._last_sweep_ok_at = time.monotonic()
+            self._present = {robot.namekey for robot in fleet_state}
+
             for robot_summary in fleet_state:
                 robot_id = robot_summary.namekey # We use namekey as robot_id
                 
@@ -145,7 +214,10 @@ class RobotManager:
                             "Invalidating ARCL client."
                         )
                         client = self._arcl_clients.pop(robot_id)
-                        asyncio.create_task(client.disconnect())
+                        try:
+                            await client.disconnect()
+                        except Exception as e:
+                            LOGGER.error(f"Error disconnecting ARCL client: {e}")
 
                 # Update IP in cache only if not overridden by config
                 conf = self._fleet_config.get(robot_id)
@@ -157,34 +229,62 @@ class RobotManager:
         except Exception as e:
             LOGGER.error(f"Error updating fleet state: {e}")
 
+    async def _update_poses(self) -> None:
+        """Fetch pose for each configured robot with the per-AMR form of the endpoint.
+
+        The per-AMR form answers in a fraction of what the wildcard form
+        `_update_fleet_details` uses costs, so pose follows `update_freq` here instead of
+        the sub-Hz rate the wildcard imposed. The price is 3 requests per robot per tick
+        rather than 3 for the whole fleet, which is why only pose is fetched this way,
+        and only for configured robots: the rest are never published.
+
+        A robot the Fleet Manager cannot reach yields nothing and so does not refresh
+        its fetch clock, which is what turns it offline.
+        """
+        wanted = [(robot_id, key) for robot_id in self._fleet_config for key in POSE_KEYS]
+        results = await asyncio.gather(
+            *(self.api.get_data_store_value(key, robot_id) for robot_id, key in wanted),
+            return_exceptions=True,
+        )
+
+        now = time.monotonic()
+        for (robot_id, key), result in zip(wanted, results):
+            if isinstance(result, Exception):
+                LOGGER.error(f"Error fetching {key} for {robot_id}: {result}")
+                continue
+            if not result:
+                continue
+            self._robot_data.setdefault(robot_id, {})[key] = result[0]
+            self._last_fetched_at[robot_id] = now
+
     async def _update_fleet_details(self) -> None:
-        """Fetch detailed telemetry for the entire fleet using bulk endpoint."""
+        """Fetch the slow telemetry for the whole fleet with the wildcard endpoint.
+
+        One call per item covers every AMR, at the cost of the collection delay on each.
+        That delay sets this loop's real period whatever `update_freq` says, since
+        `_poll_loop` awaits the fetch and the interval together. Acceptable
+        here because battery, charge, docking and IP do not move on a human timescale;
+        pose does, which is why `_update_poses` pays per robot instead.
+        """
         try:
-            # Map keys to result indices
-            # 0: PoseX, 1: PoseY, 2: PoseTh, 3: StateOfCharge, 4: RobotIP
-            keys = ["PoseX", "PoseY", "PoseTh", "StateOfCharge", "RobotIP"]
+            keys = list(DETAIL_KEYS)
+            # Each wildcard call answers with one entry per AMR, keyed "{item}:{AMR}"
             calls = [self.api.get_data_store_value(key, "*") for key in keys]
-            
-            # Bulk fetch using wildcard '*'
-            # Each call returns a list of DataStoreResponse objects for all robots
+
             results = await asyncio.gather(*calls, return_exceptions=True)
-            
+            fetched: set[str] = set()
+
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
                     LOGGER.error(f"Error bulk fetching {keys[i]}: {result}")
                     continue
-                
-                # result is assumed to be List[DataStoreResponse]
-                if not isinstance(result, list):
-                    # Should not happen with '*' but defensive check
-                    continue
 
                 for item in result:
-                    # namekey format: "Key:RobotID"
                     parts = item.namekey.split(":")
                     if len(parts) >= 2:
                         robot_id = parts[1]
-                        
+                        fetched.add(robot_id)
+
                         # Initialize cache if needed (though fleet state update should have done it)
                         if robot_id not in self._robot_data:
                             self._robot_data[robot_id] = {}
@@ -205,12 +305,125 @@ class RobotManager:
                                 self._robot_data[robot_id]["robot_ip"] = item.value
                                 LOGGER.info(f"Discovered IP {item.value} for robot {robot_id} via DataStore")
 
+            now = time.monotonic()
+            for robot_id in fetched:
+                self._last_fetched_at[robot_id] = now
+
         except Exception as e:
             LOGGER.error(f"Error updating fleet details: {e}")
 
-    def get_robot_pose(self, robot_id: str) -> Optional[dict]:
+        await self._update_faults()
+
+    async def _update_faults(self) -> None:
+        """Refresh the active-fault cache for the whole fleet.
+
+        Rebuilt wholesale, since that is the only way a cleared fault leaves the cache.
+        A failed poll leaves the previous answer standing.
+        """
+        try:
+            faults = await self.api.get_active_faults()
+        except Exception as e:
+            LOGGER.error(f"Error updating robot faults: {e}")
+            return
+
+        refreshed: Dict[str, list] = {robot_id: [] for robot_id in self._robot_data}
+        for fault in faults:
+            refreshed.setdefault(fault.robot, []).append(fault)
+        self._active_faults = refreshed
+
+    def active_fault_names(self, fleet_robot_id: str) -> tuple[str, ...]:
+        """Names of the robot's active faults, empty when it has none or none are known."""
+        return tuple(fault.name for fault in self._active_faults.get(fleet_robot_id, ()))
+
+    def api_connected(self) -> bool:
+        """Whether a fleet sweep succeeded within the grace period."""
+        return (time.monotonic() - self._last_sweep_ok_at) <= self._grace_secs
+
+    def is_attached(self, fleet_robot_id: str) -> bool:
+        """Whether this robot is still registered with the Fleet Manager.
+
+        This reflects fleet membership, not reachability: a robot that has lost
+        communication stays listed here indefinitely, until it is deregistered from
+        the fleet.
+        """
+        return fleet_robot_id in self._present
+
+    def is_reporting(self, fleet_robot_id: str) -> bool:
+        """Whether the Fleet Manager fetched a DataStore value from this robot recently.
+
+        This is the one fact availability rests on. A robot the Fleet Manager cannot
+        reach returns nothing from /DataStoreValueLatest; one it can reach returns
+        values whatever its status says, including `OutgoingArclConnectionLost`, which
+        only means the Fleet Manager's own command channel is down.
+        """
+        last = self._last_fetched_at.get(fleet_robot_id)
+        return last is not None and (time.monotonic() - last) <= self._grace_secs
+
+    def offline_reason(self, fleet_robot_id: str) -> Optional[str]:
+        """Why this robot is offline, or None while it is online.
+
+        Cache reads only: this runs once per robot per execution loop iteration and
+        also on the edge-SDK network thread.
+
+        The decision is `is_reporting`. Everything below it is explanation, ordered
+        so the most fundamental cause wins: an unreachable API is why nothing else
+        about the robot can be known, a deregistered robot is why no fetch was
+        attempted, and the Fleet Manager's own `Disconnected` verdict, when it has
+        one, beats the bare observation that values stopped coming back.
+
+        A robot in a bad but reachable state (Fault, Lost, EstopPressed,
+        MotorsDisabled, OutgoingArclConnectionLost) stays online: it is still
+        reporting, and its pose is what an operator needs to go find it. The
+        condition surfaces through its status instead.
+        """
+        if self.is_reporting(fleet_robot_id):
+            return None
+        if not self.api_connected():
+            return OFFLINE_API_UNREACHABLE
+        if not self.is_attached(fleet_robot_id):
+            return OFFLINE_NOT_IN_FLEET
+        summary = self._robot_data.get(fleet_robot_id, {}).get("summary")
+        if summary is not None and DISCONNECTED_STATUS in (summary.status, summary.subStatus):
+            return OFFLINE_DISCONNECTED
+        return OFFLINE_NO_TELEMETRY
+
+    def is_online(self, fleet_robot_id: str) -> bool:
+        """Whether InOrbit should consider this robot online. See `offline_reason`."""
+        return self.offline_reason(fleet_robot_id) is None
+
+    def update_millis(self, fleet_robot_id: str, keys: tuple[str, ...]) -> Optional[tuple]:
+        """The upd.millis of cached fleet-summary records, or None if none is cached.
+
+        A change token for `/Robot/UpdatedSince` only: that is a changed-since query, so
+        a summary's stamp holds while its status is unchanged (observed frozen at 17 days
+        and at 4 hours on a live Fleet Manager). Do not use it for DataStore items: every
+        `/DataStoreValueLatest` call fetches from the AMR and stamps the fetch, so their
+        stamps are our own read time and advance on every poll. Compare those by value,
+        see `data_values`. `keys` must name only stamped model objects (as cached under
+        "summary"), not raw values such as `robot_ip`, which have no `upd` attribute.
+        """
+        data = self._robot_data.get(fleet_robot_id, {})
+        items = [data[key] for key in keys if key in data]
+        if not items:
+            return None
+        return tuple(item.upd.millis for item in items)
+
+    def data_values(self, fleet_robot_id: str, keys: tuple[str, ...]) -> Optional[tuple]:
+        """The values of cached DataStore items, or None if none is cached.
+
+        A change token for items whose DataStore stamp cannot be one, since that stamp
+        only says when we last asked. Items the vendor never reported are skipped rather
+        than vetoing the whole result, so a robot missing one still yields the others.
+        """
+        data = self._robot_data.get(fleet_robot_id, {})
+        items = [data[key] for key in keys if key in data]
+        if not items:
+            return None
+        return tuple(item.value for item in items)
+
+    def get_robot_pose(self, fleet_robot_id: str) -> Optional[dict]:
         """Get cached pose for a specific robot."""
-        data = self._robot_data.get(robot_id, {})
+        data = self._robot_data.get(fleet_robot_id, {})
         
         pose_x = data.get("PoseX")
         pose_y = data.get("PoseY")
@@ -226,32 +439,45 @@ class RobotManager:
             
         return None
 
-    def get_robot_key_values(self, robot_id: str) -> Optional[dict]:
-        """Get cached key-values for a specific robot."""
-        data = self._robot_data.get(robot_id, {})
-        summary = data.get("summary")
-        battery = data.get("StateOfCharge")
-        
-        if not summary and not battery:
+    def get_vendor_key_values(self, fleet_robot_id: str) -> Optional[dict]:
+        """Get FlowCore's own statement about a robot, from the cached fleet summary."""
+        summary = self._robot_data.get(fleet_robot_id, {}).get("summary")
+        if summary is None:
             return None
-            
-        kv = {}
-        
-        if battery:
-            kv["battery_percent"] = float(battery.value)
-            
-        if summary:
-            kv["omron_status"] = summary.status
-            kv["omron_sub_status"] = summary.subStatus
-            kv["status"] = self._map_status(summary.subStatus)
-            
-            # Add more summary fields if available
-            if summary.ipAddress:
-                kv["robot_ip"] = summary.ipAddress
-            
-        return kv
+        return build_vendor_key_values(
+            summary,
+            self.is_charging(fleet_robot_id),
+            self.active_fault_names(fleet_robot_id),
+        )
 
-    def get_robot_odometry(self, robot_id: str) -> Optional[dict]:
+    def is_charging(self, fleet_robot_id: str) -> Optional[bool]:
+        """Whether the robot is drawing charge, or None if it does not report it.
+
+        `RobotChargeStateNumber` is 0 while not charging and non-zero in every charge
+        stage (`Not,Bulk,Overcharge,Float`), so this holds for stages this connector has
+        never seen. It is robot-level, unlike the per-pack `Battery1*` items, which are
+        named for a battery index and vary with battery generation.
+        """
+        item = self._robot_data.get(fleet_robot_id, {}).get("ChargeStateNumber")
+        if item is None or item.value is None:
+            return None
+        try:
+            return int(item.value) != 0
+        except (TypeError, ValueError):
+            LOGGER.warning("Unreadable charge state %r, ignoring.", item.value)
+            return None
+
+    def get_robot_key_values(self, fleet_robot_id: str) -> Optional[dict]:
+        """Get the robot's own cached telemetry key-values for a specific robot."""
+        data = self._robot_data.get(fleet_robot_id, {})
+        return build_robot_key_values(
+            data.get("StateOfCharge"),
+            data.get("ChargeState"),
+            data.get("DockingState"),
+            data.get("robot_ip"),
+        ) or None
+
+    def get_robot_odometry(self, fleet_robot_id: str) -> Optional[dict]:
         """Get cached odometry for a specific robot.
         
         Note: FlowCore generic API might not expose velocity easily in 
@@ -260,64 +486,28 @@ class RobotManager:
         """
         return None
 
-    def _map_status(self, sub_status: str) -> str:
-        """Map Omron sub-status to InOrbit status."""
-        # Simple mapping logic
-        busy_states = ["Driving", "BeforePickup", "AfterDropoff", "BeforeDropoff", "BeforeEvery", "AfterEvery"]
-        charging_states = ["Docked", "Docking", "Charging", "DockParking", "DockParked", "ForcedDocking"]
-        idle_states = ["Available", "Parked", "Allocated", "Unallocated"]
-        error_states = ["EStopPressed", "Fault", "MotorsDisabled", "Lost", "NotLocalized"]
+    async def _poll_loop(self, poll) -> None:
+        """Poll `poll` forever at the configured frequency. Supervised: a crash restarts it."""
+        while True:
+            await asyncio.gather(poll(), asyncio.sleep(1.0 / self._default_update_freq))
 
-        if sub_status in busy_states:
-            return "BUSY"
-        elif sub_status in charging_states:
-            return "CHARGING"
-        elif sub_status in idle_states:
-            return "IDLE"
-        elif sub_status in error_states:
-            return "ERROR"
-        return "IDLE" # Default
-
-    def _run_in_loop(
-        self,
-        coro: Callable[[], Coroutine[None, None, None]],
-        frequency: float | None = None,
-    ) -> None:
-        """Run a coroutine in a loop at a specified frequency."""
-        freq = frequency if frequency is not None else self._default_update_freq
-
-        async def run_loop():
-            while not self._stop_event.is_set():
-                try:
-                    await asyncio.gather(
-                        coro(),
-                        asyncio.sleep(1.0 / freq),
-                    )
-                except Exception as e:
-                    LOGGER.error(f"Error in polling loop for {coro.__name__}: {e}")
-                    # Prevent tight loop on error
-                    await asyncio.sleep(1.0)
-
-        task = asyncio.create_task(run_loop())
-        self._running_tasks.append(task)
-
-    async def get_arcl_client(self, robot_id: str) -> ArclClient:
+    async def get_arcl_client(self, fleet_robot_id: str) -> ArclClient:
         """Get or create ARCL client for a robot."""
         # Check if we have the robot in cache
-        if robot_id not in self._robot_data:
-            raise ValueError(f"Robot {robot_id} not found in fleet.")
+        if fleet_robot_id not in self._robot_data:
+            raise ValueError(f"Robot {fleet_robot_id} not found in fleet.")
 
         # Get IP address
-        ip = self._robot_data[robot_id].get("robot_ip")
+        ip = self._robot_data[fleet_robot_id].get("robot_ip")
         if not ip:
-            raise ValueError(f"IP address not available for robot {robot_id}.")
+            raise ValueError(f"IP address not available for robot {fleet_robot_id}.")
 
         # Return existing client if available
-        if robot_id in self._arcl_clients:
-            return self._arcl_clients[robot_id]
+        if fleet_robot_id in self._arcl_clients:
+            return self._arcl_clients[fleet_robot_id]
 
         # Create new client
-        LOGGER.info(f"Creating new ARCL client for {robot_id} at {ip}")
+        LOGGER.info(f"Creating new ARCL client for {fleet_robot_id} at {ip}")
         client = ArclClient(
             host=ip,
             port=self.config.connector_config.arcl_port,
@@ -325,5 +515,5 @@ class RobotManager:
             connection_timeout=self.config.connector_config.arcl_timeout,
         )
         await client.connect()
-        self._arcl_clients[robot_id] = client
+        self._arcl_clients[fleet_robot_id] = client
         return client

@@ -36,6 +36,11 @@
 #     step (actionTaskIds, parallel to actions) and the original tasks_list is preserved, so
 #     InOrbit per-task tracking still reports each task as its MiR action runs while the
 #     whole group compiles into a single native mission.
+#   - 2026-09-22: default a step's label to "" when building MirWaypoint/MirAction. The SDK
+#     declares MissionStep.label as `str` with default None, so a step created without a
+#     label holds None (pydantic does not validate defaults) but passing that None on
+#     explicitly does fail validation. One unlabeled waypoint aborted the whole mission at
+#     translate time. The surrounding code already read these labels as `label or ""`.
 
 """Mission translator that compiles consecutive InOrbit waypoint and
 nestable action steps into single native MiR missions.
@@ -221,7 +226,7 @@ class InOrbitToMirTranslator:
                 orientation_deg = (math.degrees(theta) + 180) % 360 - 180
 
                 pending_actions.append(
-                    MirWaypoint(label=step.label, x=x, y=y, orientation=orientation_deg)
+                    MirWaypoint(label=step.label or "", x=x, y=y, orientation=orientation_deg)
                 )
                 pending_labels.append(step.label or "")
                 pending_timeouts.append(step.timeout_secs)
@@ -231,7 +236,7 @@ class InOrbitToMirTranslator:
             if isinstance(step, MissionStepWait):
                 pending_actions.append(
                     MirAction(
-                        label=step.label,
+                        label=step.label or "",
                         action_type="wait",
                         parameters={"time": _seconds_to_mir_duration(step.timeout_secs or 0)},
                     )
@@ -269,7 +274,7 @@ class InOrbitToMirTranslator:
                         )
                     pending_actions.append(
                         MirAction(
-                            label=step.label,
+                            label=step.label or "",
                             action_type=action_type,
                             parameters=parameters,
                         )

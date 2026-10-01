@@ -112,3 +112,26 @@ async def test_stop_action_triggers_api(mock_config):
         options["result_function"].assert_called_with(
             "0"
         )  # CommandResultCode.SUCCESS is 0
+
+
+def test_is_charging_reads_the_robot_level_charge_state():
+    from inorbit_omron_connector.src.omron.models import DataStoreResponse, OmronUpdate
+
+    manager = RobotManager.__new__(RobotManager)
+    manager._robot_data = {}
+
+    def item(value):
+        return DataStoreResponse(
+            namekey="RobotChargeStateNumber:r1", upd=OmronUpdate(millis=1), value=value
+        )
+
+    assert manager.is_charging("r1") is None
+
+    manager._robot_data["r1"] = {"ChargeStateNumber": item(0)}
+    assert manager.is_charging("r1") is False
+
+    manager._robot_data["r1"] = {"ChargeStateNumber": item(2)}
+    assert manager.is_charging("r1") is True
+
+    manager._robot_data["r1"] = {"ChargeStateNumber": item("unexpected")}
+    assert manager.is_charging("r1") is None

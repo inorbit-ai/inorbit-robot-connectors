@@ -1,0 +1,215 @@
+# SPDX-FileCopyrightText: 2026 InOrbit, Inc.
+#
+# SPDX-License-Identifier: MIT
+
+"""Tests for the key-value builders."""
+
+import pytest
+
+from inorbit_omron_connector.src.key_values import (
+    build_health_key_values,
+    build_robot_key_values,
+    build_vendor_key_values,
+    map_status,
+)
+from inorbit_omron_connector.src.omron.arcl_client import BLOCK_DRIVING_FAULT
+from inorbit_omron_connector.src.omron.robot_manager import OFFLINE_API_UNREACHABLE
+from inorbit_omron_connector.src.omron.models import (
+    DataStoreResponse,
+    OmronUpdate,
+    RobotResponse,
+)
+
+
+def _summary(status="Available", sub_status="Unallocated", ip="10.0.0.1"):
+    return RobotResponse(
+        namekey="Robot1",
+        upd=OmronUpdate(millis=1),
+        status=status,
+        subStatus=sub_status,
+        ipAddress=ip,
+    )
+
+
+def _battery(value=50.0):
+    return DataStoreResponse(
+        namekey="StateOfCharge:Robot1", upd=OmronUpdate(millis=1), value=value
+    )
+
+
+def test_health_key_values_report_the_connector_view():
+    result = build_health_key_values(
+        api_connected=True,
+        robot_attached=True,
+        connector_version="1.2.3",
+        offline_reason=None,
+    )
+
+    assert result == {
+        "connector_version": "1.2.3",
+        "api_connected": True,
+        "robot_attached": True,
+        "robot_online": True,
+        "offline_reason": "",
+    }
+
+
+def test_health_key_values_omit_attachment_when_the_api_is_down():
+    result = build_health_key_values(
+        api_connected=False,
+        robot_attached=False,
+        connector_version="1.2.3",
+        offline_reason=OFFLINE_API_UNREACHABLE,
+    )
+
+    assert result == {
+        "connector_version": "1.2.3",
+        "api_connected": False,
+        "robot_online": False,
+        "offline_reason": "api_unreachable",
+    }
+
+
+def test_health_key_values_clear_the_reason_once_the_robot_is_back():
+    """The reason publishes as an empty string rather than being omitted: an omitted
+    key leaves the datasource displaying the reason the robot went down long after it
+    recovered."""
+    result = build_health_key_values(
+        api_connected=True,
+        robot_attached=True,
+        connector_version="1.2.3",
+        offline_reason=None,
+    )
+
+    assert result["offline_reason"] == ""
+    assert result["robot_online"] is True
+
+
+def test_vendor_key_values_carry_the_fleet_summary():
+    result = build_vendor_key_values(_summary())
+
+    assert result == {
+        "omron_status": "Available",
+        "omron_sub_status": "Unallocated",
+        "status": "IDLE",
+        "omron_active_faults": "",
+    }
+
+
+def test_vendor_key_values_leave_robot_ip_to_the_telemetry_tier():
+    """The summary reports no address on some Fleet Managers, so the resolved one is
+    published instead. Two sources for one key would race."""
+    assert "robot_ip" not in build_vendor_key_values(_summary())
+    assert "robot_ip" not in build_vendor_key_values(_summary(ip=None))
+
+
+def test_vendor_key_values_are_empty_without_data():
+    assert build_vendor_key_values(None) == {}
+
+
+def _item(value, name="Item:Robot1"):
+    return DataStoreResponse(namekey=name, upd=OmronUpdate(millis=1), value=value)
+
+
+def test_robot_key_values_carry_battery():
+    result = build_robot_key_values(_battery())
+
+    assert result == {"battery_percent": 50.0}
+
+
+def test_robot_key_values_carry_charge_and_docking_state():
+    result = build_robot_key_values(_battery(), _item("Overcharge"), _item("UNDOCKED"))
+
+    assert result == {
+        "battery_percent": 50.0,
+        "omron_charge_state": "Overcharge",
+        "omron_docking_state": "UNDOCKED",
+    }
+
+
+def test_robot_key_values_publish_each_item_independently():
+    assert build_robot_key_values(None, _item("Float")) == {"omron_charge_state": "Float"}
+
+
+def test_robot_key_values_are_empty_without_data():
+    assert build_robot_key_values(None) == {}
+
+
+def test_robot_key_values_publish_the_resolved_robot_ip():
+    assert build_robot_key_values(None, robot_ip="10.0.0.9") == {"robot_ip": "10.0.0.9"}
+    assert "robot_ip" not in build_robot_key_values(None, robot_ip=None)
+
+
+def test_map_status_maps_the_documented_sub_statuses():
+    assert map_status("Driving") == "BUSY"
+    assert map_status("Docked") == "CHARGING"
+    assert map_status("Available") == "IDLE"
+    assert map_status("SomethingNew") == "IDLE"
+
+
+def test_map_status_charging_robot_that_never_docks():
+    assert map_status("Available", charging=True) == "CHARGING"
+
+
+def test_map_status_docked_robot_that_is_not_charging():
+    assert map_status("Docked", charging=False) == "IDLE"
+
+
+def test_map_status_work_and_faults_outrank_charging():
+    assert map_status("Driving", charging=True) == "BUSY"
+    assert map_status("EstopPressed", charging=True) == "ERROR"
+
+
+def test_vendor_key_values_carry_the_charging_status():
+    assert build_vendor_key_values(_summary(), charging=True)["status"] == "CHARGING"
+
+
+@pytest.mark.parametrize(
+    "sub_status",
+    [
+        "EstopPressed",
+        "Fault",
+        "MotorsDisabled",
+        "Lost",
+        "Disconnected",
+        "OutgoingArclConnectionLost",
+    ],
+)
+def test_map_status_maps_every_error_sub_status(sub_status):
+    assert map_status(sub_status) == "ERROR"
+
+
+
+def test_map_status_warns_on_an_unrecognised_sub_status(caplog):
+    with caplog.at_level("WARNING"):
+        result = map_status("SomethingNew")
+
+    assert result == "IDLE"
+    assert "SomethingNew" in caplog.text
+
+
+def test_map_status_known_idle_sub_status_does_not_warn(caplog):
+    with caplog.at_level("WARNING"):
+        result = map_status("Unallocated")
+
+    assert result == "IDLE"
+    assert caplog.text == ""
+
+
+def test_map_status_our_hold_alone_is_a_pause():
+    # The fleet summary does not report the hold, so a held robot usually still
+    # says Available. The fault list decides, not the sub-status.
+    assert map_status("Available", faults=(BLOCK_DRIVING_FAULT,)) == "PAUSED"
+    assert map_status("Driving", faults=(BLOCK_DRIVING_FAULT,)) == "PAUSED"
+    assert map_status("Fault", faults=(BLOCK_DRIVING_FAULT,)) == "PAUSED"
+
+
+def test_map_status_any_other_fault_is_an_error():
+    assert map_status("Available", faults=("MotorStalled",)) == "ERROR"
+    assert map_status("Available", faults=(BLOCK_DRIVING_FAULT, "MotorStalled")) == "ERROR"
+
+
+def test_map_status_without_faults_falls_back_to_the_sub_status():
+    assert map_status("Available") == "IDLE"
+    assert map_status("Driving") == "BUSY"
+    assert map_status("Fault") == "ERROR"

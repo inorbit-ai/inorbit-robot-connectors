@@ -1,0 +1,18 @@
+# Security scan (Semgrep, Trivy, Gitleaks) on pull requests, on pushes to the default branch and
+# weekly. The scan itself lives in inorbit-ai/.github; it reports and never fails the build.
+name: security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 7 * * 1"   # Mondays 07:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    uses: inorbit-ai/.github/.github/workflows/security-scan.yml@main
